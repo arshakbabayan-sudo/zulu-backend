@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="apple-touch-icon" sizes="76x76" href="/admin/assets/img/apple-icon.png">
+  <link rel="icon" type="image/png" href="/admin/assets/img/favicon.png">
+  <title>ZULU — Checkout</title>
+  <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700,900" />
+  <link href="/admin/assets/css/nucleo-icons.css" rel="stylesheet" />
+  <link href="/admin/assets/css/nucleo-svg.css" rel="stylesheet" />
+  <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link id="pagestyle" href="/admin/assets/css/material-dashboard.css?v=3.2.0" rel="stylesheet" />
+</head>
+<body class="bg-gray-100">
+  <div class="container position-sticky z-index-sticky top-0">
+    <div class="row">
+      <div class="col-12">
+        <nav class="navbar navbar-expand-lg blur border-radius-xl top-0 z-index-3 shadow position-absolute my-3 py-2 start-0 end-0 mx-4">
+          <div class="container-fluid ps-2 pe-0">
+            <a class="navbar-brand font-weight-bolder ms-lg-0 ms-3" href="/site/">ZULU</a>
+            <span class="navbar-text text-sm ms-auto me-3">
+              <a class="text-dark me-2" href="/site/catalog/">Catalog</a>
+              <a class="text-dark me-2" href="/site/account/">Account</a>
+              <a class="text-secondary text-sm" href="/admin/login/">Operator admin</a>
+            </span>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </div>
+  <main class="main-content mt-8 pt-4">
+    <div class="container-fluid py-4">
+      <div class="mb-3">
+        <a href="/site/catalog/" class="btn btn-sm btn-outline-dark mb-0">&larr; Catalog</a>
+      </div>
+      <div class="row">
+        <div class="col-lg-8">
+          <div class="card mb-4">
+            <div class="card-header pb-0">
+              <h6>Checkout</h6>
+              <p class="text-sm text-muted mb-0">POST /api/marketplace/bookings/{id}/checkout</p>
+            </div>
+            <div class="card-body">
+              <div id="view-loading" class="text-center text-secondary py-4">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Loading booking…
+              </div>
+              <div id="view-error" class="alert alert-danger d-none" role="alert"></div>
+              <div id="view-guest" class="d-none">
+                <p class="text-sm text-muted mb-2">Sign in to complete checkout.</p>
+                <a class="btn btn-sm bg-gradient-dark mb-0" id="guest-signin" href="/site/login/">Sign in</a>
+              </div>
+              <div id="view-pay" class="d-none">
+                <p class="text-sm mb-2">Booking <strong id="pay-bid"></strong> — total <strong id="pay-total"></strong></p>
+                <p class="text-sm text-muted mb-3">Complete checkout to confirm booking and record payment.</p>
+                <button type="button" class="btn btn-sm bg-gradient-dark mb-0" id="btn-pay">Pay now</button>
+                <div id="pay-error" class="alert alert-danger py-2 mt-3 d-none" role="alert"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="/admin/assets/js/core/popper.min.js"></script>
+  <script src="/admin/assets/js/core/bootstrap.min.js"></script>
+  <script src="/admin/assets/js/material-dashboard.min.js?v=3.2.0"></script>
+  <script src="/site/js/public-api.js"></script>
+  <script>
+    function isValidBookingId(value) {
+      return /^[1-9]\d*$/.test(String(value || ''));
+    }
+    function apiErrorMessage(result, fallback) {
+      if (!result) return fallback;
+      if (result.status === 401) return 'Please sign in to continue checkout.';
+      if (result.status === 404) return 'Booking not found.';
+      if (result.status === 422) return result.message || 'Validation error. Please review your booking.';
+      if (result.status >= 500) return 'Server error. Please try again.';
+      return result.message || fallback;
+    }
+    function safeNext(path) {
+      if (!path || typeof path !== 'string') return null;
+      if (path.indexOf('/site/') !== 0) return null;
+      if (path.indexOf('//', 1) !== -1) return null;
+      return path;
+    }
+    document.addEventListener('DOMContentLoaded', async function () {
+      var params = new URLSearchParams(location.search);
+      var bid = params.get('booking');
+      var loading = document.getElementById('view-loading');
+      var errEl = document.getElementById('view-error');
+      var guest = document.getElementById('view-guest');
+      var pay = document.getElementById('view-pay');
+      var guestSignin = document.getElementById('guest-signin');
+      var nextLogin = safeNext(params.get('next')) || location.pathname + location.search;
+      guestSignin.href = '/site/login/?next=' + encodeURIComponent(nextLogin);
+      if (!bid || !isValidBookingId(bid)) {
+        loading.classList.add('d-none');
+        errEl.textContent = 'Missing or invalid booking id.';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      if (!ZuluPublicApi.getToken()) {
+        loading.classList.add('d-none');
+        guest.classList.remove('d-none');
+        return;
+      }
+      var result = await ZuluPublicApi.marketplaceBooking(bid);
+      loading.classList.add('d-none');
+      if (!result || !result.ok) {
+        if (result && result.status === 401) {
+          guest.classList.remove('d-none');
+          return;
+        }
+        errEl.textContent = apiErrorMessage(result, 'Could not load booking.');
+        errEl.classList.remove('d-none');
+        return;
+      }
+      var b = result.data && result.data.booking;
+      var payment = result.data && result.data.payment;
+      if (!b) {
+        errEl.textContent = 'Invalid booking response.';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      if (payment && payment.status === 'paid') {
+        location.replace('/site/booking/confirmation/?booking=' + encodeURIComponent(bid));
+        return;
+      }
+      document.getElementById('pay-bid').textContent = String(b.id);
+      document.getElementById('pay-total').textContent = b.total_price != null ? String(b.total_price) : '—';
+      pay.classList.remove('d-none');
+      var btnPay = document.getElementById('btn-pay');
+      btnPay.addEventListener('click', async function () {
+        var pe = document.getElementById('pay-error');
+        pe.classList.add('d-none');
+        if (btnPay.disabled) return;
+        btnPay.disabled = true;
+        btnPay.setAttribute('aria-busy', 'true');
+        try {
+          var r = await ZuluPublicApi.marketplaceCheckout(bid);
+          var paymentResult = r && r.data && r.data.payment;
+          if (r && r.ok && paymentResult && paymentResult.status === 'paid') {
+            location.href = '/site/booking/confirmation/?booking=' + encodeURIComponent(bid);
+            return;
+          }
+          pe.textContent = (r && r.ok)
+            ? 'Invalid payment response. Please refresh and verify booking status.'
+            : apiErrorMessage(r, 'Payment failed.');
+          pe.classList.remove('d-none');
+        } finally {
+          btnPay.disabled = false;
+          btnPay.removeAttribute('aria-busy');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

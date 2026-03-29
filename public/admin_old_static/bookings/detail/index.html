@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="apple-touch-icon" sizes="76x76" href="../../assets/img/apple-icon.png">
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png">
+  <title>ZULU — Booking detail</title>
+  <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700,900" />
+  <link href="../../assets/css/nucleo-icons.css" rel="stylesheet" />
+  <link href="../../assets/css/nucleo-svg.css" rel="stylesheet" />
+  <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link id="pagestyle" href="../../assets/css/material-dashboard.css?v=3.2.0" rel="stylesheet" />
+  <script src="../../js/api.js"></script>
+  <script src="../../js/auth.js"></script>
+  <script>ZuluAuth.requireAuth();</script>
+</head>
+<body class="g-sidenav-show bg-gray-100">
+  <aside class="sidenav navbar navbar-vertical navbar-expand-xs border-radius-lg fixed-start ms-2 bg-white my-2" id="sidenav-main">
+    <div class="sidenav-header">
+      <i class="fas fa-times p-3 cursor-pointer text-dark opacity-5 position-absolute end-0 top-0 d-none d-xl-none" aria-hidden="true" id="iconSidenav"></i>
+      <a class="navbar-brand px-4 py-3 m-0" href="/admin/dashboard/">
+        <img src="../../assets/img/logo-ct-dark.png" class="navbar-brand-img" width="26" height="26" alt="logo">
+        <span class="ms-1 text-sm text-dark">ZULU</span>
+      </a>
+    </div>
+    <hr class="horizontal dark mt-0 mb-2">
+    <div class="collapse navbar-collapse w-auto" id="sidenav-collapse-main">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link text-dark" href="/admin/dashboard/">
+            <i class="material-symbols-rounded opacity-5">dashboard</i>
+            <span class="nav-link-text ms-1">Dashboard</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link text-dark" href="/admin/notifications/">
+            <i class="material-symbols-rounded opacity-5">notifications</i>
+            <span class="nav-link-text ms-1">Notifications</span>
+            <span id="zulu-notifications-badge" class="badge badge-sm bg-gradient-danger ms-2 d-none" aria-live="polite"></span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="offers.view">
+          <a class="nav-link text-dark" href="/admin/offers/">
+            <i class="material-symbols-rounded opacity-5">sell</i>
+            <span class="nav-link-text ms-1">Offers</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="bookings.view">
+          <a class="nav-link active bg-gradient-dark text-white" href="/admin/bookings/">
+            <i class="material-symbols-rounded opacity-5">book_online</i>
+            <span class="nav-link-text ms-1">Bookings</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="invoices.view">
+          <a class="nav-link text-dark" href="/admin/invoices/">
+            <i class="material-symbols-rounded opacity-5">receipt_long</i>
+            <span class="nav-link-text ms-1">Invoices</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="payments.view">
+          <a class="nav-link text-dark" href="/admin/payments/">
+            <i class="material-symbols-rounded opacity-5">payments</i>
+            <span class="nav-link-text ms-1">Payments</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="commissions.view">
+          <a class="nav-link text-dark" href="/admin/commissions/">
+            <i class="material-symbols-rounded opacity-5">percent</i>
+            <span class="nav-link-text ms-1">Commissions</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="visas.view">
+          <a class="nav-link text-dark" href="/admin/visas/">
+            <i class="material-symbols-rounded opacity-5">article</i>
+            <span class="nav-link-text ms-1">Visas</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="companies.view">
+          <a class="nav-link text-dark" href="/admin/companies/">
+            <i class="material-symbols-rounded opacity-5">domain</i>
+            <span class="nav-link-text ms-1">Companies</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </aside>
+  <main class="main-content position-relative max-height-vh-100 h-100 border-radius-lg">
+    <nav class="navbar navbar-main navbar-expand-lg px-0 mx-3 shadow-none border-radius-xl" id="navbarBlur" data-scroll="true">
+      <div class="container-fluid py-1 px-3">
+        <nav aria-label="breadcrumb">
+          <ol class="breadcrumb bg-transparent mb-0 pb-0 pt-1 px-0 me-sm-6 me-5">
+            <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/admin/dashboard/">Admin</a></li>
+            <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/admin/bookings/">Bookings</a></li>
+            <li class="breadcrumb-item text-sm text-dark active" aria-current="page">Detail</li>
+          </ol>
+        </nav>
+        <div class="collapse navbar-collapse mt-sm-0 mt-2 me-md-0 me-sm-4" id="navbar">
+          <ul class="navbar-nav ms-md-auto justify-content-end">
+            <li class="nav-item d-flex align-items-center">
+              <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="logout-btn">Log out</button>
+            </li>
+            <li class="nav-item d-xl-none ps-3 d-flex align-items-center">
+              <a href="javascript:;" class="nav-link text-body p-0" id="iconNavbarSidenav">
+                <div class="sidenav-toggler-inner">
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                </div>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    <div class="container-fluid py-4">
+      <div class="mb-3">
+        <a href="/admin/bookings/" class="btn btn-sm btn-outline-dark mb-0">&larr; Back to bookings</a>
+      </div>
+      <div class="row">
+        <div class="col-lg-8">
+          <div class="card mb-4">
+            <div class="card-header pb-0">
+              <h6>Booking</h6>
+              <p class="text-sm text-muted mb-0" id="booking-subtitle">GET /api/bookings/{booking}</p>
+            </div>
+            <div class="card-body">
+              <div id="view-loading" class="text-center text-secondary py-4">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Loading…
+              </div>
+              <div id="view-error" class="alert alert-danger d-none" role="alert"></div>
+              <div id="view-detail" class="d-none">
+                <div id="detail-feedback" class="alert d-none mb-3" role="alert"></div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                  <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="booking-btn-confirm" data-zulu-perm="bookings.confirm">Confirm</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary mb-0" id="booking-btn-cancel" data-zulu-perm="bookings.cancel">Cancel</button>
+                  <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="booking-btn-create-invoice" data-zulu-perm="invoices.create">Create invoice</button>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm align-items-center mb-0">
+                    <tbody id="booking-fields"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row" id="booking-items-section">
+        <div class="col-lg-8">
+          <div class="card">
+            <div class="card-header pb-0">
+              <h6>Booking items</h6>
+              <p class="text-sm text-muted mb-0">Included when loaded on booking show</p>
+            </div>
+            <div class="card-body">
+              <div id="items-missing" class="alert alert-light border text-secondary text-sm mb-0 d-none" role="status">
+                Booking items are not available in this response.
+              </div>
+              <div id="items-empty" class="text-center text-secondary py-3 d-none">No line items on this booking.</div>
+              <div id="items-table-wrap" class="table-responsive d-none">
+                <table class="table align-items-center mb-0">
+                  <thead>
+                    <tr>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">ID</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">Offer ID</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">Price</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">Created At</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">Updated At</th>
+                    </tr>
+                  </thead>
+                  <tbody id="items-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="../../assets/js/core/popper.min.js"></script>
+  <script src="../../assets/js/core/bootstrap.min.js"></script>
+  <script src="../../assets/js/plugins/perfect-scrollbar.min.js"></script>
+  <script src="../../assets/js/plugins/smooth-scrollbar.min.js"></script>
+  <script src="../../assets/js/material-dashboard.min.js?v=3.2.0"></script>
+  <script>
+    function formatDateTime(v) {
+      if (v == null || v === '') return '—';
+      var d = new Date(v);
+      if (Number.isNaN(d.getTime())) return '—';
+      return d.toLocaleString();
+    }
+    function esc(s) {
+      var d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+    function cell(b, key) {
+      if (!Object.prototype.hasOwnProperty.call(b, key)) return '—';
+      var v = b[key];
+      if (v == null || v === '') return '—';
+      if (key === 'created_at' || key === 'updated_at') return formatDateTime(v);
+      return String(v);
+    }
+    function buildBookingRows(b) {
+      var keys = ['id', 'user_id', 'company_id', 'status', 'total_price', 'created_at', 'updated_at'];
+      return keys
+        .map(function (key) {
+          return (
+            '<tr><td class="text-secondary text-sm w-25">' +
+            esc(key) +
+            '</td><td class="text-sm font-weight-bold">' +
+            esc(cell(b, key)) +
+            '</td></tr>'
+          );
+        })
+        .join('');
+    }
+    function renderItems(booking) {
+      var missingEl = document.getElementById('items-missing');
+      var emptyEl = document.getElementById('items-empty');
+      var wrap = document.getElementById('items-table-wrap');
+      var tbody = document.getElementById('items-tbody');
+      missingEl.classList.add('d-none');
+      emptyEl.classList.add('d-none');
+      wrap.classList.add('d-none');
+      tbody.innerHTML = '';
+      if (!Object.prototype.hasOwnProperty.call(booking, 'items')) {
+        missingEl.classList.remove('d-none');
+        return;
+      }
+      var items = booking.items;
+      if (!Array.isArray(items)) {
+        missingEl.classList.remove('d-none');
+        return;
+      }
+      if (items.length === 0) {
+        emptyEl.classList.remove('d-none');
+        return;
+      }
+      wrap.classList.remove('d-none');
+      tbody.innerHTML = items
+        .map(function (it) {
+          return (
+            '<tr>' +
+            '<td><span class="text-xs font-weight-bold">' + esc(cell(it, 'id')) + '</span></td>' +
+            '<td><span class="text-xs">' + esc(cell(it, 'offer_id')) + '</span></td>' +
+            '<td><span class="text-xs">' + esc(cell(it, 'price')) + '</span></td>' +
+            '<td><span class="text-xs text-secondary">' + esc(cell(it, 'created_at')) + '</span></td>' +
+            '<td><span class="text-xs text-secondary">' + esc(cell(it, 'updated_at')) + '</span></td>' +
+            '</tr>'
+          );
+        })
+        .join('');
+    }
+    document.getElementById('logout-btn').addEventListener('click', function () {
+      ZuluApi.logout();
+    });
+    document.addEventListener('DOMContentLoaded', async function () {
+      var params = new URLSearchParams(location.search);
+      var id = params.get('id');
+      var loading = document.getElementById('view-loading');
+      var errEl = document.getElementById('view-error');
+      var detailEl = document.getElementById('view-detail');
+      var tbody = document.getElementById('booking-fields');
+      var confBtn = document.getElementById('booking-btn-confirm');
+      var cancelBtn = document.getElementById('booking-btn-cancel');
+      var createInvBtn = document.getElementById('booking-btn-create-invoice');
+      if (!id) {
+        loading.classList.add('d-none');
+        errEl.textContent = 'Missing booking id.';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      async function loadBooking() {
+        document.getElementById('booking-subtitle').textContent = 'GET /api/bookings/' + String(id);
+        var result = await ZuluApi.requestJson('/bookings/' + encodeURIComponent(id), { method: 'GET' });
+        loading.classList.add('d-none');
+        if (result === null) return;
+        if (!result.ok) {
+          errEl.textContent = result.message || 'Failed to load booking';
+          errEl.classList.remove('d-none');
+          detailEl.classList.remove('d-none');
+          if (window.ZuluAuth) window.ZuluAuth.applyPermissionVisibility();
+          return;
+        }
+        var booking = result.data;
+        if (!booking || typeof booking !== 'object') {
+          errEl.textContent = 'Invalid booking data';
+          errEl.classList.remove('d-none');
+          detailEl.classList.remove('d-none');
+          if (window.ZuluAuth) window.ZuluAuth.applyPermissionVisibility();
+          return;
+        }
+        errEl.classList.add('d-none');
+        tbody.innerHTML = buildBookingRows(booking);
+        detailEl.classList.remove('d-none');
+        renderItems(booking);
+        if (window.ZuluAuth) window.ZuluAuth.applyPermissionVisibility();
+      }
+      async function runAction(action) {
+        if (action === 'cancel' && !ZuluApi.confirm('Cancel this booking?')) return;
+        var result = null;
+        ZuluApi.setBusyState([confBtn, cancelBtn, createInvBtn], true);
+        try {
+          result = await ZuluApi.postLifecycleJson('/bookings/' + encodeURIComponent(id) + '/' + action);
+        } finally {
+          ZuluApi.setBusyState([confBtn, cancelBtn, createInvBtn], false);
+        }
+        if (result === null) return;
+        if (!result.ok) {
+          if (result.status !== 403) {
+            ZuluApi.showInlineFeedback('detail-feedback', 'error', result.message || 'Action failed');
+          }
+          return;
+        }
+        ZuluApi.showInlineFeedback('detail-feedback', 'success', action === 'confirm' ? 'Confirmed.' : 'Cancelled.');
+        loading.classList.remove('d-none');
+        detailEl.classList.add('d-none');
+        document.getElementById('booking-items-section').classList.add('d-none');
+        try {
+          await loadBooking();
+        } finally {
+          document.getElementById('booking-items-section').classList.remove('d-none');
+        }
+      }
+      confBtn.addEventListener('click', function () {
+        runAction('confirm');
+      });
+      cancelBtn.addEventListener('click', function () {
+        runAction('cancel');
+      });
+      createInvBtn.addEventListener('click', async function () {
+        var result = null;
+        ZuluApi.setBusyState([createInvBtn, confBtn, cancelBtn], true);
+        try {
+          result = await ZuluApi.requestJson('/invoices', {
+            method: 'POST',
+            body: { booking_id: parseInt(id, 10) },
+          });
+        } finally {
+          ZuluApi.setBusyState([createInvBtn, confBtn, cancelBtn], false);
+        }
+        if (result === null) return;
+        if (!result.ok) {
+          if (result.status !== 403) {
+            ZuluApi.showInlineFeedback('detail-feedback', 'error', ZuluApi.messageFromRequestError(result, 'Could not create invoice'));
+          }
+          return;
+        }
+        if (result.data && result.data.id != null) {
+          location.href = '/admin/invoices/detail/?id=' + encodeURIComponent(String(result.data.id));
+        } else {
+          ZuluApi.showInlineFeedback('detail-feedback', 'error', 'Created but response had no id');
+        }
+      });
+      await loadBooking();
+    });
+  </script>
+</body>
+</html>

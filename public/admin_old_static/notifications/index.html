@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="apple-touch-icon" sizes="76x76" href="../assets/img/apple-icon.png">
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png">
+  <title>ZULU — Notifications</title>
+  <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700,900" />
+  <link href="../assets/css/nucleo-icons.css" rel="stylesheet" />
+  <link href="../assets/css/nucleo-svg.css" rel="stylesheet" />
+  <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link id="pagestyle" href="../assets/css/material-dashboard.css?v=3.2.0" rel="stylesheet" />
+  <script src="../js/api.js"></script>
+  <script src="../js/auth.js"></script>
+  <script>ZuluAuth.requireAuth();</script>
+</head>
+<body class="g-sidenav-show bg-gray-100">
+  <aside class="sidenav navbar navbar-vertical navbar-expand-xs border-radius-lg fixed-start ms-2 bg-white my-2" id="sidenav-main">
+    <div class="sidenav-header">
+      <i class="fas fa-times p-3 cursor-pointer text-dark opacity-5 position-absolute end-0 top-0 d-none d-xl-none" aria-hidden="true" id="iconSidenav"></i>
+      <a class="navbar-brand px-4 py-3 m-0" href="/admin/dashboard/">
+        <img src="../assets/img/logo-ct-dark.png" class="navbar-brand-img" width="26" height="26" alt="logo">
+        <span class="ms-1 text-sm text-dark">ZULU</span>
+      </a>
+    </div>
+    <hr class="horizontal dark mt-0 mb-2">
+    <div class="collapse navbar-collapse w-auto" id="sidenav-collapse-main">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link text-dark" href="/admin/dashboard/">
+            <i class="material-symbols-rounded opacity-5">dashboard</i>
+            <span class="nav-link-text ms-1">Dashboard</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link active bg-gradient-dark text-white" href="/admin/notifications/">
+            <i class="material-symbols-rounded opacity-5">notifications</i>
+            <span class="nav-link-text ms-1">Notifications</span>
+            <span id="zulu-notifications-badge" class="badge badge-sm bg-gradient-danger ms-2 d-none" aria-live="polite"></span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="offers.view">
+          <a class="nav-link text-dark" href="/admin/offers/">
+            <i class="material-symbols-rounded opacity-5">sell</i>
+            <span class="nav-link-text ms-1">Offers</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="bookings.view">
+          <a class="nav-link text-dark" href="/admin/bookings/">
+            <i class="material-symbols-rounded opacity-5">book_online</i>
+            <span class="nav-link-text ms-1">Bookings</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="invoices.view">
+          <a class="nav-link text-dark" href="/admin/invoices/">
+            <i class="material-symbols-rounded opacity-5">receipt_long</i>
+            <span class="nav-link-text ms-1">Invoices</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="payments.view">
+          <a class="nav-link text-dark" href="/admin/payments/">
+            <i class="material-symbols-rounded opacity-5">payments</i>
+            <span class="nav-link-text ms-1">Payments</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="commissions.view">
+          <a class="nav-link text-dark" href="/admin/commissions/">
+            <i class="material-symbols-rounded opacity-5">percent</i>
+            <span class="nav-link-text ms-1">Commissions</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="visas.view">
+          <a class="nav-link text-dark" href="/admin/visas/">
+            <i class="material-symbols-rounded opacity-5">article</i>
+            <span class="nav-link-text ms-1">Visas</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="companies.view">
+          <a class="nav-link text-dark" href="/admin/companies/">
+            <i class="material-symbols-rounded opacity-5">domain</i>
+            <span class="nav-link-text ms-1">Companies</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </aside>
+  <main class="main-content position-relative max-height-vh-100 h-100 border-radius-lg">
+    <nav class="navbar navbar-main navbar-expand-lg px-0 mx-3 shadow-none border-radius-xl" id="navbarBlur" data-scroll="true">
+      <div class="container-fluid py-1 px-3">
+        <nav aria-label="breadcrumb">
+          <ol class="breadcrumb bg-transparent mb-0 pb-0 pt-1 px-0 me-sm-6 me-5">
+            <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/admin/dashboard/">Admin</a></li>
+            <li class="breadcrumb-item text-sm text-dark active" aria-current="page">Notifications</li>
+          </ol>
+        </nav>
+        <div class="collapse navbar-collapse mt-sm-0 mt-2 me-md-0 me-sm-4" id="navbar">
+          <ul class="navbar-nav ms-md-auto justify-content-end">
+            <li class="nav-item d-flex align-items-center">
+              <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="logout-btn">Log out</button>
+            </li>
+            <li class="nav-item d-xl-none ps-3 d-flex align-items-center">
+              <a href="javascript:;" class="nav-link text-body p-0" id="iconNavbarSidenav">
+                <div class="sidenav-toggler-inner">
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                </div>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    <div class="container-fluid py-4">
+      <div class="row">
+        <div class="col-lg-8 col-md-10 mx-auto">
+          <div class="card my-4">
+            <div class="card-header p-3 pb-0">
+              <h5 class="mb-0">Alerts</h5>
+              <p class="text-sm text-muted mb-0">GET /api/notifications</p>
+            </div>
+            <div class="card-body p-3">
+              <div id="view-loading" class="text-center text-secondary py-4">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Loading notifications…
+              </div>
+              <div id="view-error" class="alert alert-danger py-2 d-none" role="alert"></div>
+              <div id="view-empty" class="text-center text-secondary py-4 d-none">No notifications.</div>
+              <div id="view-alerts" class="d-none"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="../assets/js/core/popper.min.js"></script>
+  <script src="../assets/js/core/bootstrap.min.js"></script>
+  <script src="../assets/js/plugins/perfect-scrollbar.min.js"></script>
+  <script src="../assets/js/plugins/smooth-scrollbar.min.js"></script>
+  <script src="../assets/js/material-dashboard.min.js?v=3.2.0"></script>
+  <script>
+    function esc(s) {
+      var d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+    function formatWhen(iso) {
+      if (!iso) return '—';
+      try {
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return esc(String(iso));
+        return esc(d.toLocaleString());
+      } catch (e) {
+        return esc(String(iso));
+      }
+    }
+    async function loadNotifications() {
+      var loading = document.getElementById('view-loading');
+      var errEl = document.getElementById('view-error');
+      var emptyEl = document.getElementById('view-empty');
+      var wrap = document.getElementById('view-alerts');
+      loading.classList.remove('d-none');
+      errEl.classList.add('d-none');
+      emptyEl.classList.add('d-none');
+      wrap.classList.add('d-none');
+      wrap.innerHTML = '';
+      var result = await ZuluApi.requestJson('/notifications', { method: 'GET' });
+      loading.classList.add('d-none');
+      if (result === null) return;
+      if (!result.ok) {
+        errEl.textContent = result.message || 'Failed to load notifications';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      var rows = result.data;
+      if (!Array.isArray(rows)) {
+        errEl.textContent = 'Unexpected response';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      if (rows.length === 0) {
+        emptyEl.classList.remove('d-none');
+        if (window.ZuluAuth && ZuluAuth.refreshNotificationBadge) ZuluAuth.refreshNotificationBadge();
+        return;
+      }
+      wrap.classList.remove('d-none');
+      rows.forEach(function (n) {
+        var id = n.id;
+        var unread = n.status === 'unread';
+        var alertCls = unread ? 'alert-primary' : 'alert-secondary';
+        var div = document.createElement('div');
+        div.className = 'alert ' + alertCls + ' text-white mb-2';
+        div.setAttribute('role', 'alert');
+        div.setAttribute('data-notification-id', String(id));
+        var inner =
+          '<div class="d-flex flex-column flex-md-row justify-content-between gap-2">' +
+          '<div class="flex-grow-1">' +
+          '<span class="text-xs text-uppercase opacity-8 d-block mb-1">' + esc(n.type || '') + '</span>' +
+          '<strong class="d-block">' + esc(n.title || '') + '</strong>' +
+          '<p class="text-sm mb-1 mt-1">' + esc(n.message || '') + '</p>' +
+          '<small class="opacity-8">' + formatWhen(n.created_at) + '</small>' +
+          '</div>';
+        if (unread) {
+          inner +=
+            '<div class="d-flex align-items-start">' +
+            '<button type="button" class="btn btn-sm btn-outline-white mb-0 text-nowrap" data-mark-read="' + esc(String(id)) + '">Mark as read</button>' +
+            '</div>';
+        }
+        inner += '</div>';
+        div.innerHTML = inner;
+        wrap.appendChild(div);
+      });
+      wrap.querySelectorAll('[data-mark-read]').forEach(function (btn) {
+        btn.addEventListener('click', async function (ev) {
+          ev.preventDefault();
+          var nid = btn.getAttribute('data-mark-read');
+          ZuluApi.setBusyState(btn, true);
+          var r = await ZuluApi.postLifecycleJson('/notifications/' + encodeURIComponent(nid) + '/read');
+          ZuluApi.setBusyState(btn, false);
+          if (r === null) return;
+          if (!r.ok) {
+            ZuluApi.showInlineFeedback('view-error', 'error', r.message || 'Failed to mark as read', 5000);
+            return;
+          }
+          await loadNotifications();
+          if (window.ZuluAuth && ZuluAuth.refreshNotificationBadge) ZuluAuth.refreshNotificationBadge();
+        });
+      });
+      if (window.ZuluAuth && ZuluAuth.refreshNotificationBadge) ZuluAuth.refreshNotificationBadge();
+    }
+    document.getElementById('logout-btn').addEventListener('click', function () {
+      ZuluApi.logout();
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+      loadNotifications();
+      if (window.ZuluAuth) ZuluAuth.applyPermissionVisibility();
+    });
+  </script>
+</body>
+</html>

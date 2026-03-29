@@ -1,0 +1,164 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
+use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\TransferDetailResource;
+use App\Http\Resources\Api\TransferListResource;
+use App\Models\Offer;
+use App\Services\Admin\AdminAccessService;
+use App\Services\Transfers\TransferService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class TransferController extends Controller
+{
+    use PaginatesCommerceResources;
+
+    public function __construct(
+        private AdminAccessService $adminAccessService
+    ) {}
+
+    public function index(Request $request, TransferService $transferService): JsonResponse
+    {
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'transfers.view');
+        $filters = $transferService->listingFiltersFromRequest($request);
+
+        if (! $request->filled('page')) {
+            $transfers = $transferService->listForCompanies($companyIds, $filters);
+
+            return response()->json([
+                'success' => true,
+                'data' => TransferListResource::collection($transfers)->resolve($request),
+            ]);
+        }
+
+        $paginator = $transferService->paginateForCompanies(
+            $companyIds,
+            $filters,
+            $this->commerceListPerPage($request)
+        );
+
+        return $this->paginatedCommerceResourceResponse($request, $paginator, TransferListResource::class);
+    }
+
+    public function show(Request $request, string $transfer, TransferService $transferService): JsonResponse
+    {
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'transfers.view');
+        $model = $transferService->findForCompanyScope($transfer, $companyIds);
+        if ($model === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Not found',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => TransferDetailResource::make($model)->toArray($request),
+        ]);
+    }
+
+    public function store(Request $request, TransferService $transferService): JsonResponse
+    {
+        $request->validate([
+            'offer_id' => ['required', 'integer', 'exists:offers,id'],
+            'company_id' => ['prohibited'],
+        ]);
+
+        $offer = Offer::query()->findOrFail((int) $request->input('offer_id'));
+
+        if ($response = $this->ensureCommerceAccess($request, (int) $offer->company_id, 'transfers.create')) {
+            return $response;
+        }
+
+        $transfer = $transferService->create($request->all());
+        $transfer->load(['offer']);
+
+        return response()->json([
+            'success' => true,
+            'data' => TransferDetailResource::make($transfer)->toArray($request),
+        ], 201);
+    }
+
+    public function update(Request $request, string $transfer, TransferService $transferService): JsonResponse
+    {
+        $request->validate([
+            'offer_id' => ['prohibited'],
+            'company_id' => ['prohibited'],
+        ]);
+
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'transfers.update');
+        $model = $transferService->findForCompanyScope($transfer, $companyIds);
+        if ($model === null) {
+            $candidate = $transferService->findByIdWithTransferOffer($transfer);
+            if ($candidate !== null && $request->user()->belongsToCompany((int) $candidate->company_id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Forbidden',
+                ], 403);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Not found',
+            ], 404);
+        }
+
+        if ($response = $this->ensureCommerceAccess($request, (int) $model->company_id, 'transfers.update')) {
+            return $response;
+        }
+
+        $model = $transferService->update($model, $request->all());
+        $model->load(['offer']);
+
+        return response()->json([
+            'success' => true,
+            'data' => TransferDetailResource::make($model)->toArray($request),
+        ]);
+    }
+
+    public function destroy(Request $request, string $transfer, TransferService $transferService): JsonResponse
+    {
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'transfers.delete');
+        $model = $transferService->findForCompanyScope($transfer, $companyIds);
+        if ($model === null) {
+            $candidate = $transferService->findByIdWithTransferOffer($transfer);
+            if ($candidate !== null && $request->user()->belongsToCompany((int) $candidate->company_id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Forbidden',
+                ], 403);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Not found',
+            ], 404);
+        }
+
+        if ($response = $this->ensureCommerceAccess($request, (int) $model->company_id, 'transfers.delete')) {
+            return $response;
+        }
+
+        $transferService->delete($model);
+
+        return response()->json([
+            'success' => true,
+            'data' => null,
+        ]);
+    }
+
+    private function ensureCommerceAccess(Request $request, int $companyId, string $permission): ?JsonResponse
+    {
+        if (! $this->adminAccessService->allowsCommerceOperatorAccess($request->user(), $companyId, $permission)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        return null;
+    }
+}

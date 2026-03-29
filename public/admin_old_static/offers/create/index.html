@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="apple-touch-icon" sizes="76x76" href="../../assets/img/apple-icon.png">
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png">
+  <title>ZULU — Create offer</title>
+  <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700,900" />
+  <link href="../../assets/css/nucleo-icons.css" rel="stylesheet" />
+  <link href="../../assets/css/nucleo-svg.css" rel="stylesheet" />
+  <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link id="pagestyle" href="../../assets/css/material-dashboard.css?v=3.2.0" rel="stylesheet" />
+  <script src="../../js/api.js"></script>
+  <script src="../../js/auth.js"></script>
+  <script>ZuluAuth.requireAuth();</script>
+</head>
+<body class="g-sidenav-show bg-gray-100">
+  <aside class="sidenav navbar navbar-vertical navbar-expand-xs border-radius-lg fixed-start ms-2 bg-white my-2" id="sidenav-main">
+    <div class="sidenav-header">
+      <i class="fas fa-times p-3 cursor-pointer text-dark opacity-5 position-absolute end-0 top-0 d-none d-xl-none" aria-hidden="true" id="iconSidenav"></i>
+      <a class="navbar-brand px-4 py-3 m-0" href="/admin/dashboard/">
+        <img src="../../assets/img/logo-ct-dark.png" class="navbar-brand-img" width="26" height="26" alt="logo">
+        <span class="ms-1 text-sm text-dark">ZULU</span>
+      </a>
+    </div>
+    <hr class="horizontal dark mt-0 mb-2">
+    <div class="collapse navbar-collapse w-auto" id="sidenav-collapse-main">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link text-dark" href="/admin/dashboard/">
+            <i class="material-symbols-rounded opacity-5">dashboard</i>
+            <span class="nav-link-text ms-1">Dashboard</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link text-dark" href="/admin/notifications/">
+            <i class="material-symbols-rounded opacity-5">notifications</i>
+            <span class="nav-link-text ms-1">Notifications</span>
+            <span id="zulu-notifications-badge" class="badge badge-sm bg-gradient-danger ms-2 d-none" aria-live="polite"></span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="offers.view">
+          <a class="nav-link active bg-gradient-dark text-white" href="/admin/offers/">
+            <i class="material-symbols-rounded opacity-5">sell</i>
+            <span class="nav-link-text ms-1">Offers</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="bookings.view">
+          <a class="nav-link text-dark" href="/admin/bookings/">
+            <i class="material-symbols-rounded opacity-5">book_online</i>
+            <span class="nav-link-text ms-1">Bookings</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="invoices.view">
+          <a class="nav-link text-dark" href="/admin/invoices/">
+            <i class="material-symbols-rounded opacity-5">receipt_long</i>
+            <span class="nav-link-text ms-1">Invoices</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="payments.view">
+          <a class="nav-link text-dark" href="/admin/payments/">
+            <i class="material-symbols-rounded opacity-5">payments</i>
+            <span class="nav-link-text ms-1">Payments</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="commissions.view">
+          <a class="nav-link text-dark" href="/admin/commissions/">
+            <i class="material-symbols-rounded opacity-5">percent</i>
+            <span class="nav-link-text ms-1">Commissions</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="visas.view">
+          <a class="nav-link text-dark" href="/admin/visas/">
+            <i class="material-symbols-rounded opacity-5">article</i>
+            <span class="nav-link-text ms-1">Visas</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="companies.view">
+          <a class="nav-link text-dark" href="/admin/companies/">
+            <i class="material-symbols-rounded opacity-5">domain</i>
+            <span class="nav-link-text ms-1">Companies</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </aside>
+  <main class="main-content position-relative max-height-vh-100 h-100 border-radius-lg">
+    <nav class="navbar navbar-main navbar-expand-lg px-0 mx-3 shadow-none border-radius-xl" id="navbarBlur" data-scroll="true">
+      <div class="container-fluid py-1 px-3">
+        <nav aria-label="breadcrumb">
+          <ol class="breadcrumb bg-transparent mb-0 pb-0 pt-1 px-0 me-sm-6 me-5">
+            <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/admin/dashboard/">Admin</a></li>
+            <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/admin/offers/">Offers</a></li>
+            <li class="breadcrumb-item text-sm text-dark active" aria-current="page">Create</li>
+          </ol>
+        </nav>
+        <div class="collapse navbar-collapse mt-sm-0 mt-2 me-md-0 me-sm-4" id="navbar">
+          <ul class="navbar-nav ms-md-auto justify-content-end">
+            <li class="nav-item d-flex align-items-center">
+              <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="logout-btn">Log out</button>
+            </li>
+            <li class="nav-item d-xl-none ps-3 d-flex align-items-center">
+              <a href="javascript:;" class="nav-link text-body p-0" id="iconNavbarSidenav">
+                <div class="sidenav-toggler-inner">
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                </div>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    <div class="container-fluid py-4">
+      <div class="mb-3">
+        <a href="/admin/offers/" class="btn btn-sm btn-outline-dark mb-0">&larr; Back to offers</a>
+      </div>
+      <div class="row">
+        <div class="col-lg-8">
+          <div class="card">
+            <div class="card-header pb-0">
+              <h6>Create offer</h6>
+              <p class="text-sm text-muted mb-0">POST /api/offers</p>
+            </div>
+            <div class="card-body">
+              <div id="form-loading" class="text-center text-secondary py-3">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Loading companies…
+              </div>
+              <div id="form-load-error" class="alert alert-danger d-none" role="alert"></div>
+              <form id="offer-create-form" class="d-none" novalidate>
+                <div id="form-error" class="alert alert-danger py-2 d-none" role="alert"></div>
+                <div class="mb-3">
+                  <label for="company_id" class="form-label">Company</label>
+                  <select id="company_id" name="company_id" class="form-control border px-2" required>
+                    <option value="">Select company…</option>
+                  </select>
+                  <div id="err-company_id" class="invalid-feedback d-block text-xs text-danger mt-1 d-none" role="alert"></div>
+                </div>
+                <div class="mb-3">
+                  <label for="type" class="form-label">Type</label>
+                  <select id="type" name="type" class="form-control border px-2" required>
+                    <option value="">Select type…</option>
+                    <option value="flight">flight</option>
+                    <option value="hotel">hotel</option>
+                    <option value="transfer">transfer</option>
+                    <option value="car">car</option>
+                    <option value="excursion">excursion</option>
+                    <option value="package">package</option>
+                    <option value="visa">visa</option>
+                  </select>
+                  <div id="err-type" class="invalid-feedback d-block text-xs text-danger mt-1 d-none" role="alert"></div>
+                </div>
+                <div class="mb-3">
+                  <label for="title" class="form-label">Title</label>
+                  <input type="text" id="title" name="title" class="form-control border px-2" required autocomplete="off" />
+                  <div id="err-title" class="invalid-feedback d-block text-xs text-danger mt-1 d-none" role="alert"></div>
+                </div>
+                <div class="mb-3">
+                  <label for="price" class="form-label">Price</label>
+                  <input type="text" id="price" name="price" class="form-control border px-2" required inputmode="decimal" autocomplete="off" />
+                  <div id="err-price" class="invalid-feedback d-block text-xs text-danger mt-1 d-none" role="alert"></div>
+                </div>
+                <div class="mb-3">
+                  <label for="currency" class="form-label">Currency (ISO 4217, 3 letters)</label>
+                  <input type="text" id="currency" name="currency" class="form-control border px-2" required maxlength="3" autocomplete="off" />
+                  <div id="err-currency" class="invalid-feedback d-block text-xs text-danger mt-1 d-none" role="alert"></div>
+                </div>
+                <button type="submit" id="submit-btn" class="btn bg-gradient-dark mb-0" data-zulu-perm="offers.create">Create offer</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="../../assets/js/core/popper.min.js"></script>
+  <script src="../../assets/js/core/bootstrap.min.js"></script>
+  <script src="../../assets/js/plugins/perfect-scrollbar.min.js"></script>
+  <script src="../../assets/js/plugins/smooth-scrollbar.min.js"></script>
+  <script src="../../assets/js/material-dashboard.min.js?v=3.2.0"></script>
+  <script>
+    var FIELD_KEYS = ['company_id', 'type', 'title', 'price', 'currency'];
+    function clearErrors() {
+      document.getElementById('form-error').classList.add('d-none');
+      FIELD_KEYS.forEach(function (key) {
+        var el = document.getElementById('err-' + key);
+        if (el) {
+          el.textContent = '';
+          el.classList.add('d-none');
+        }
+        var input = document.getElementById(key);
+        if (input) input.classList.remove('is-invalid');
+      });
+    }
+    function applyValidationErrors(errors) {
+      if (!errors || typeof errors !== 'object') return;
+      Object.keys(errors).forEach(function (key) {
+        var msgs = errors[key];
+        if (!Array.isArray(msgs) || msgs.length === 0) return;
+        var el = document.getElementById('err-' + key);
+        if (el) {
+          el.textContent = msgs[0];
+          el.classList.remove('d-none');
+        }
+        var input = document.getElementById(key);
+        if (input) input.classList.add('is-invalid');
+      });
+    }
+    document.getElementById('logout-btn').addEventListener('click', function () {
+      ZuluApi.logout();
+    });
+    document.addEventListener('DOMContentLoaded', async function () {
+      var loadEl = document.getElementById('form-loading');
+      var loadErr = document.getElementById('form-load-error');
+      var form = document.getElementById('offer-create-form');
+      var sel = document.getElementById('company_id');
+      var result = await ZuluApi.requestJson('/companies', { method: 'GET' });
+      loadEl.classList.add('d-none');
+      if (result === null) return;
+      if (!result.ok) {
+        loadErr.textContent = result.message || 'Failed to load companies';
+        loadErr.classList.remove('d-none');
+        return;
+      }
+      var rows = result.data;
+      if (!Array.isArray(rows)) {
+        loadErr.textContent = 'Unexpected companies response';
+        loadErr.classList.remove('d-none');
+        return;
+      }
+      rows.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = String(c.id);
+        opt.textContent = String(c.id) + ' — ' + (c.name != null ? String(c.name) : '');
+        sel.appendChild(opt);
+      });
+      form.classList.remove('d-none');
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        clearErrors();
+        var btn = document.getElementById('submit-btn');
+        ZuluApi.setBusyState(btn, true);
+        try {
+          var companyId = document.getElementById('company_id').value;
+          var type = document.getElementById('type').value.trim();
+          var title = document.getElementById('title').value.trim();
+          var priceRaw = document.getElementById('price').value.trim();
+          var currency = document.getElementById('currency').value.trim().toUpperCase();
+          var priceNum = priceRaw === '' ? NaN : Number(priceRaw);
+          if (companyId === '' || Number.isNaN(parseInt(companyId, 10))) {
+            applyValidationErrors({ company_id: ['Select a company.'] });
+            return;
+          }
+          if (Number.isNaN(priceNum)) {
+            applyValidationErrors({ price: ['Enter a valid price.'] });
+            return;
+          }
+          var payload = {
+            company_id: parseInt(companyId, 10),
+            type: type,
+            title: title,
+            price: priceNum,
+            currency: currency,
+          };
+          var postResult = await ZuluApi.requestJson('/offers', {
+            method: 'POST',
+            body: payload,
+          });
+          if (postResult === null) return;
+          if (!postResult.ok) {
+            if (postResult.errors) {
+              applyValidationErrors(postResult.errors);
+            }
+            if (postResult.status !== 403 && !postResult.errors) {
+              ZuluApi.showInlineFeedback('form-error', 'error', postResult.message || 'Could not create offer', 0);
+            }
+            return;
+          }
+          var offer = postResult.data;
+          if (offer && offer.id != null) {
+            location.href = '/admin/offers/detail/?id=' + encodeURIComponent(String(offer.id));
+          } else {
+            ZuluApi.showInlineFeedback('form-error', 'error', 'Created but response had no id', 0);
+          }
+        } finally {
+          ZuluApi.setBusyState(btn, false);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

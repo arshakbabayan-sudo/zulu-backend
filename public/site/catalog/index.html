@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="apple-touch-icon" sizes="76x76" href="/admin/assets/img/apple-icon.png">
+  <link rel="icon" type="image/png" href="/admin/assets/img/favicon.png">
+  <title>ZULU — Browse offers</title>
+  <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700,900" />
+  <link href="/admin/assets/css/nucleo-icons.css" rel="stylesheet" />
+  <link href="/admin/assets/css/nucleo-svg.css" rel="stylesheet" />
+  <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link id="pagestyle" href="/admin/assets/css/material-dashboard.css?v=3.2.0" rel="stylesheet" />
+</head>
+<body class="bg-gray-100">
+  <div class="container position-sticky z-index-sticky top-0">
+    <div class="row">
+      <div class="col-12">
+        <nav class="navbar navbar-expand-lg blur border-radius-xl top-0 z-index-3 shadow position-absolute my-3 py-2 start-0 end-0 mx-4">
+          <div class="container-fluid ps-2 pe-0">
+            <a class="navbar-brand font-weight-bolder ms-lg-0 ms-3" href="/site/">ZULU</a>
+            <span class="navbar-text text-sm ms-auto me-3">
+              <a class="text-dark me-2" href="/site/" data-i18n="site.nav.home">Home</a>
+              <a class="text-dark me-2" href="/site/account/" data-i18n="site.nav.account">Account</a>
+              <a class="text-dark me-2" href="/site/login/" data-i18n="site.nav.sign_in">Sign in</a>
+              <a class="text-secondary text-sm" href="/admin/login/" data-i18n="site.nav.operator_admin">Operator admin</a>
+            </span>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </div>
+  <main class="main-content mt-8 pt-4">
+    <div class="container-fluid py-4">
+      <div class="mb-3">
+        <a href="/site/" class="btn btn-sm btn-outline-dark mb-0" data-i18n="site.nav.back">&larr; Back</a>
+      </div>
+      <div class="row">
+        <div class="col-12">
+          <div class="card my-4">
+            <div class="card-header p-0 position-relative mt-n4 mx-3 z-index-2">
+              <div class="bg-gradient-dark shadow-dark border-radius-lg pt-4 pb-3">
+                <h6 class="text-white text-capitalize ps-3 mb-0" data-i18n="site.catalog.published_offers">Published offers</h6>
+                <p class="text-white text-sm ps-3 mb-0 opacity-6">GET /api/catalog/offers</p>
+              </div>
+            </div>
+            <div class="card-body px-0 pb-2">
+              <div class="px-3 pb-3">
+                <label class="form-label text-sm" data-i18n="site.catalog.filter_by_type">Filter by type</label>
+                <select id="type-filter" class="form-select form-select-sm" style="max-width: 14rem;">
+                  <option value="" data-i18n="site.catalog.all_types">All types</option>
+                  <option value="flight">flight</option>
+                  <option value="hotel">hotel</option>
+                  <option value="transfer">transfer</option>
+                  <option value="car">car</option>
+                  <option value="excursion">excursion</option>
+                  <option value="package">package</option>
+                  <option value="visa">visa</option>
+                </select>
+              </div>
+              <div id="view-loading" class="text-center text-secondary py-5">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <span data-i18n="site.catalog.loading_offers">Loading offers…</span>
+              </div>
+              <div id="view-error" class="alert alert-danger mx-3 d-none" role="alert"></div>
+              <div id="view-empty" class="text-center text-secondary py-5 d-none" data-i18n="site.catalog.no_published_offers">No published offers.</div>
+              <div id="view-table" class="table-responsive p-0 d-none">
+                <table class="table align-items-center mb-0">
+                  <thead>
+                    <tr>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7" data-i18n="site.catalog.table.id">ID</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7" data-i18n="site.catalog.table.type">Type</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7" data-i18n="site.catalog.table.title">Title</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7" data-i18n="site.catalog.table.price">Price</th>
+                      <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7" data-i18n="site.catalog.table.currency">Currency</th>
+                    </tr>
+                  </thead>
+                  <tbody id="offers-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="/admin/assets/js/core/popper.min.js"></script>
+  <script src="/admin/assets/js/core/bootstrap.min.js"></script>
+  <script src="/admin/assets/js/material-dashboard.min.js?v=3.2.0"></script>
+  <script src="/site/js/public-api.js"></script>
+  <script>
+    function esc(s) {
+      var d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+    var OFFER_TYPES = ['flight', 'hotel', 'transfer', 'car', 'excursion', 'package', 'visa'];
+    function getInitialType() {
+      try {
+        var params = new URLSearchParams(location.search || '');
+        var rawType = (params.get('type') || '').trim().toLowerCase();
+        return OFFER_TYPES.indexOf(rawType) !== -1 ? rawType : '';
+      } catch (e) {
+        return '';
+      }
+    }
+    function normalizeRows(payload) {
+      if (Array.isArray(payload)) {
+        return payload;
+      }
+      if (payload && Array.isArray(payload.data)) {
+        return payload.data;
+      }
+      return null;
+    }
+    async function loadOffers() {
+      try {
+        var loading = document.getElementById('view-loading');
+        var errEl = document.getElementById('view-error');
+        var emptyEl = document.getElementById('view-empty');
+        var tableWrap = document.getElementById('view-table');
+        var tbody = document.getElementById('offers-tbody');
+        var type = (document.getElementById('type-filter').value || '').trim().toLowerCase();
+        var titleEl = document.querySelector('.card-header h6');
+        var subtitleEl = document.querySelector('.card-header p');
+        loading.classList.remove('d-none');
+        errEl.classList.add('d-none');
+        emptyEl.classList.add('d-none');
+        tableWrap.classList.add('d-none');
+        tbody.innerHTML = '';
+        if (titleEl) {
+          titleEl.textContent = type === 'package' ? 'Published packages' : 'Published offers';
+        }
+        if (subtitleEl) {
+          subtitleEl.textContent = type === 'package'
+            ? 'GET /api/catalog/offers?type=package'
+            : 'GET /api/catalog/offers';
+        }
+        var result;
+        try {
+          if (type === 'package') {
+            result = await ZuluPublicApi.packageOffers();
+          } else {
+            var qs = type ? 'type=' + encodeURIComponent(type) : '';
+            result = await ZuluPublicApi.catalogOffers(qs);
+          }
+        } catch (e) {
+          result = { ok: false, message: 'Network error while loading catalog' };
+        }
+        loading.classList.add('d-none');
+        if (!result || !result.ok) {
+          if (result && result.status === 401) {
+            errEl.textContent = 'Please sign in and try again.';
+          } else {
+            errEl.textContent = (result && result.message) || 'Failed to load catalog';
+          }
+          errEl.classList.remove('d-none');
+          return;
+        }
+        var payload = result.data;
+        var rows = normalizeRows(payload);
+        if (!Array.isArray(rows)) {
+          errEl.textContent = 'Unexpected response from catalog service';
+          errEl.classList.remove('d-none');
+          return;
+        }
+        if (rows.length === 0) {
+          emptyEl.textContent = type === 'package' ? 'No published packages.' : 'No published offers.';
+          emptyEl.classList.remove('d-none');
+          return;
+        }
+        tableWrap.classList.remove('d-none');
+        tbody.innerHTML = rows
+          .map(function (o) {
+            var rowId = (o && o.id != null) ? o.id : '';
+            var rowType = (o && o.type != null) ? String(o.type) : '';
+            var rowTitle = (o && o.title != null) ? o.title : '';
+            var rowPrice = (o && o.price != null) ? o.price : '';
+            var rowCurrency = (o && o.currency != null) ? o.currency : '';
+            var clickable = OFFER_TYPES.indexOf(rowType) !== -1 && rowId !== '';
+            var tr = clickable
+              ? '<tr class="cursor-pointer catalog-detail-row" data-offer-id="' + esc(rowId) + '" style="cursor:pointer">'
+              : '<tr>';
+            return (
+              tr +
+              '<td><span class="text-xs font-weight-bold">' + esc(rowId) + '</span></td>' +
+              '<td><span class="text-xs">' + esc(rowType) + '</span></td>' +
+              '<td><span class="text-xs">' + esc(rowTitle) + '</span></td>' +
+              '<td><span class="text-xs">' + esc(rowPrice) + '</span></td>' +
+              '<td><span class="text-xs">' + esc(rowCurrency) + '</span></td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+        tbody.querySelectorAll('.catalog-detail-row').forEach(function (tr) {
+          tr.addEventListener('click', function () {
+            var oid = tr.getAttribute('data-offer-id');
+            if (!/^\d+$/.test(String(oid || ''))) return;
+            var suffix = '';
+            if (type === 'package') {
+              suffix = '&from=package';
+            }
+            location.href = '/site/catalog/detail/?id=' + encodeURIComponent(oid) + suffix;
+          });
+        });
+      } catch (unexpected) {
+        var errNode = document.getElementById('view-error');
+        var loadingNode = document.getElementById('view-loading');
+        if (loadingNode) loadingNode.classList.add('d-none');
+        if (errNode) {
+          errNode.textContent = 'Failed to load catalog';
+          errNode.classList.remove('d-none');
+        }
+      }
+    }
+    document.getElementById('type-filter').addEventListener('change', loadOffers);
+    document.addEventListener('DOMContentLoaded', function () {
+      document.getElementById('type-filter').value = getInitialType();
+      loadOffers();
+    });
+  </script>
+</body>
+</html>

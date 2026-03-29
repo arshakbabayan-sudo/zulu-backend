@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="apple-touch-icon" sizes="76x76" href="../../assets/img/apple-icon.png">
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png">
+  <title>ZULU — Invoice detail</title>
+  <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700,900" />
+  <link href="../../assets/css/nucleo-icons.css" rel="stylesheet" />
+  <link href="../../assets/css/nucleo-svg.css" rel="stylesheet" />
+  <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link id="pagestyle" href="../../assets/css/material-dashboard.css?v=3.2.0" rel="stylesheet" />
+  <script src="../../js/api.js"></script>
+  <script src="../../js/auth.js"></script>
+  <script>ZuluAuth.requireAuth();</script>
+</head>
+<body class="g-sidenav-show bg-gray-100">
+  <aside class="sidenav navbar navbar-vertical navbar-expand-xs border-radius-lg fixed-start ms-2 bg-white my-2" id="sidenav-main">
+    <div class="sidenav-header">
+      <i class="fas fa-times p-3 cursor-pointer text-dark opacity-5 position-absolute end-0 top-0 d-none d-xl-none" aria-hidden="true" id="iconSidenav"></i>
+      <a class="navbar-brand px-4 py-3 m-0" href="/admin/dashboard/">
+        <img src="../../assets/img/logo-ct-dark.png" class="navbar-brand-img" width="26" height="26" alt="logo">
+        <span class="ms-1 text-sm text-dark">ZULU</span>
+      </a>
+    </div>
+    <hr class="horizontal dark mt-0 mb-2">
+    <div class="collapse navbar-collapse w-auto" id="sidenav-collapse-main">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link text-dark" href="/admin/dashboard/">
+            <i class="material-symbols-rounded opacity-5">dashboard</i>
+            <span class="nav-link-text ms-1">Dashboard</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link text-dark" href="/admin/notifications/">
+            <i class="material-symbols-rounded opacity-5">notifications</i>
+            <span class="nav-link-text ms-1">Notifications</span>
+            <span id="zulu-notifications-badge" class="badge badge-sm bg-gradient-danger ms-2 d-none" aria-live="polite"></span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="offers.view">
+          <a class="nav-link text-dark" href="/admin/offers/">
+            <i class="material-symbols-rounded opacity-5">sell</i>
+            <span class="nav-link-text ms-1">Offers</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="bookings.view">
+          <a class="nav-link text-dark" href="/admin/bookings/">
+            <i class="material-symbols-rounded opacity-5">book_online</i>
+            <span class="nav-link-text ms-1">Bookings</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="invoices.view">
+          <a class="nav-link active bg-gradient-dark text-white" href="/admin/invoices/">
+            <i class="material-symbols-rounded opacity-5">receipt_long</i>
+            <span class="nav-link-text ms-1">Invoices</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="payments.view">
+          <a class="nav-link text-dark" href="/admin/payments/">
+            <i class="material-symbols-rounded opacity-5">payments</i>
+            <span class="nav-link-text ms-1">Payments</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="commissions.view">
+          <a class="nav-link text-dark" href="/admin/commissions/">
+            <i class="material-symbols-rounded opacity-5">percent</i>
+            <span class="nav-link-text ms-1">Commissions</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="visas.view">
+          <a class="nav-link text-dark" href="/admin/visas/">
+            <i class="material-symbols-rounded opacity-5">article</i>
+            <span class="nav-link-text ms-1">Visas</span>
+          </a>
+        </li>
+        <li class="nav-item" data-zulu-perm="companies.view">
+          <a class="nav-link text-dark" href="/admin/companies/">
+            <i class="material-symbols-rounded opacity-5">domain</i>
+            <span class="nav-link-text ms-1">Companies</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </aside>
+  <main class="main-content position-relative max-height-vh-100 h-100 border-radius-lg">
+    <nav class="navbar navbar-main navbar-expand-lg px-0 mx-3 shadow-none border-radius-xl" id="navbarBlur" data-scroll="true">
+      <div class="container-fluid py-1 px-3">
+        <nav aria-label="breadcrumb">
+          <ol class="breadcrumb bg-transparent mb-0 pb-0 pt-1 px-0 me-sm-6 me-5">
+            <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/admin/dashboard/">Admin</a></li>
+            <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/admin/invoices/">Invoices</a></li>
+            <li class="breadcrumb-item text-sm text-dark active" aria-current="page">Detail</li>
+          </ol>
+        </nav>
+        <div class="collapse navbar-collapse mt-sm-0 mt-2 me-md-0 me-sm-4" id="navbar">
+          <ul class="navbar-nav ms-md-auto justify-content-end">
+            <li class="nav-item d-flex align-items-center">
+              <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="logout-btn">Log out</button>
+            </li>
+            <li class="nav-item d-xl-none ps-3 d-flex align-items-center">
+              <a href="javascript:;" class="nav-link text-body p-0" id="iconNavbarSidenav">
+                <div class="sidenav-toggler-inner">
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                  <i class="sidenav-toggler-line"></i>
+                </div>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    <div class="container-fluid py-4">
+      <div class="mb-3">
+        <a href="/admin/invoices/" class="btn btn-sm btn-outline-dark mb-0">&larr; Back to invoices</a>
+      </div>
+      <div class="row">
+        <div class="col-lg-8">
+          <div class="card">
+            <div class="card-header pb-0">
+              <h6>Invoice</h6>
+              <p class="text-sm text-muted mb-0" id="invoice-subtitle">GET /api/invoices/{invoice}</p>
+            </div>
+            <div class="card-body">
+              <div id="view-loading" class="text-center text-secondary py-4">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Loading…
+              </div>
+              <div id="view-error" class="alert alert-danger d-none" role="alert"></div>
+              <div id="view-detail" class="d-none">
+                <div id="detail-feedback" class="alert d-none mb-3" role="alert"></div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                  <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="invoice-btn-issue" data-zulu-perm="invoices.issue">Issue</button>
+                  <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="invoice-btn-pay" data-zulu-perm="invoices.pay">Pay</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary mb-0" id="invoice-btn-cancel" data-zulu-perm="invoices.cancel">Cancel</button>
+                  <button type="button" class="btn btn-sm btn-outline-dark mb-0" id="invoice-btn-create-payment" data-zulu-perm="payments.create">Create payment</button>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm align-items-center mb-0">
+                    <tbody id="invoice-fields"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="../../assets/js/core/popper.min.js"></script>
+  <script src="../../assets/js/core/bootstrap.min.js"></script>
+  <script src="../../assets/js/plugins/perfect-scrollbar.min.js"></script>
+  <script src="../../assets/js/plugins/smooth-scrollbar.min.js"></script>
+  <script src="../../assets/js/material-dashboard.min.js?v=3.2.0"></script>
+  <script>
+    function formatDateTime(v) {
+      if (v == null || v === '') return '—';
+      var d = new Date(v);
+      if (Number.isNaN(d.getTime())) return '—';
+      return d.toLocaleString();
+    }
+    function esc(s) {
+      var d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+    function cell(inv, key) {
+      if (!Object.prototype.hasOwnProperty.call(inv, key)) return '—';
+      var v = inv[key];
+      if (v === null || v === '') return '—';
+      if (key === 'created_at' || key === 'updated_at') return formatDateTime(v);
+      return String(v);
+    }
+    function buildRows(inv) {
+      var keys = ['id', 'booking_id', 'total_amount', 'status', 'created_at', 'updated_at'];
+      return keys
+        .map(function (key) {
+          return (
+            '<tr><td class="text-secondary text-sm w-25">' +
+            esc(key) +
+            '</td><td class="text-sm font-weight-bold">' +
+            esc(cell(inv, key)) +
+            '</td></tr>'
+          );
+        })
+        .join('');
+    }
+    function applyInvoiceToView(inv, idStr) {
+      document.getElementById('invoice-subtitle').textContent = 'GET /api/invoices/' + String(idStr);
+      document.getElementById('invoice-fields').innerHTML = buildRows(inv);
+    }
+    function invoiceDetailSuccessMessage(action) {
+      if (action === 'issue') return 'Issued.';
+      if (action === 'pay') return 'Paid.';
+      return 'Cancelled.';
+    }
+    document.getElementById('logout-btn').addEventListener('click', function () {
+      ZuluApi.logout();
+    });
+    document.addEventListener('DOMContentLoaded', async function () {
+      var params = new URLSearchParams(location.search);
+      var id = params.get('id');
+      var loading = document.getElementById('view-loading');
+      var errEl = document.getElementById('view-error');
+      var detailEl = document.getElementById('view-detail');
+      var issueBtn = document.getElementById('invoice-btn-issue');
+      var payBtn = document.getElementById('invoice-btn-pay');
+      var cancelBtn = document.getElementById('invoice-btn-cancel');
+      var createPayBtn = document.getElementById('invoice-btn-create-payment');
+      if (!id) {
+        loading.classList.add('d-none');
+        errEl.textContent = 'Missing invoice id.';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      async function loadInvoice() {
+        var result = await ZuluApi.requestJson('/invoices/' + encodeURIComponent(id), { method: 'GET' });
+        loading.classList.add('d-none');
+        if (result === null) return;
+        if (!result.ok) {
+          errEl.textContent = result.message || 'Failed to load invoice';
+          errEl.classList.remove('d-none');
+          return;
+        }
+        var inv = result.data;
+        if (!inv || typeof inv !== 'object') {
+          errEl.textContent = 'Invalid invoice data';
+          errEl.classList.remove('d-none');
+          return;
+        }
+        errEl.classList.add('d-none');
+        applyInvoiceToView(inv, id);
+        detailEl.classList.remove('d-none');
+        if (window.ZuluAuth) window.ZuluAuth.applyPermissionVisibility();
+      }
+      async function runAction(action) {
+        if (action === 'cancel' && !ZuluApi.confirm('Cancel this invoice?')) return;
+        var result = null;
+        ZuluApi.setBusyState([issueBtn, payBtn, cancelBtn, createPayBtn], true);
+        try {
+          result = await ZuluApi.postLifecycleJson('/invoices/' + encodeURIComponent(id) + '/' + action);
+        } finally {
+          ZuluApi.setBusyState([issueBtn, payBtn, cancelBtn, createPayBtn], false);
+        }
+        if (result === null) return;
+        if (!result.ok) {
+          if (result.status !== 403) {
+            ZuluApi.showInlineFeedback('detail-feedback', 'error', result.message || 'Action failed');
+          }
+          return;
+        }
+        ZuluApi.showInlineFeedback('detail-feedback', 'success', invoiceDetailSuccessMessage(action));
+        if (result.data && typeof result.data === 'object') {
+          applyInvoiceToView(result.data, id);
+        } else {
+          loading.classList.remove('d-none');
+          detailEl.classList.add('d-none');
+          await loadInvoice();
+        }
+      }
+      issueBtn.addEventListener('click', function () {
+        runAction('issue');
+      });
+      payBtn.addEventListener('click', function () {
+        runAction('pay');
+      });
+      cancelBtn.addEventListener('click', function () {
+        runAction('cancel');
+      });
+      createPayBtn.addEventListener('click', async function () {
+        var result = null;
+        ZuluApi.setBusyState([createPayBtn, issueBtn, payBtn, cancelBtn], true);
+        try {
+          result = await ZuluApi.requestJson('/payments', {
+            method: 'POST',
+            body: { invoice_id: parseInt(id, 10) },
+          });
+        } finally {
+          ZuluApi.setBusyState([createPayBtn, issueBtn, payBtn, cancelBtn], false);
+        }
+        if (result === null) return;
+        if (!result.ok) {
+          if (result.status !== 403) {
+            ZuluApi.showInlineFeedback('detail-feedback', 'error', ZuluApi.messageFromRequestError(result, 'Could not create payment'));
+          }
+          return;
+        }
+        if (result.data && result.data.id != null) {
+          location.href = '/admin/payments/detail/?id=' + encodeURIComponent(String(result.data.id));
+        } else {
+          ZuluApi.showInlineFeedback('detail-feedback', 'error', 'Created but response had no id');
+        }
+      });
+      await loadInvoice();
+    });
+  </script>
+</body>
+</html>

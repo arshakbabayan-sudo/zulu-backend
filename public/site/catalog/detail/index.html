@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="apple-touch-icon" sizes="76x76" href="/admin/assets/img/apple-icon.png">
+  <link rel="icon" type="image/png" href="/admin/assets/img/favicon.png">
+  <title>ZULU — Offer detail</title>
+  <link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700,900" />
+  <link href="/admin/assets/css/nucleo-icons.css" rel="stylesheet" />
+  <link href="/admin/assets/css/nucleo-svg.css" rel="stylesheet" />
+  <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link id="pagestyle" href="/admin/assets/css/material-dashboard.css?v=3.2.0" rel="stylesheet" />
+</head>
+<body class="bg-gray-100">
+  <div class="container position-sticky z-index-sticky top-0">
+    <div class="row">
+      <div class="col-12">
+        <nav class="navbar navbar-expand-lg blur border-radius-xl top-0 z-index-3 shadow position-absolute my-3 py-2 start-0 end-0 mx-4">
+          <div class="container-fluid ps-2 pe-0">
+            <a class="navbar-brand font-weight-bolder ms-lg-0 ms-3" href="/site/">ZULU</a>
+            <span class="navbar-text text-sm ms-auto me-3">
+              <a class="text-dark me-2" href="/site/catalog/">Catalog</a>
+              <a class="text-dark me-2" href="/site/account/">Account</a>
+              <a class="text-dark me-2" href="/site/login/">Sign in</a>
+              <a class="text-secondary text-sm" href="/admin/login/">Operator admin</a>
+            </span>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </div>
+  <main class="main-content mt-8 pt-4">
+    <div class="container-fluid py-4">
+      <div class="mb-3">
+        <a href="/site/catalog/" class="btn btn-sm btn-outline-dark mb-0">&larr; Back to catalog</a>
+      </div>
+      <div class="row">
+        <div class="col-lg-8">
+          <div class="card mb-4">
+            <div class="card-header pb-0">
+              <h6 id="detail-title">Offer</h6>
+              <p class="text-sm text-muted mb-0" id="detail-subtitle">GET /api/catalog/offers/{id}</p>
+            </div>
+            <div class="card-body">
+              <div id="view-loading" class="text-center text-secondary py-4">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Loading…
+              </div>
+              <div id="view-error" class="alert alert-danger d-none" role="alert"></div>
+              <div id="view-detail" class="d-none">
+                <div class="table-responsive">
+                  <table class="table table-sm align-items-center mb-0">
+                    <tbody id="offer-fields"></tbody>
+                  </table>
+                </div>
+                <h6 class="mt-4 mb-2 text-sm" id="module-heading">Module</h6>
+                <div class="table-responsive">
+                  <table class="table table-sm align-items-center mb-0">
+                    <tbody id="module-fields"></tbody>
+                  </table>
+                </div>
+                <div class="mt-4 pt-3 border-top">
+                  <h6 class="mb-2 text-sm">Book</h6>
+                  <p class="text-sm text-muted mb-2" id="book-hint">Sign in to create a booking from this offer.</p>
+                  <button type="button" class="btn btn-sm bg-gradient-dark mb-0 d-none" id="btn-book">Book this offer</button>
+                  <a class="btn btn-sm btn-outline-dark mb-0 d-none" id="link-signin-book" href="/site/login/">Sign in to book</a>
+                  <div id="book-error" class="alert alert-danger py-2 mt-2 d-none" role="alert"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="/admin/assets/js/core/popper.min.js"></script>
+  <script src="/admin/assets/js/core/bootstrap.min.js"></script>
+  <script src="/admin/assets/js/material-dashboard.min.js?v=3.2.0"></script>
+  <script src="/site/js/public-api.js"></script>
+  <script>
+    var DETAIL_TYPES = ['flight', 'hotel', 'transfer', 'car', 'excursion', 'package', 'visa'];
+    function esc(s) {
+      var d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+    function formatWhen(v) {
+      if (v == null || v === '') return '—';
+      if (typeof v === 'string' && v.length > 4 && v.indexOf('T') !== -1) {
+        try {
+          var dt = new Date(v);
+          if (!isNaN(dt.getTime())) return esc(dt.toLocaleString());
+        } catch (e) {}
+      }
+      return esc(String(v));
+    }
+    function cell(offer, key) {
+      if (!Object.prototype.hasOwnProperty.call(offer, key)) return '—';
+      var v = offer[key];
+      if (v === null || v === '') return '—';
+      return String(v);
+    }
+    function normalizeDetailPayload(payload) {
+      if (!payload || typeof payload !== 'object') return null;
+      if (payload.id != null) return payload;
+      if (payload.data && typeof payload.data === 'object' && payload.data.id != null) {
+        return payload.data;
+      }
+      return null;
+    }
+    function packageLabelFor(key) {
+      if (key === 'destination') return 'Destination';
+      if (key === 'duration_days') return 'Duration (days)';
+      if (key === 'package_type') return 'Package type';
+      return key;
+    }
+    function buildCoreRows(offer) {
+      var keys = ['id', 'type', 'title', 'price', 'currency'];
+      return keys
+        .map(function (key) {
+          return (
+            '<tr><td class="text-secondary text-sm w-25">' +
+            esc(key) +
+            '</td><td class="text-sm font-weight-bold">' +
+            esc(cell(offer, key)) +
+            '</td></tr>'
+          );
+        })
+        .join('');
+    }
+    function buildModuleRows(offer) {
+      var t = offer.type;
+      if (DETAIL_TYPES.indexOf(t) === -1) return '';
+      var mod = offer[t];
+      if (!mod || typeof mod !== 'object') {
+        if (t === 'package') {
+          return '<tr><td colspan="2" class="text-sm text-muted">Package module details are not available for this record.</td></tr>';
+        }
+        return '<tr><td colspan="2" class="text-sm text-muted">No module row for this offer.</td></tr>';
+      }
+      var keys = Object.keys(mod);
+      if (keys.length === 0) {
+        if (t === 'package') {
+          return '<tr><td colspan="2" class="text-sm text-muted">Package module details are empty for this record.</td></tr>';
+        }
+        return '<tr><td colspan="2" class="text-sm text-muted">No module fields available.</td></tr>';
+      }
+      return Object.keys(mod)
+        .map(function (key) {
+          var label = t === 'package' ? packageLabelFor(key) : key;
+          return (
+            '<tr><td class="text-secondary text-sm w-25">' +
+            esc(label) +
+            '</td><td class="text-sm font-weight-bold">' +
+            formatWhen(mod[key]) +
+            '</td></tr>'
+          );
+        })
+        .join('');
+    }
+    function resolvePackageId(offer) {
+      var moduleRow = offer && offer.package && typeof offer.package === 'object' ? offer.package : null;
+      if (!moduleRow) return null;
+      if (moduleRow.id != null && /^\d+$/.test(String(moduleRow.id))) {
+        return Number(moduleRow.id);
+      }
+      if (moduleRow.package_id != null && /^\d+$/.test(String(moduleRow.package_id))) {
+        return Number(moduleRow.package_id);
+      }
+      return null;
+    }
+    document.addEventListener('DOMContentLoaded', async function () {
+      var params = new URLSearchParams(location.search);
+      var id = params.get('id');
+      var from = (params.get('from') || '').trim().toLowerCase();
+      var loading = document.getElementById('view-loading');
+      var errEl = document.getElementById('view-error');
+      var detailEl = document.getElementById('view-detail');
+      var offerTbody = document.getElementById('offer-fields');
+      var moduleTbody = document.getElementById('module-fields');
+      var moduleHeading = document.getElementById('module-heading');
+      if (typeof id === 'string') id = id.trim();
+      if (!id) {
+        loading.classList.add('d-none');
+        errEl.textContent = 'Missing offer id.';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      if (!/^\d+$/.test(String(id))) {
+        loading.classList.add('d-none');
+        errEl.textContent = 'Invalid offer id.';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      document.getElementById('detail-subtitle').textContent = 'GET /api/catalog/offers/' + String(id);
+      var result;
+      try {
+        result = await ZuluPublicApi.catalogOffer(id);
+      } catch (eFetch) {
+        result = { ok: false, message: 'Offer not found', status: 0 };
+      }
+      loading.classList.add('d-none');
+      if (!result || !result.ok) {
+        errEl.textContent = (result && result.message) || 'Offer not found';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      var offer = normalizeDetailPayload(result.data);
+      if (!offer || typeof offer !== 'object' || offer.id == null) {
+        errEl.textContent = 'Invalid data';
+        errEl.classList.remove('d-none');
+        return;
+      }
+      if (from === 'package' && offer.type !== 'package') {
+        errEl.textContent = 'This detail was opened from package flow, but the selected record is not a package.';
+        errEl.classList.remove('d-none');
+      }
+      document.getElementById('detail-title').textContent = (offer.title == null || offer.title === '') ? 'Offer' : String(offer.title);
+      moduleHeading.textContent = 'Module (' + ((offer.type == null || offer.type === '') ? '—' : String(offer.type)) + ')';
+      offerTbody.innerHTML = buildCoreRows(offer);
+      moduleTbody.innerHTML = buildModuleRows(offer);
+      detailEl.classList.remove('d-none');
+      var btnBook = document.getElementById('btn-book');
+      var linkSignin = document.getElementById('link-signin-book');
+      var bookErr = document.getElementById('book-error');
+      linkSignin.href =
+        '/site/login/?next=' + encodeURIComponent(location.pathname + location.search);
+      if (ZuluPublicApi.getToken()) {
+        btnBook.classList.remove('d-none');
+        linkSignin.classList.add('d-none');
+        document.getElementById('book-hint').textContent = offer.type === 'package'
+          ? 'Creates a booking from this package offer, then continues to checkout.'
+          : 'Creates a booking, then continues to checkout.';
+        btnBook.textContent = offer.type === 'package' ? 'Book this package offer' : 'Book this offer';
+      } else {
+        btnBook.classList.add('d-none');
+        linkSignin.classList.remove('d-none');
+      }
+      btnBook.onclick = async function () {
+        bookErr.classList.add('d-none');
+        btnBook.disabled = true;
+        var r;
+        try {
+          if (offer.type === 'package') {
+            var packageId = resolvePackageId(offer);
+            if (!Number.isInteger(packageId) || packageId <= 0) {
+              btnBook.disabled = false;
+              bookErr.textContent = 'Package detail is missing package id for ordering.';
+              bookErr.classList.remove('d-none');
+              return;
+            }
+            r = await ZuluPublicApi.packageOrderCreate(packageId);
+          } else {
+            var offerId = Number(id);
+            if (!Number.isInteger(offerId) || offerId <= 0) {
+              btnBook.disabled = false;
+              bookErr.textContent = 'Invalid offer id.';
+              bookErr.classList.remove('d-none');
+              return;
+            }
+            r = await ZuluPublicApi.marketplaceBook(offerId);
+          }
+        } catch (eBook) {
+          r = { ok: false, message: 'Could not create booking.', status: 0 };
+        }
+        btnBook.disabled = false;
+        if (r && r.ok && r.data && Number.isInteger(Number(r.data.id)) && Number(r.data.id) > 0) {
+          if (offer.type === 'package') {
+            location.href = '/site/checkout/?order=' + encodeURIComponent(String(r.data.id));
+          } else {
+            location.href = '/site/checkout/?booking=' + encodeURIComponent(String(r.data.id));
+          }
+          return;
+        }
+        if (r && r.status === 422) {
+          if (r.errors && r.errors.offer_id && r.errors.offer_id[0]) {
+            bookErr.textContent = String(r.errors.offer_id[0]);
+          } else {
+            bookErr.textContent = r.message || 'Booking validation failed.';
+          }
+        } else if (r && r.status === 401) {
+          bookErr.textContent = 'Please sign in to create a booking.';
+        } else if (r && r.status >= 500) {
+          bookErr.textContent = 'Server error while creating booking. Please try again.';
+        } else if (r && r.ok && r.data && !r.data.id) {
+          bookErr.textContent = 'Booking was created with an invalid response.';
+        } else {
+          bookErr.textContent = (r && r.message) || 'Could not create booking.';
+        }
+        bookErr.classList.remove('d-none');
+      };
+    });
+  </script>
+</body>
+</html>
