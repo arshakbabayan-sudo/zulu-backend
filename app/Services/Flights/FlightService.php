@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\In;
 use Illuminate\Validation\ValidationException;
 
 class FlightService
@@ -24,6 +25,22 @@ class FlightService
      * @var list<string>
      */
     public const LISTING_FILTER_KEYS = [
+        'country',
+        'city',
+        'airport',
+        'airline',
+        'date',
+        'date_from',
+        'date_to',
+        'transit',
+        'class',
+        'carry_on',
+        'cancellation',
+        'registration',
+        'reservation',
+        'quantity',
+        'invoice_id',
+        'user_email',
         'departure_country',
         'departure_city',
         'departure_airport',
@@ -46,8 +63,11 @@ class FlightService
         'service_type',
         'min_price',
         'max_price',
+        'price_min',
+        'price_max',
         'only_active_flights',
         'only_published_offers',
+        'appearance_context',
     ];
 
     /**
@@ -93,6 +113,9 @@ class FlightService
             'policy_notes' => null,
             'extra_baggage_allowed' => false,
             'is_package_eligible' => true,
+            'appears_in_web' => true,
+            'appears_in_admin' => true,
+            'appears_in_zulu_admin' => true,
             'child_price' => 0,
             'infant_price' => 0,
         ];
@@ -103,9 +126,7 @@ class FlightService
             }
         }
 
-        $data['company_id'] = $offer->company_id;
-
-        $v = Validator::make($data, $this->createValidationRules());
+        $v = Validator::make($data, $this->flightStoreValidationRules());
         $v->after(function (\Illuminate\Validation\Validator $validator) use ($data): void {
             if ($validator->errors()->isNotEmpty()) {
                 return;
@@ -118,18 +139,13 @@ class FlightService
         });
 
         $clean = $v->validate();
-
-        if ((int) $clean['company_id'] !== (int) $offer->company_id) {
-            throw ValidationException::withMessages([
-                'company_id' => ['Company must match the offer company.'],
-            ]);
-        }
+        $clean['company_id'] = $offer->company_id;
 
         $payload = Arr::only($clean, (new Flight)->getFillable());
 
-        return DB::transaction(function () use ($payload, $offer) {
+        return DB::transaction(function () use ($payload) {
             $flight = Flight::query()->create($payload);
-            $offer->update(['price' => $payload['adult_price']]);
+            $this->syncOfferPriceForFlight($flight);
 
             return $flight->fresh();
         });
@@ -154,7 +170,7 @@ class FlightService
 
         $adultPriceSubmitted = array_key_exists('adult_price', $data);
 
-        $createRules = $this->createValidationRules();
+        $createRules = $this->flightStoreValidationRules();
         $partialRules = [];
         foreach (array_keys($data) as $key) {
             if (! isset($createRules[$key])) {
@@ -209,8 +225,8 @@ class FlightService
             $flight->fill(Arr::only($clean, array_keys($data)));
             $flight->save();
 
-            if ($adultPriceSubmitted) {
-                $flight->offer->update(['price' => $flight->adult_price]);
+            if ($adultPriceSubmitted && ! FlightCabin::query()->where('flight_id', $flight->id)->exists()) {
+                $this->syncOfferPriceForFlight($flight->refresh());
             }
         });
 
@@ -227,7 +243,7 @@ class FlightService
      */
     public function addCabin(Flight $flight, array $data): FlightCabin
     {
-        $clean = Validator::make($data, $this->cabinPersistValidationRules())->validate();
+        $clean = Validator::make($data, $this->cabinStoreValidationRules())->validate();
 
         if (FlightCabin::query()
             ->where('flight_id', $flight->id)
@@ -241,7 +257,12 @@ class FlightService
         $payload = Arr::only($clean, (new FlightCabin)->getFillable());
         $payload['flight_id'] = $flight->id;
 
-        return FlightCabin::query()->create($payload)->fresh();
+        return DB::transaction(function () use ($payload, $flight) {
+            $cabin = FlightCabin::query()->create($payload)->fresh();
+            $this->syncOfferPriceForFlight($flight->refresh());
+
+            return $cabin;
+        });
     }
 
     /**
@@ -260,7 +281,7 @@ class FlightService
             ]);
         }
 
-        $baseRules = $this->cabinPersistValidationRules();
+        $baseRules = $this->cabinStoreValidationRules();
         $partialRules = [];
         foreach (array_keys($data) as $key) {
             if (! isset($baseRules[$key])) {
@@ -280,12 +301,45 @@ class FlightService
         $cabin->fill(Arr::only($clean, array_keys($clean)));
         $cabin->save();
 
+        if ($cabin->wasChanged('adult_price')) {
+            $this->syncOfferPriceForFlight($cabin->flight->refresh());
+        }
+
         return $cabin->fresh();
     }
 
     public function deleteCabin(FlightCabin $cabin): void
     {
+        $flight = $cabin->flight;
         $cabin->delete();
+        $this->syncOfferPriceForFlight($flight->refresh());
+    }
+
+    /**
+     * Cheapest sellable adult price for the flight offer: MIN(cabin adult_price) when any cabin exists,
+     * otherwise {@see Flight::$adult_price}.
+     */
+    private function computeFlightOfferPrice(Flight $flight): string
+    {
+        $minCabin = FlightCabin::query()
+            ->where('flight_id', $flight->id)
+            ->min('adult_price');
+
+        if ($minCabin !== null) {
+            return (string) $minCabin;
+        }
+
+        return (string) $flight->adult_price;
+    }
+
+    private function syncOfferPriceForFlight(Flight $flight): void
+    {
+        $offer = $flight->offer;
+        if ($offer === null) {
+            return;
+        }
+
+        $offer->update(['price' => $this->computeFlightOfferPrice($flight)]);
     }
 
     public function listCabins(Flight $flight): Collection
@@ -294,9 +348,9 @@ class FlightService
     }
 
     /**
-     * @return array<string, list<string|\Illuminate\Validation\Rules\In>>
+     * @return array<string, list<string|In>>
      */
-    private function cabinPersistValidationRules(): array
+    public function cabinStoreValidationRules(): array
     {
         return [
             'cabin_class' => ['required', 'string', Rule::in(FlightCabin::CABIN_CLASSES)],
@@ -363,6 +417,7 @@ class FlightService
     {
         $query = $this->tenantScopedFlightQuery($companyIds);
         $this->applyFilters($query, $filters);
+        $this->applyAppearanceContextConstraints($query, $filters['appearance_context'] ?? null);
         $this->applyDefaultFlightListOrdering($query);
 
         return $query->with(['offer', 'company'])->get();
@@ -376,6 +431,7 @@ class FlightService
     {
         $query = $this->tenantScopedFlightQuery($companyIds);
         $this->applyFilters($query, $filters);
+        $this->applyAppearanceContextConstraints($query, $filters['appearance_context'] ?? null);
         $this->applyDefaultFlightListOrdering($query);
 
         return $query->with(['offer', 'company'])->paginate($perPage);
@@ -415,8 +471,8 @@ class FlightService
         }
 
         $publishedOnly = $this->normalizeListingBoolean($filters['only_published_offers'] ?? null) === true;
-        $minPrice = $this->nullableListingNumeric($filters['min_price'] ?? null);
-        $maxPrice = $this->nullableListingNumeric($filters['max_price'] ?? null);
+        $minPrice = $this->nullableListingNumeric($filters['min_price'] ?? $filters['price_min'] ?? null);
+        $maxPrice = $this->nullableListingNumeric($filters['max_price'] ?? $filters['price_max'] ?? null);
         if ($publishedOnly || $minPrice !== null || $maxPrice !== null) {
             $query->whereHas('offer', function (Builder $q) use ($publishedOnly, $minPrice, $maxPrice): void {
                 if ($publishedOnly) {
@@ -429,6 +485,45 @@ class FlightService
                     $q->where('price', '<=', $maxPrice);
                 }
             });
+        }
+
+        $table = $query->getModel()->getTable();
+
+        foreach (['country', 'city', 'airport'] as $routeFilterKey) {
+            if (! array_key_exists($routeFilterKey, $filters)) {
+                continue;
+            }
+
+            $value = $filters[$routeFilterKey];
+            if ($value === null || $value === '' || (! is_string($value) && ! is_numeric($value))) {
+                continue;
+            }
+
+            $needle = trim((string) $value);
+            if ($needle === '') {
+                continue;
+            }
+
+            $columnStem = $routeFilterKey;
+            $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
+            $query->where(function (Builder $q) use ($table, $columnStem, $safeNeedle): void {
+                $q->where($table.'.departure_'.$columnStem, 'like', $safeNeedle)
+                    ->orWhere($table.'.arrival_'.$columnStem, 'like', $safeNeedle);
+            });
+        }
+
+        if (array_key_exists('airline', $filters)) {
+            $airline = $filters['airline'];
+            if ($airline !== null && $airline !== '' && (is_string($airline) || is_numeric($airline))) {
+                $needle = trim((string) $airline);
+                if ($needle !== '') {
+                    $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
+                    $query->whereHas('offer', function (Builder $q) use ($safeNeedle): void {
+                        // Safe fallback until a dedicated airline field is introduced.
+                        $q->where('title', 'like', $safeNeedle);
+                    });
+                }
+            }
         }
 
         $stringEquals = [
@@ -474,10 +569,20 @@ class FlightService
             $query->where($query->getModel()->getTable().'.'.$column, $value);
         }
 
+        if (array_key_exists('class', $filters)) {
+            $value = $filters['class'];
+            if ($value !== null && $value !== '' && (is_string($value) || is_numeric($value))) {
+                $value = (string) $value;
+                if (in_array($value, Flight::CABIN_CLASSES, true)) {
+                    $query->where($table.'.cabin_class', $value);
+                }
+            }
+        }
+
         if (array_key_exists('company_id', $filters)) {
             $cid = $filters['company_id'];
             if ($cid !== null && $cid !== '' && is_numeric($cid)) {
-                $query->where($query->getModel()->getTable().'.company_id', (int) $cid);
+                $query->where($table.'.company_id', (int) $cid);
             }
         }
 
@@ -488,14 +593,131 @@ class FlightService
             }
         }
 
-        if (array_key_exists('stops_count_max', $filters)) {
-            $max = $filters['stops_count_max'];
-            if ($max !== null && $max !== '' && is_numeric($max) && (int) $max >= 0) {
-                $query->where($query->getModel()->getTable().'.stops_count', '<=', (int) $max);
+        if (array_key_exists('carry_on', $filters)) {
+            $b = $this->normalizeListingBoolean($filters['carry_on']);
+            if ($b !== null) {
+                $query->where($table.'.hand_baggage_included', $b);
             }
         }
 
-        $table = $query->getModel()->getTable();
+        if (array_key_exists('registration', $filters)) {
+            $b = $this->normalizeListingBoolean($filters['registration']);
+            if ($b !== null) {
+                $query->where($table.'.online_checkin_allowed', $b);
+            }
+        }
+
+        if (array_key_exists('reservation', $filters)) {
+            $b = $this->normalizeListingBoolean($filters['reservation']);
+            if ($b !== null) {
+                $query->where($table.'.reservation_allowed', $b);
+            }
+        }
+
+        if (array_key_exists('quantity', $filters)) {
+            $qty = $filters['quantity'];
+            if ($qty !== null && $qty !== '' && is_numeric($qty) && (int) $qty >= 0) {
+                $query->where($table.'.seat_capacity_available', '>=', (int) $qty);
+            }
+        }
+
+        if (array_key_exists('stops_count_max', $filters)) {
+            $max = $filters['stops_count_max'];
+            if ($max !== null && $max !== '' && is_numeric($max) && (int) $max >= 0) {
+                $query->where($table.'.stops_count', '<=', (int) $max);
+            }
+        }
+
+        if (array_key_exists('transit', $filters)) {
+            $transit = $filters['transit'];
+            if (is_string($transit) || is_numeric($transit)) {
+                $value = strtolower(trim((string) $transit));
+                if ($value !== '') {
+                    if (in_array($value, ['direct', 'connected'], true)) {
+                        $query->where($table.'.connection_type', $value);
+                    } else {
+                        $bool = $this->normalizeListingBoolean($value);
+                        if ($bool === true) {
+                            $query->where($table.'.stops_count', '>', 0);
+                        } elseif ($bool === false) {
+                            $query->where($table.'.stops_count', '=', 0);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (array_key_exists('cancellation', $filters)) {
+            $value = $filters['cancellation'];
+            if (is_string($value) || is_numeric($value) || is_bool($value)) {
+                $raw = strtolower(trim((string) $value));
+                if ($raw !== '') {
+                    if (in_array($raw, Flight::CANCELLATION_POLICY_TYPES, true)) {
+                        $query->where($table.'.cancellation_policy_type', $raw);
+                    } else {
+                        $bool = $this->normalizeListingBoolean($value);
+                        if ($bool === true) {
+                            $query->where($table.'.cancellation_policy_type', '!=', 'non_refundable');
+                        } elseif ($bool === false) {
+                            $query->where($table.'.cancellation_policy_type', 'non_refundable');
+                        }
+                    }
+                }
+            }
+        }
+
+        if (array_key_exists('invoice_id', $filters)) {
+            $invoiceId = $filters['invoice_id'];
+            if ($invoiceId !== null && $invoiceId !== '' && is_numeric($invoiceId) && (int) $invoiceId > 0) {
+                $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($invoiceId): void {
+                    $q->where('id', (int) $invoiceId);
+                });
+            }
+        }
+
+        if (array_key_exists('user_email', $filters)) {
+            $email = $filters['user_email'];
+            if ($email !== null && $email !== '' && (is_string($email) || is_numeric($email))) {
+                $needle = trim((string) $email);
+                if ($needle !== '') {
+                    $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
+                    $query->whereHas('offer.bookingItems.booking.user', function (Builder $q) use ($safeNeedle): void {
+                        $q->where('email', 'like', $safeNeedle);
+                    });
+                }
+            }
+        }
+
+        if (array_key_exists('date', $filters)) {
+            $v = $filters['date'];
+            if ($v !== null && $v !== '') {
+                try {
+                    $query->whereDate($table.'.departure_at', Carbon::parse((string) $v)->toDateString());
+                } catch (\Throwable) {
+                    // ignore invalid date filter
+                }
+            }
+        }
+        if (array_key_exists('date_from', $filters)) {
+            $v = $filters['date_from'];
+            if ($v !== null && $v !== '') {
+                try {
+                    $query->where($table.'.departure_at', '>=', Carbon::parse((string) $v));
+                } catch (\Throwable) {
+                    // ignore invalid date filter
+                }
+            }
+        }
+        if (array_key_exists('date_to', $filters)) {
+            $v = $filters['date_to'];
+            if ($v !== null && $v !== '') {
+                try {
+                    $query->where($table.'.departure_at', '<=', Carbon::parse((string) $v));
+                } catch (\Throwable) {
+                    // ignore invalid date filter
+                }
+            }
+        }
 
         if (array_key_exists('departure_at_from', $filters)) {
             $v = $filters['departure_at_from'];
@@ -567,14 +789,39 @@ class FlightService
         return (string) $value;
     }
 
+    private function applyAppearanceContextConstraints(Builder $query, mixed $context): void
+    {
+        if (! is_string($context) || trim($context) === '') {
+            return;
+        }
+
+        $table = $query->getModel()->getTable();
+        $normalized = strtolower(trim($context));
+
+        if ($normalized === 'web') {
+            $query->where($table.'.appears_in_web', true);
+
+            return;
+        }
+
+        if ($normalized === 'admin') {
+            $query->where($table.'.appears_in_admin', true);
+
+            return;
+        }
+
+        if (in_array($normalized, ['zulu_admin', 'zulu-admin', 'platform_admin'], true)) {
+            $query->where($table.'.appears_in_zulu_admin', true);
+        }
+    }
+
     /**
-     * @return array<string, list<string|\Illuminate\Validation\Rules\In>>
+     * @return array<string, list<string|In>>
      */
-    private function createValidationRules(): array
+    public function flightStoreValidationRules(): array
     {
         return [
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'flight_code_internal' => ['required', 'string', 'max:191'],
             'service_type' => ['required', 'string', Rule::in(Flight::SERVICE_TYPES)],
             'departure_country' => ['required', 'string', 'max:191'],
@@ -627,6 +874,9 @@ class FlightService
             'change_deadline_at' => ['nullable', 'date'],
             'policy_notes' => ['nullable', 'string'],
             'is_package_eligible' => ['required', 'boolean'],
+            'appears_in_web' => ['required', 'boolean'],
+            'appears_in_admin' => ['required', 'boolean'],
+            'appears_in_zulu_admin' => ['required', 'boolean'],
             'status' => ['required', 'string', Rule::in(Flight::STATUSES)],
         ];
     }

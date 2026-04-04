@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CompanyApplication extends Model
 {
+    public const TYPE_AGENT = 'agent';
+
+    public const TYPE_OPERATOR = 'operator';
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_UNDER_REVIEW = 'under_review';
@@ -17,6 +21,7 @@ class CompanyApplication extends Model
 
     protected $fillable = [
         'company_name',
+        'company_type',
         'business_email',
         'legal_address',
         'actual_address',

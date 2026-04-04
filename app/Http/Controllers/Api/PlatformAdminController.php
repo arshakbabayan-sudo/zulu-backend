@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\CompanyApplicationApproved;
-use App\Events\CompanyApplicationRejected;
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\ApprovalResource;
@@ -16,25 +14,21 @@ use App\Models\CompanyApplication;
 use App\Models\CompanySellerApplication;
 use App\Models\CompanySellerPermission;
 use App\Models\Package;
-use App\Models\Role;
-use App\Models\User;
 use App\Models\Payment;
 use App\Models\PlatformSetting;
 use App\Models\Review;
+use App\Models\Role;
+use App\Models\User;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Admin\PlatformAdminService;
+use App\Services\Approvals\CompanyApplicationApprovalService;
 use App\Services\Companies\CompanyService;
 use App\Services\Companies\SellerApplicationService;
 use App\Services\Infrastructure\PlatformSettingsService;
-use App\Services\Pdf\ContractPdfService;
 use App\Services\Reviews\ReviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class PlatformAdminController extends Controller
@@ -48,7 +42,7 @@ class PlatformAdminController extends Controller
 
     public function stats(Request $request, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -60,7 +54,7 @@ class PlatformAdminController extends Controller
 
     public function companies(Request $request, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -82,7 +76,7 @@ class PlatformAdminController extends Controller
 
     public function changeGovernance(Request $request, Company $company, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -109,7 +103,7 @@ class PlatformAdminController extends Controller
      */
     public function updateCompanyPermissions(Request $request, Company $company): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -146,7 +140,7 @@ class PlatformAdminController extends Controller
      */
     public function toggleCompanySellerStatus(Request $request, Company $company): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -164,7 +158,7 @@ class PlatformAdminController extends Controller
 
     public function approvals(Request $request, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -181,7 +175,7 @@ class PlatformAdminController extends Controller
 
     public function approveApproval(Request $request, Approval $approval, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -203,7 +197,7 @@ class PlatformAdminController extends Controller
 
     public function rejectApproval(Request $request, Approval $approval, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -225,7 +219,7 @@ class PlatformAdminController extends Controller
 
     public function packageOrders(Request $request, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -243,7 +237,7 @@ class PlatformAdminController extends Controller
 
     public function payments(Request $request, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -259,7 +253,7 @@ class PlatformAdminController extends Controller
 
     public function financeSummary(Request $request, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -271,7 +265,7 @@ class PlatformAdminController extends Controller
 
     public function packages(Request $request, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -290,7 +284,7 @@ class PlatformAdminController extends Controller
 
     public function listUsers(Request $request): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -301,7 +295,7 @@ class PlatformAdminController extends Controller
             $search = (string) $request->query('search');
             $query->where(function ($q) use ($search): void {
                 $q->where('name', 'like', '%'.$search.'%')
-                  ->orWhere('email', 'like', '%'.$search.'%');
+                    ->orWhere('email', 'like', '%'.$search.'%');
             });
         }
 
@@ -327,7 +321,7 @@ class PlatformAdminController extends Controller
 
     public function deactivateUser(Request $request, int $id): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -357,7 +351,7 @@ class PlatformAdminController extends Controller
 
     public function listSellerApplications(Request $request): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -391,7 +385,7 @@ class PlatformAdminController extends Controller
 
     public function approveSellerApplication(Request $request, int $id, SellerApplicationService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -414,7 +408,7 @@ class PlatformAdminController extends Controller
 
     public function rejectSellerApplication(Request $request, int $id, SellerApplicationService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -437,7 +431,7 @@ class PlatformAdminController extends Controller
 
     public function deactivatePackage(Request $request, Package $package, PlatformAdminService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -457,91 +451,43 @@ class PlatformAdminController extends Controller
         ]);
     }
 
-    public function approveApplication(Request $request, int $id): JsonResponse
-    {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+    public function approveApplication(
+        Request $request,
+        int $id,
+        CompanyApplicationApprovalService $companyApplicationApprovalService
+    ): JsonResponse {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
+        $validated = $request->validate([
+            'decision_notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
         $application = CompanyApplication::query()->findOrFail($id);
-
-        if (! in_array($application->status, [CompanyApplication::STATUS_PENDING, CompanyApplication::STATUS_UNDER_REVIEW], true)) {
-            return response()->json(['success' => false, 'message' => 'Application cannot be approved in its current state.'], 422);
-        }
-
-        if (User::query()->where('email', $application->business_email)->exists()) {
-            return response()->json(['success' => false, 'message' => 'A user with this business email already exists.'], 422);
-        }
-
-        $role = Role::query()->where('name', 'company_admin')->first();
-        if ($role === null) {
-            return response()->json(['success' => false, 'message' => 'company_admin role is not configured.'], 500);
-        }
-
-        $temporaryPassword = Str::random(16);
-
-        [$company, $user] = DB::transaction(function () use ($application, $request, $role, $temporaryPassword): array {
-            $company = Company::query()->create([
-                'name' => $application->company_name,
-                'legal_name' => $application->company_name,
-                'type' => 'agency',
-                'governance_status' => 'active',
-                'country' => $application->country,
-                'city' => $application->city,
-                'address' => $application->actual_address,
-                'phone' => $application->phone,
-                'tax_id' => $application->tax_id,
-                'status' => 'active',
-                'profile_completed' => false,
-            ]);
-
-            $user = User::query()->create([
-                'name' => $application->contact_person,
-                'email' => $application->business_email,
-                'password' => $temporaryPassword,
-                'status' => User::STATUS_ACTIVE,
-            ]);
-
-            $user->companies()->attach($company->id, ['role_id' => $role->id]);
-
-            $application->update([
-                'status' => CompanyApplication::STATUS_APPROVED,
-                'reviewed_by' => $request->user()->id,
-                'reviewed_at' => now(),
-                'company_id' => $company->id,
-            ]);
-
-            return [$company, $user];
-        });
-
-        try {
-            event(new CompanyApplicationApproved($application->fresh(), $user, $temporaryPassword));
-        } catch (\Throwable $e) {
-            Log::warning('Failed to dispatch approval event', ['error' => $e->getMessage()]);
-        }
-
-        try {
-            $contract = app(ContractPdfService::class)->generate($company);
-            $pdfContent = $contract->getContent();
-            Storage::disk('local')->put('contracts/company-'.$company->id.'-'.time().'.pdf', $pdfContent);
-        } catch (\Throwable $e) {
-            Log::warning('Contract PDF generation failed', ['error' => $e->getMessage()]);
-        }
+        $result = $companyApplicationApprovalService->approve(
+            $application,
+            $request->user(),
+            $validated['decision_notes'] ?? null
+        );
 
         return response()->json([
             'success' => true,
             'message' => 'Application approved. Company and user created.',
             'data' => [
-                'company_id' => $company->id,
-                'user_id' => $user->id,
+                'company_id' => $result['company']->id,
+                'user_id' => $result['user']->id,
                 'message' => 'Application approved. Company and user created.',
             ],
         ]);
     }
 
-    public function rejectApplication(Request $request, int $id): JsonResponse
-    {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+    public function rejectApplication(
+        Request $request,
+        int $id,
+        CompanyApplicationApprovalService $companyApplicationApprovalService
+    ): JsonResponse {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -550,23 +496,7 @@ class PlatformAdminController extends Controller
         ]);
 
         $application = CompanyApplication::query()->findOrFail($id);
-
-        if (! in_array($application->status, [CompanyApplication::STATUS_PENDING, CompanyApplication::STATUS_UNDER_REVIEW], true)) {
-            return response()->json(['success' => false, 'message' => 'Application cannot be rejected in its current state.'], 422);
-        }
-
-        $application->update([
-            'status' => CompanyApplication::STATUS_REJECTED,
-            'rejection_reason' => $validated['rejection_reason'],
-            'reviewed_by' => $request->user()->id,
-            'reviewed_at' => now(),
-        ]);
-
-        try {
-            event(new CompanyApplicationRejected($application->fresh()));
-        } catch (\Throwable $e) {
-            Log::warning('Failed to dispatch rejection event', ['error' => $e->getMessage()]);
-        }
+        $companyApplicationApprovalService->reject($application, $request->user(), $validated['rejection_reason']);
 
         return response()->json([
             'success' => true,
@@ -577,7 +507,7 @@ class PlatformAdminController extends Controller
 
     public function getSettings(Request $request): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -589,7 +519,7 @@ class PlatformAdminController extends Controller
 
     public function updateSetting(Request $request, string $key, PlatformSettingsService $platformSettingsService): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -615,7 +545,7 @@ class PlatformAdminController extends Controller
 
     public function listAllReviews(Request $request, ReviewService $service): JsonResponse
     {
-        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
         }
 
@@ -628,9 +558,15 @@ class PlatformAdminController extends Controller
 
         $perPage = max(1, min((int) ($validated['per_page'] ?? 20), 100));
         $filters = [];
-        if (! empty($validated['status'])) $filters['status'] = $validated['status'];
-        if (! empty($validated['entity_type'])) $filters['entity_type'] = $validated['entity_type'];
-        if ($request->filled('user_id')) $filters['user_id'] = (int) $validated['user_id'];
+        if (! empty($validated['status'])) {
+            $filters['status'] = $validated['status'];
+        }
+        if (! empty($validated['entity_type'])) {
+            $filters['entity_type'] = $validated['entity_type'];
+        }
+        if ($request->filled('user_id')) {
+            $filters['user_id'] = (int) $validated['user_id'];
+        }
 
         $paginator = $service->listAllForAdmin($filters, $perPage);
 
@@ -729,21 +665,29 @@ class PlatformAdminController extends Controller
         return $row;
     }
 
-    private function denyUnlessSuperAdmin(Request $request): ?JsonResponse
+    private function denyUnlessPlatformAdmin(Request $request): ?JsonResponse
     {
         $user = $request->user();
-        if ($user === null || ! $this->adminAccessService->isSuperAdmin($user)) {
+        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
+
         return null;
     }
 
     private function parseOptionalBool(mixed $value): ?bool
     {
-        if ($value === null || $value === '') return null;
+        if ($value === null || $value === '') {
+            return null;
+        }
         $v = strtolower((string) $value);
-        if (in_array($v, ['1', 'true'], true)) return true;
-        if (in_array($v, ['0', 'false'], true)) return false;
+        if (in_array($v, ['1', 'true'], true)) {
+            return true;
+        }
+        if (in_array($v, ['0', 'false'], true)) {
+            return false;
+        }
+
         return null;
     }
 
@@ -769,6 +713,7 @@ class PlatformAdminController extends Controller
                     'unique_booking_reference' => $payment->invoice->unique_booking_reference,
                 ];
             }
+
             return $row;
         })->values()->all();
 

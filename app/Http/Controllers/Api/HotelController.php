@@ -10,9 +10,9 @@ use App\Models\Company;
 use App\Models\Offer;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Hotels\HotelService;
+use App\Services\Infrastructure\GeoRestrictionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 class HotelController extends Controller
 {
@@ -62,12 +62,30 @@ class HotelController extends Controller
         ]);
     }
 
+    /**
+     * Create hotel
+     *
+     * Attaches a hotel module to an existing offer of type `hotel`.
+     * Optionally include a `rooms` array with nested `pricings` for full hotel creation in one call.
+     * On success, `offers.price` = MIN(active room pricing price).
+     *
+     * @group Hotels
+     * @bodyParam offer_id int required ID of an existing offer with type=hotel. Example: 55
+     * @bodyParam hotel_name string required Example: Grand Zulu Hotel
+     * @bodyParam property_type string required Example: hotel
+     * @bodyParam hotel_type string required Example: city
+     * @bodyParam country string required Example: Armenia
+     * @bodyParam city string required Example: Yerevan
+     * @bodyParam meal_type string required Example: breakfast
+     * @bodyParam availability_status string required Example: available
+     * @bodyParam status string required Example: draft
+     * @bodyParam rooms array optional Array of room objects with nested pricings.
+     */
     public function store(Request $request, HotelService $hotelService): JsonResponse
     {
-        $request->validate([
-            'offer_id' => ['required', 'integer', 'exists:offers,id'],
-            'company_id' => ['prohibited'],
-        ]);
+        $validated = $request->validate(
+            array_merge($hotelService->hotelStoreValidationRules(), ['company_id' => ['prohibited']])
+        );
 
         $offer = Offer::query()->findOrFail((int) $request->input('offer_id'));
 
@@ -76,13 +94,15 @@ class HotelController extends Controller
         }
 
         $company = Company::find($offer->company_id);
-        $hotelCountry = $request->input('country', '');
-        $error = app(\App\Services\Infrastructure\GeoRestrictionService::class)->validateServiceCountry($company, $hotelCountry, 'hotel');
+        $hotelCountry = $validated['country'] ?? '';
+        $error = app(GeoRestrictionService::class)->validateServiceCountry($company, $hotelCountry, 'hotel');
         if ($error !== null) {
             return response()->json(['success' => false, 'message' => $error], 422);
         }
 
-        $hotel = $hotelService->create($request->all());
+        $hotel = $hotelService->create(
+            array_merge($validated, ['rooms' => $request->input('rooms', [])])
+        );
         $hotel->load(['offer', 'rooms.pricings']);
 
         return response()->json([
@@ -97,12 +117,6 @@ class HotelController extends Controller
             'offer_id' => ['prohibited'],
             'company_id' => ['prohibited'],
         ]);
-
-        if ($request->exists('rooms')) {
-            throw ValidationException::withMessages([
-                'rooms' => ['Room updates are not supported.'],
-            ]);
-        }
 
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'hotels.update');
         $model = $hotelService->findForCompanyScope($hotel, $companyIds);

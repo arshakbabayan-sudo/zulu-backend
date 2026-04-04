@@ -69,13 +69,19 @@ class TransferWriteApiTest extends TestCase
         ], $overrides);
     }
 
+    /**
+     * Tenant user with transfers.view only (no platform.* permissions).
+     * Seeded `agent` also receives platform.*.view perms, which classify as platform admin for commerce APIs.
+     */
     private function createAgentLinkedUser(Company $company): User
     {
-        $agentRole = Role::query()->where('name', 'agent')->firstOrFail();
+        $role = Role::query()->firstOrCreate(['name' => 'tdd_transfer_view_only']);
+        $viewId = Permission::query()->where('name', 'transfers.view')->value('id');
+        $role->permissions()->sync(array_filter([$viewId]));
 
         $user = User::query()->create([
-            'name' => 'Agent transfer write',
-            'email' => 'tdd-agent-transfer-write@local.test',
+            'name' => 'Agent user',
+            'email' => 'tdd-agent-transfer@local.test',
             'password' => bcrypt('password'),
             'status' => User::STATUS_ACTIVE,
         ]);
@@ -83,7 +89,7 @@ class TransferWriteApiTest extends TestCase
         UserCompany::query()->create([
             'user_id' => $user->id,
             'company_id' => $company->id,
-            'role_id' => $agentRole->id,
+            'role_id' => $role->id,
         ]);
 
         return $user;

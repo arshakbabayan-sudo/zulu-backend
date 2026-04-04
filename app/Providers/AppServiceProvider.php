@@ -74,11 +74,23 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
+        // Inventory writes (POST/PATCH/DELETE on flights, hotels, transfers, cars, excursions, offers, visas)
+        RateLimiter::for('inventory-write', function (Request $request) {
+            return Limit::perMinute(60)->by(
+                $request->user()?->id ?: $request->ip()
+            )->response(function () {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many inventory write requests. Please slow down.',
+                ], 429);
+            });
+        });
+
         ResetPassword::createUrlUsing(function (object $notifiable, string $token) {
             $email = urlencode($notifiable->getEmailForPasswordReset());
-            $appUrl = rtrim((string) config('app.url'), '/');
+            $frontendUrl = rtrim((string) config('app.frontend_url', config('app.url')), '/');
 
-            return "{$appUrl}/site/reset-password/?token={$token}&email={$email}";
+            return "{$frontendUrl}/reset-password?token={$token}&email={$email}";
         });
 
     }

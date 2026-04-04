@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\Modules;
 
 use App\Http\Controllers\Controller;
-use App\Services\Modules\VisaService;
+use App\Services\Modules\VisaApplicationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -19,7 +19,7 @@ use Illuminate\Http\UploadedFile;
 class UserVisaApiController extends Controller
 {
     public function __construct(
-        private readonly VisaService $visaService
+        private readonly VisaApplicationService $visaService
     ) {}
 
     /** Apply for a visa (user-side API bridge; requires future route registration). */

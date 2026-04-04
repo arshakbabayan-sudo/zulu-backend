@@ -5,7 +5,10 @@ namespace App\Services\Catalog;
 use App\Models\Hotel;
 use App\Models\HotelRoom;
 use App\Models\Offer;
+use App\Models\ServiceConnection;
+use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Offers\OfferNormalizationService;
+use App\Services\Offers\OfferVisibilityService;
 use App\Services\Pricing\PriceCalculatorService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,7 +17,9 @@ use Illuminate\Pagination\LengthAwarePaginator;
 class DiscoveryService
 {
     public function __construct(
-        private readonly OfferNormalizationService $normalizationService
+        private readonly OfferNormalizationService $normalizationService,
+        private readonly OfferVisibilityService $offerVisibilityService,
+        private readonly PlatformSettingsService $platformSettingsService,
     ) {}
 
     /**
@@ -95,7 +100,7 @@ class DiscoveryService
     }
 
     /**
-     * @return array{offer: array<string, mixed>, normalized: array<string, mixed>, hotel_rooms?: list<array<string, mixed>>}|null
+     * @return array{offer: array<string, mixed>, normalized: array<string, mixed>, hotel_rooms?: list<array<string, mixed>>, review_target?: array{entity_type: string, entity_id: int}}|null
      */
     public function findPublishedOfferWithNormalized(int $id): ?array
     {
@@ -117,20 +122,35 @@ class DiscoveryService
             };
         }
 
+        if ($offer->type === 'flight' && (! $offer->flight || ! $offer->flight->appears_in_web)) {
+            return null;
+        }
+
+        if (
+            $offer->type === 'excursion'
+            && $this->platformSettingsService->get('excursion_visibility_controls_enabled', false) === true
+            && (! $offer->excursion || ! $offer->excursion->appears_in_web)
+        ) {
+            return null;
+        }
+
         $normalized = $this->normalizationService->normalize($offer, true);
         if ($normalized === null) {
             return null;
         }
 
-        $b2cPrice = app(PriceCalculatorService::class)->b2cPrice($offer->price ?? 0);
+        $pricing = app(PriceCalculatorService::class)->normalizedPrice($offer->price, $offer->currency);
 
         $payload = [
             'offer' => [
                 'id' => $offer->id,
                 'type' => $offer->type,
                 'title' => $offer->title,
-                'price' => $b2cPrice,
+                'price' => $pricing['calculated_price'],
+                'base_price' => $pricing['base_price'],
+                'calculated_price' => $pricing['calculated_price'],
                 'currency' => $offer->currency,
+                'pricing' => $pricing,
                 'status' => $offer->status,
                 'company_id' => $offer->company_id,
             ],
@@ -141,7 +161,39 @@ class DiscoveryService
             $payload['hotel_rooms'] = $this->hotelRoomsForPublic($offer->hotel);
         }
 
+        $reviewTarget = $this->reviewTargetForOffer($offer);
+        if ($reviewTarget !== null) {
+            $payload['review_target'] = $reviewTarget;
+        }
+
         return $payload;
+    }
+
+    /**
+     * Module row id for {@see \App\Models\Review} targets (aligned with `Review::TARGET_ENTITY_TYPES`).
+     *
+     * @return array{entity_type: string, entity_id: int}|null
+     */
+    private function reviewTargetForOffer(Offer $offer): ?array
+    {
+        $entityId = match ($offer->type) {
+            'hotel' => $offer->hotel?->id,
+            'package' => $offer->package?->id,
+            'flight' => $offer->flight?->id,
+            'transfer' => $offer->transfer?->id,
+            'excursion' => $offer->excursion?->id,
+            'car' => $offer->car?->id,
+            default => null,
+        };
+
+        if ($entityId === null) {
+            return null;
+        }
+
+        return [
+            'entity_type' => $offer->type,
+            'entity_id' => (int) $entityId,
+        ];
     }
 
     /**
@@ -217,11 +269,25 @@ class DiscoveryService
         }
 
         if ($moduleType === 'hotel' || $moduleType === null) {
-            $this->applyHotelDestinationModuleConstraints($query, $moduleType, $destination, $stars, $mealType, $minRating, $isPackageEligible);
+            $this->applyHotelDestinationModuleConstraints(
+                $query,
+                $moduleType,
+                $from,
+                $to,
+                $destination,
+                $stars,
+                $mealType,
+                $minRating,
+                $isPackageEligible
+            );
         }
 
         if ($moduleType === 'transfer' || $moduleType === null) {
             $this->applyTransferLocationModuleConstraints($query, $moduleType, $from, $to, $vehicleType, $privateOnly, $isPackageEligible);
+        }
+
+        if ($moduleType === 'excursion' || $moduleType === null) {
+            $this->applyExcursionLocationModuleConstraints($query, $moduleType, $from, $to, $destination);
         }
 
         if ($moduleType === 'package' || $moduleType === null) {
@@ -240,6 +306,7 @@ class DiscoveryService
         mixed $isPackageEligible
     ): void {
         $flightFilter = function (Builder $q) use ($from, $to, $isDirect, $hasBaggage, $cabinClass, $isPackageEligible, $moduleType): void {
+            $q->where('appears_in_web', true);
             if ($from !== null) {
                 $q->where('departure_city', 'like', $this->likeWrap($from));
             }
@@ -288,20 +355,68 @@ class DiscoveryService
         $query->where(function (Builder $outer) use ($flightFilter): void {
             $outer->where(function (Builder $q) use ($flightFilter): void {
                 $q->where('type', 'flight')->whereHas('flight', $flightFilter);
-            })->orWhere('type', '!=', 'flight');
+            })
+            ->orWhere(function (Builder $q): void {
+                $q->where('type', 'hotel')->whereHas('hotel', fn (Builder $h) => $h->where('appears_in_web', true));
+            })
+            ->orWhere(function (Builder $q): void {
+                $q->where('type', 'transfer')->whereHas('transfer', fn (Builder $t) => $t->where('appears_in_web', true));
+            })
+            ->orWhere(function (Builder $q): void {
+                $q->where('type', 'car')->whereHas('car', fn (Builder $c) => $c->where('appears_in_web', true));
+            })
+            ->orWhere(function (Builder $q): void {
+                $q->where('type', 'excursion')->whereHas('excursion', fn (Builder $e) => $e->where('appears_in_web', true));
+            });
         });
     }
 
     private function applyHotelDestinationModuleConstraints(
         Builder $query,
         ?string $moduleType,
+        ?string $from,
+        ?string $to,
         ?string $destination,
         mixed $stars,
         ?string $mealType,
         mixed $minRating,
         mixed $isPackageEligible
     ): void {
-        $hotelFilter = function (Builder $q) use ($destination, $stars, $mealType, $minRating, $isPackageEligible, $moduleType): void {
+        $applyHotelVisibilityControls = $this->platformSettingsService->get(
+            'hotel_visibility_controls_enabled',
+            false
+        ) === true;
+
+        $allowedHotelIds = null;
+        $applyHotelServiceConnectionsIntegration = $this->platformSettingsService->get(
+            'hotel_service_connections_integration_enabled',
+            false
+        ) === true;
+        if (
+            $applyHotelServiceConnectionsIntegration === true
+            && $moduleType === 'hotel'
+            && $from !== null
+            && $to !== null
+            && trim($from) !== ''
+            && trim($to) !== ''
+        ) {
+            $resolved = $this->resolveAllowedHotelIdsFromAcceptedServiceConnections($from, $to);
+            // Safe rollout: if no matches, keep existing behavior (no targeting restriction).
+            if ($resolved !== []) {
+                $allowedHotelIds = $resolved;
+            }
+        }
+
+        $hotelFilter = function (Builder $q) use ($destination, $stars, $mealType, $minRating, $isPackageEligible, $moduleType, $applyHotelVisibilityControls, $allowedHotelIds): void {
+            if ($applyHotelVisibilityControls) {
+                // Public discovery context.
+                $this->offerVisibilityService->applyVisibilityFilter($q, 'web');
+            }
+
+            if ($allowedHotelIds !== null) {
+                $q->whereIn($q->getModel()->getTable().'.id', $allowedHotelIds);
+            }
+
             if ($destination !== null) {
                 $like = $this->likeWrap($destination);
                 $q->where(function (Builder $hq) use ($like): void {
@@ -356,7 +471,42 @@ class DiscoveryService
         mixed $privateOnly,
         mixed $isPackageEligible
     ): void {
-        $transferFilter = function (Builder $q) use ($from, $to, $vehicleType, $privateOnly, $isPackageEligible, $moduleType): void {
+        $applyTransferVisibilityControls = $this->platformSettingsService->get(
+            'transfer_visibility_controls_enabled',
+            false
+        ) === true;
+
+        $allowedTransferIds = null;
+        $applyTransferServiceConnectionsIntegration = $this->platformSettingsService->get(
+            'transfer_service_connections_integration_enabled',
+            false
+        ) === true;
+        if (
+            $applyTransferServiceConnectionsIntegration === true
+            && $moduleType === 'transfer'
+            && $from !== null
+            && $to !== null
+            && trim($from) !== ''
+            && trim($to) !== ''
+        ) {
+            $resolved = $this->resolveAllowedTransferIdsFromAcceptedServiceConnections($from, $to);
+            // Safe rollout: if no matches, keep existing behavior (no targeting restriction).
+            if ($resolved !== []) {
+                $allowedTransferIds = $resolved;
+            }
+        }
+
+        $transferFilter = function (Builder $q) use ($from, $to, $vehicleType, $privateOnly, $isPackageEligible, $moduleType, $applyTransferVisibilityControls, $allowedTransferIds): void {
+            if ($applyTransferVisibilityControls) {
+                // Public discovery context.
+                $this->offerVisibilityService->applyVisibilityFilter($q, 'web');
+                $q->where('appears_in_web', true);
+            }
+
+            if ($allowedTransferIds !== null) {
+                $q->whereIn($q->getModel()->getTable().'.id', $allowedTransferIds);
+            }
+
             if ($from !== null) {
                 $q->where('pickup_city', 'like', $this->likeWrap($from));
             }
@@ -397,6 +547,217 @@ class DiscoveryService
                 $q->where('type', 'transfer')->whereHas('transfer', $transferFilter);
             })->orWhere('type', '!=', 'transfer');
         });
+    }
+
+    /**
+     * @return list<int> Allowed transfer ids derived from accepted service_connections.
+     */
+    private function resolveAllowedTransferIdsFromAcceptedServiceConnections(string $from, string $to): array
+    {
+        $reqCities = $this->uniqueNormalizedCities([$from, $to]);
+        if ($reqCities === []) {
+            return [];
+        }
+
+        $connections = ServiceConnection::query()
+            ->where('status', 'accepted')
+            ->where('client_targeting', 'all')
+            ->whereNotNull('city_rules')
+            ->where(function (Builder $q): void {
+                // flight|hotel => transfer
+                $q->where(function (Builder $q2): void {
+                    $q2->whereIn('source_type', ['flight', 'hotel'])
+                        ->where('target_type', 'transfer');
+                })
+                    // transfer => flight|hotel (only when connection_type is "both")
+                    ->orWhere(function (Builder $q2): void {
+                        $q2->where('source_type', 'transfer')
+                            ->whereIn('target_type', ['flight', 'hotel'])
+                            ->where('connection_type', 'both');
+                    });
+            })
+            ->get();
+
+        $allowed = [];
+
+        foreach ($connections as $c) {
+            if (! is_array($c->city_rules) || $c->city_rules === []) {
+                continue;
+            }
+
+            $rules = $c->city_rules;
+            $mode = is_string($rules['mode'] ?? null) ? $rules['mode'] : 'any';
+            $sourceCities = is_array($rules['source_cities'] ?? null) ? $rules['source_cities'] : [];
+            $targetCities = is_array($rules['target_cities'] ?? null) ? $rules['target_cities'] : [];
+
+            // Direction: flight|hotel => transfer (match transfer cities = target_cities)
+            if (in_array($c->source_type, ['flight', 'hotel'], true) && $c->target_type === 'transfer') {
+                $expectedRouteCities = $targetCities;
+                if ($this->routeCitiesMatch($mode, $reqCities, $expectedRouteCities)) {
+                    $allowed[] = (int) $c->target_id;
+                }
+
+                continue;
+            }
+
+            // Direction: transfer => flight|hotel (only for connection_type="both"; match transfer cities = source_cities)
+            if ($c->source_type === 'transfer' && in_array($c->target_type, ['flight', 'hotel'], true) && $c->connection_type === 'both') {
+                $expectedRouteCities = $sourceCities;
+                if ($this->routeCitiesMatch($mode, $reqCities, $expectedRouteCities)) {
+                    $allowed[] = (int) $c->source_id;
+                }
+            }
+        }
+
+        $allowed = array_values(array_unique(array_filter($allowed, fn ($id) => is_numeric($id) && (int) $id > 0)));
+
+        return $allowed;
+    }
+
+    /**
+     * Excursion discovery: visibility + optional service_connections targeting (same rollout flags as transfers).
+     */
+    private function applyExcursionLocationModuleConstraints(
+        Builder $query,
+        ?string $moduleType,
+        ?string $from,
+        ?string $to,
+        ?string $destination,
+    ): void {
+        $applyExcursionVisibilityControls = $this->platformSettingsService->get(
+            'excursion_visibility_controls_enabled',
+            false
+        ) === true;
+
+        $allowedExcursionIds = null;
+        $applyExcursionServiceConnectionsIntegration = $this->platformSettingsService->get(
+            'excursion_service_connections_integration_enabled',
+            false
+        ) === true;
+        if (
+            $applyExcursionServiceConnectionsIntegration === true
+            && $moduleType === 'excursion'
+            && $from !== null
+            && $to !== null
+            && trim($from) !== ''
+            && trim($to) !== ''
+        ) {
+            $resolved = $this->resolveAllowedExcursionIdsFromAcceptedServiceConnections($from, $to);
+            if ($resolved !== []) {
+                $allowedExcursionIds = $resolved;
+            }
+        }
+
+        $excursionFilter = function (Builder $q) use (
+            $from,
+            $to,
+            $destination,
+            $applyExcursionVisibilityControls,
+            $allowedExcursionIds
+        ): void {
+            if ($applyExcursionVisibilityControls) {
+                $this->offerVisibilityService->applyVisibilityFilter($q, 'web');
+                $q->where('appears_in_web', true);
+            }
+
+            if ($allowedExcursionIds !== null) {
+                $q->whereIn($q->getModel()->getTable().'.id', $allowedExcursionIds);
+            }
+
+            $loc = $destination ?? $from ?? $to;
+            if ($loc !== null && trim($loc) !== '') {
+                $like = $this->likeWrap($loc);
+                $table = $q->getModel()->getTable();
+                $q->where(function (Builder $inner) use ($table, $like): void {
+                    $inner->where($table.'.city', 'like', $like)
+                        ->orWhere($table.'.country', 'like', $like)
+                        ->orWhere($table.'.location', 'like', $like);
+                });
+            }
+        };
+
+        if ($moduleType === 'excursion') {
+            $query->whereHas('excursion', $excursionFilter);
+
+            return;
+        }
+
+        if ($moduleType !== null) {
+            return;
+        }
+
+        $needsCrossExcursion = $from !== null || $to !== null || $destination !== null;
+
+        if (! $needsCrossExcursion) {
+            return;
+        }
+
+        $query->where(function (Builder $outer) use ($excursionFilter): void {
+            $outer->where(function (Builder $q) use ($excursionFilter): void {
+                $q->where('type', 'excursion')->whereHas('excursion', $excursionFilter);
+            })->orWhere('type', '!=', 'excursion');
+        });
+    }
+
+    /**
+     * @return list<int> Allowed excursion ids derived from accepted service_connections.
+     */
+    private function resolveAllowedExcursionIdsFromAcceptedServiceConnections(string $from, string $to): array
+    {
+        $reqCities = $this->uniqueNormalizedCities([$from, $to]);
+        if ($reqCities === []) {
+            return [];
+        }
+
+        $connections = ServiceConnection::query()
+            ->where('status', 'accepted')
+            ->where('client_targeting', 'all')
+            ->whereNotNull('city_rules')
+            ->where(function (Builder $q): void {
+                $q->where(function (Builder $q2): void {
+                    $q2->whereIn('source_type', ['flight', 'hotel'])
+                        ->where('target_type', 'excursion');
+                })
+                    ->orWhere(function (Builder $q2): void {
+                        $q2->where('source_type', 'excursion')
+                            ->whereIn('target_type', ['flight', 'hotel'])
+                            ->where('connection_type', 'both');
+                    });
+            })
+            ->get();
+
+        $allowed = [];
+
+        foreach ($connections as $c) {
+            if (! is_array($c->city_rules) || $c->city_rules === []) {
+                continue;
+            }
+
+            $rules = $c->city_rules;
+            $mode = is_string($rules['mode'] ?? null) ? $rules['mode'] : 'any';
+            $sourceCities = is_array($rules['source_cities'] ?? null) ? $rules['source_cities'] : [];
+            $targetCities = is_array($rules['target_cities'] ?? null) ? $rules['target_cities'] : [];
+
+            if (in_array($c->source_type, ['flight', 'hotel'], true) && $c->target_type === 'excursion') {
+                $expectedRouteCities = $targetCities;
+                if ($this->routeCitiesMatch($mode, $reqCities, $expectedRouteCities)) {
+                    $allowed[] = (int) $c->target_id;
+                }
+
+                continue;
+            }
+
+            if ($c->source_type === 'excursion' && in_array($c->target_type, ['flight', 'hotel'], true) && $c->connection_type === 'both') {
+                $expectedRouteCities = $sourceCities;
+                if ($this->routeCitiesMatch($mode, $reqCities, $expectedRouteCities)) {
+                    $allowed[] = (int) $c->source_id;
+                }
+            }
+        }
+
+        $allowed = array_values(array_unique(array_filter($allowed, fn ($id) => is_numeric($id) && (int) $id > 0)));
+
+        return $allowed;
     }
 
     private function applyPackageDestinationConstraints(
@@ -779,6 +1140,171 @@ class DiscoveryService
             'visa' => 'visa',
             default => null,
         };
+    }
+
+    /**
+     * @return list<int> Allowed hotel ids derived from accepted service_connections.
+     */
+    private function resolveAllowedHotelIdsFromAcceptedServiceConnections(string $from, string $to): array
+    {
+        $reqCities = $this->uniqueNormalizedCities([$from, $to]);
+        if ($reqCities === []) {
+            return [];
+        }
+
+        $connections = ServiceConnection::query()
+            ->where('status', 'accepted')
+            ->where('client_targeting', 'all')
+            ->whereNotNull('city_rules')
+            ->where(function (Builder $q): void {
+                // flight|transfer => hotel
+                $q->where(function (Builder $q2): void {
+                    $q2->whereIn('source_type', ['flight', 'transfer'])
+                        ->where('target_type', 'hotel');
+                })
+                    // hotel => flight|transfer (only when connection_type is "both")
+                    ->orWhere(function (Builder $q2): void {
+                        $q2->where('source_type', 'hotel')
+                            ->whereIn('target_type', ['flight', 'transfer'])
+                            ->where('connection_type', 'both');
+                    });
+            })
+            ->get();
+
+        $allowed = [];
+
+        foreach ($connections as $c) {
+            if (! is_array($c->city_rules) || $c->city_rules === []) {
+                continue;
+            }
+
+            $rules = $c->city_rules;
+            $mode = is_string($rules['mode'] ?? null) ? $rules['mode'] : 'any';
+            $sourceCities = is_array($rules['source_cities'] ?? null) ? $rules['source_cities'] : [];
+            $targetCities = is_array($rules['target_cities'] ?? null) ? $rules['target_cities'] : [];
+
+            // Direction: flight|transfer => hotel
+            if (in_array($c->source_type, ['flight', 'transfer'], true) && $c->target_type === 'hotel') {
+                $expectedRouteCities = $sourceCities;
+                if ($this->routeCitiesMatch($mode, $reqCities, $expectedRouteCities)) {
+                    $allowed[] = (int) $c->target_id;
+                }
+
+                continue;
+            }
+
+            // Direction: hotel => flight|transfer (only for connection_type="both")
+            if ($c->source_type === 'hotel' && in_array($c->target_type, ['flight', 'transfer'], true) && $c->connection_type === 'both') {
+                $expectedRouteCities = $targetCities;
+                if ($this->routeCitiesMatch($mode, $reqCities, $expectedRouteCities)) {
+                    $allowed[] = (int) $c->source_id;
+                }
+            }
+        }
+
+        $allowed = array_values(array_unique(array_filter($allowed, fn ($id) => is_numeric($id) && (int) $id > 0)));
+
+        return $allowed;
+    }
+
+    /**
+     * Match requested route endpoint cities against service_connections city_rules.
+     *
+     * - mode="any": intersection is non-empty (fuzzy substring match).
+     * - mode="exact": req and expected sets "mutually match" (both directions).
+     *
+     * @param  list<string>  $reqCities
+     * @param  list<string>  $expectedCities
+     */
+    private function routeCitiesMatch(string $mode, array $reqCities, array $expectedCities): bool
+    {
+        $expectedCities = $this->uniqueNormalizedCities($expectedCities);
+        if ($expectedCities === []) {
+            return false;
+        }
+
+        $modeNorm = strtolower(trim($mode));
+
+        $any = function () use ($reqCities, $expectedCities): bool {
+            foreach ($reqCities as $reqCity) {
+                foreach ($expectedCities as $expCity) {
+                    if ($this->cityFuzzyMatch($reqCity, $expCity)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        };
+
+        if ($modeNorm === 'exact') {
+            // Approximate set equality for route endpoints using fuzzy matching.
+            foreach ($reqCities as $reqCity) {
+                $matched = false;
+                foreach ($expectedCities as $expCity) {
+                    if ($this->cityFuzzyMatch($reqCity, $expCity)) {
+                        $matched = true;
+                        break;
+                    }
+                }
+                if (! $matched) {
+                    return false;
+                }
+            }
+
+            foreach ($expectedCities as $expCity) {
+                $matched = false;
+                foreach ($reqCities as $reqCity) {
+                    if ($this->cityFuzzyMatch($reqCity, $expCity)) {
+                        $matched = true;
+                        break;
+                    }
+                }
+                if (! $matched) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return $any();
+    }
+
+    /**
+     * @param  list<string>  $cities
+     * @return list<string>
+     */
+    private function uniqueNormalizedCities(array $cities): array
+    {
+        $normalized = [];
+        foreach ($cities as $c) {
+            if (! is_string($c) && ! is_numeric($c)) {
+                continue;
+            }
+            $s = mb_strtolower(trim((string) $c));
+            if ($s === '') {
+                continue;
+            }
+            $normalized[$s] = true;
+        }
+
+        return array_values(array_keys($normalized));
+    }
+
+    private function cityFuzzyMatch(string $requestCity, string $expectedCity): bool
+    {
+        $a = mb_strtolower(trim($requestCity));
+        $b = mb_strtolower(trim($expectedCity));
+        if ($a === '' || $b === '') {
+            return false;
+        }
+
+        if ($a === $b) {
+            return true;
+        }
+
+        return str_contains($b, $a) || str_contains($a, $b);
     }
 
     private function nullableString(mixed $value): ?string

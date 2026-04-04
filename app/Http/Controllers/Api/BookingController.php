@@ -7,7 +7,6 @@ use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\BookingResource;
 use App\Models\Booking;
-use App\Models\Offer;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Bookings\BookingService;
 use App\Services\Bookings\PassengerService;
@@ -15,7 +14,6 @@ use App\Services\Pdf\VoucherPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
 class BookingController extends Controller
@@ -73,22 +71,6 @@ class BookingController extends Controller
             return $response;
         }
 
-        foreach ($validated['items'] as $item) {
-            $offerId = (int) $item['offer_id'];
-            $offer = Offer::query()->with('flight')->find($offerId);
-            if (! $offer) {
-                continue;
-            }
-
-            if ($offer->type === 'flight' && $offer->flight) {
-                if ((int) ($offer->flight->seat_capacity_available ?? 0) <= 0) {
-                    throw ValidationException::withMessages([
-                        'items' => ['No seats available for flight: '.($offer->flight->flight_code_internal ?? 'unknown')],
-                    ]);
-                }
-            }
-        }
-
         $bookingData = [
             'user_id' => (int) $validated['user_id'],
             'company_id' => $companyId,
@@ -102,6 +84,7 @@ class BookingController extends Controller
             ];
         }
 
+        $bookingService->assertItemsAvailability($itemsData);
         $booking = $bookingService->create($bookingData, $itemsData);
 
         return response()->json([

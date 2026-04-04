@@ -10,4 +10,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('tokens:prune')->daily();
+Schedule::command('offers:prune-orphans')->hourly();
 Schedule::job(new ReleaseExpiredHolds)->everyMinute();

@@ -11,7 +11,7 @@ class Approval extends Model
     use HasFactory;
 
     /** @var list<string> */
-    public const ENTITY_TYPES = ['company', 'seller_request', 'package', 'offer'];
+    public const ENTITY_TYPES = ['company', 'company_application', 'seller_request', 'package', 'offer'];
 
     /** @var list<string> */
     public const STATUSES = ['pending', 'under_review', 'approved', 'rejected'];

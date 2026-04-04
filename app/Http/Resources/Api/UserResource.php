@@ -18,6 +18,7 @@ class UserResource extends JsonResource
 
         $adminAccess = app(AdminAccessService::class);
         $isSuperAdmin = $adminAccess->isSuperAdmin($user);
+        $isPlatformAdmin = $adminAccess->isPlatformAdmin($user);
         $operatorStatisticsPlatformScope = $adminAccess->isAdminStatisticsSuperScope($user);
         $isStatisticsElevatedOnly = $adminAccess->isStatisticsElevatedOnly($user);
 
@@ -42,6 +43,13 @@ class UserResource extends JsonResource
             ? null
             : (int) $sortedCompanies->first()->id;
 
+        $canonicalRole = $adminAccess->canonicalRoleForUser($user);
+        $canonicalRoles = array_values(array_unique(array_map(
+            fn (string $roleName): string => $adminAccess->canonicalizeRoleName($roleName),
+            $roleNames
+        )));
+        sort($canonicalRoles);
+
         $out = [
             'id' => $user->id,
             'name' => $user->name,
@@ -55,6 +63,8 @@ class UserResource extends JsonResource
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
             'roles' => $roleNames,
+            'canonical_roles' => $canonicalRoles,
+            'canonical_role' => $canonicalRole,
             'is_super_admin' => $isSuperAdmin,
             'operator_statistics_platform_scope' => $operatorStatisticsPlatformScope,
             'is_statistics_elevated_only' => $isStatisticsElevatedOnly,
@@ -65,9 +75,11 @@ class UserResource extends JsonResource
                 ])
                 ->all(),
             'context' => [
-                'world' => $isSuperAdmin ? 'super_admin' : 'company_admin',
+                'world' => $canonicalRole,
+                'canonical_role' => $canonicalRole,
                 'active_company_id' => $activeCompanyId,
                 'is_super_admin' => $isSuperAdmin,
+                'is_platform_admin' => $isPlatformAdmin,
                 'operator_statistics_platform_scope' => $operatorStatisticsPlatformScope,
                 'is_statistics_elevated_only' => $isStatisticsElevatedOnly,
             ],

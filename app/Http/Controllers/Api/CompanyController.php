@@ -6,11 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\CompanyResource;
 use App\Http\Resources\Api\CompanyUserResource;
 use App\Models\Company;
+use App\Models\CompanySellerPermission;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserCompany;
-use App\Models\CompanySellerPermission;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Admin\CompanyAccessService;
 use App\Services\Companies\CompanyService;
 use App\Services\Companies\SellerApplicationService;
 use App\Services\Pdf\ContractPdfService;
@@ -19,12 +20,17 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Symfony\Component\HttpFoundation\Response;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 class CompanyController extends Controller
 {
-    private const COMPANY_ROLE_NAMES = ['company_admin', 'company_operator', 'company_viewer'];
+    private const COMPANY_ROLE_NAMES = ['company_admin', 'operator_admin', 'company_operator', 'company_viewer'];
+
+    public function __construct(
+        private CompanyAccessService $companyAccessService,
+        private AdminAccessService $adminAccessService
+    ) {}
 
     public function index(Request $request, CompanyService $companyService): JsonResponse
     {
@@ -56,11 +62,10 @@ class CompanyController extends Controller
     public function downloadContract(
         Request $request,
         Company $company,
-        ContractPdfService $contractService,
-        AdminAccessService $adminAccessService
+        ContractPdfService $contractService
     ): Response {
         $user = $request->user();
-        if (! $adminAccessService->isSuperAdmin($user) && ! $user->belongsToCompany((int) $company->id)) {
+        if (! $this->companyAccessService->canManageCompany($user, $company)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Forbidden',
@@ -101,18 +106,10 @@ class CompanyController extends Controller
 
     public function addUser(
         Request $request,
-        Company $company,
-        AdminAccessService $adminAccessService
+        Company $company
     ): JsonResponse {
-        $actor = $request->user();
-        $companyId = (int) $company->id;
-
-        $can = $adminAccessService->isSuperAdmin($actor) || $this->isCompanyAdmin($actor, $companyId);
-        if (! $can) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+            return $deny;
         }
 
         $validated = $request->validate([
@@ -163,18 +160,10 @@ class CompanyController extends Controller
     public function updateUserRole(
         Request $request,
         Company $company,
-        User $user,
-        AdminAccessService $adminAccessService
+        User $user
     ): JsonResponse {
-        $actor = $request->user();
-        $companyId = (int) $company->id;
-
-        $can = $adminAccessService->isSuperAdmin($actor) || $this->isCompanyAdmin($actor, $companyId);
-        if (! $can) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+            return $deny;
         }
 
         $validated = $request->validate([
@@ -190,7 +179,7 @@ class CompanyController extends Controller
         }
 
         $membership = UserCompany::query()
-            ->where('company_id', $companyId)
+            ->where('company_id', (int) $company->id)
             ->where('user_id', (int) $user->id)
             ->first();
 
@@ -215,19 +204,12 @@ class CompanyController extends Controller
     public function deactivateUser(
         Request $request,
         Company $company,
-        User $user,
-        AdminAccessService $adminAccessService
+        User $user
     ): JsonResponse {
-        $actor = $request->user();
-        $companyId = (int) $company->id;
-
-        $can = $adminAccessService->isSuperAdmin($actor) || $this->isCompanyAdmin($actor, $companyId);
-        if (! $can) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+            return $deny;
         }
+        $actor = $request->user();
 
         if ((int) $actor->id === (int) $user->id) {
             return response()->json([
@@ -237,7 +219,7 @@ class CompanyController extends Controller
         }
 
         $belongs = UserCompany::query()
-            ->where('company_id', $companyId)
+            ->where('company_id', (int) $company->id)
             ->where('user_id', (int) $user->id)
             ->exists();
 
@@ -259,25 +241,13 @@ class CompanyController extends Controller
         ]);
     }
 
-    private function isCompanyAdmin(User $user, int $companyId): bool
-    {
-        return UserCompany::query()
-            ->where('company_id', $companyId)
-            ->where('user_id', (int) $user->id)
-            ->whereHas('role', fn ($q) => $q->where('name', 'company_admin'))
-            ->exists();
-    }
-
     public function updateProfile(
         Request $request,
         Company $company,
-        CompanyService $companyService,
-        AdminAccessService $adminAccessService
+        CompanyService $companyService
     ): JsonResponse {
         $user = $request->user();
-        $canEdit = $adminAccessService->isSuperAdmin($user)
-            || ($user->belongsToCompany((int) $company->id)
-                && $user->hasCompanyPermission((int) $company->id, 'companies.edit_profile'));
+        $canEdit = $this->companyAccessService->canAccessCompany($user, $company, 'companies.edit_profile');
 
         if (! $canEdit) {
             return response()->json([
@@ -297,13 +267,10 @@ class CompanyController extends Controller
     public function dashboard(
         Request $request,
         Company $company,
-        CompanyService $companyService,
-        AdminAccessService $adminAccessService
+        CompanyService $companyService
     ): JsonResponse {
         $user = $request->user();
-        $canView = $adminAccessService->isSuperAdmin($user)
-            || ($user->belongsToCompany((int) $company->id)
-                && $user->hasCompanyPermission((int) $company->id, 'companies.view_dashboard'));
+        $canView = $this->companyAccessService->canAccessCompany($user, $company, 'companies.view_dashboard');
 
         if (! $canView) {
             return response()->json([
@@ -323,13 +290,10 @@ class CompanyController extends Controller
     public function sellerPermissions(
         Request $request,
         Company $company,
-        CompanyService $companyService,
-        AdminAccessService $adminAccessService
+        CompanyService $companyService
     ): JsonResponse {
         $user = $request->user();
-        $canView = $adminAccessService->isSuperAdmin($user)
-            || ($user->belongsToCompany((int) $company->id)
-                && $user->hasCompanyPermission((int) $company->id, 'seller_permissions.view'));
+        $canView = $this->companyAccessService->canAccessCompany($user, $company, 'seller_permissions.view');
 
         if (! $canView) {
             return response()->json([
@@ -367,8 +331,7 @@ class CompanyController extends Controller
     public function submitSellerApplication(
         Request $request,
         Company $company,
-        SellerApplicationService $service,
-        AdminAccessService $adminAccessService
+        SellerApplicationService $service
     ): JsonResponse {
         $user = $request->user();
         if ($user === null) {
@@ -378,11 +341,8 @@ class CompanyController extends Controller
             ], 403);
         }
 
-        if (! $adminAccessService->isSuperAdmin($user) && ! $user->belongsToCompany((int) $company->id)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+            return $deny;
         }
 
         $validated = $request->validate([
@@ -402,8 +362,7 @@ class CompanyController extends Controller
     public function listSellerApplications(
         Request $request,
         Company $company,
-        SellerApplicationService $service,
-        AdminAccessService $adminAccessService
+        SellerApplicationService $service
     ): JsonResponse {
         $user = $request->user();
         if ($user === null) {
@@ -413,11 +372,8 @@ class CompanyController extends Controller
             ], 403);
         }
 
-        if (! $adminAccessService->isSuperAdmin($user) && ! $user->belongsToCompany((int) $company->id)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+            return $deny;
         }
 
         $applications = $service->listForCompany($company);
@@ -430,14 +386,10 @@ class CompanyController extends Controller
 
     public function setAirlineFlag(
         Request $request,
-        Company $company,
-        AdminAccessService $adminAccessService
+        Company $company
     ): JsonResponse {
-        if (! $adminAccessService->isSuperAdmin($request->user())) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
         }
 
         $validated = $request->validate([
@@ -456,14 +408,10 @@ class CompanyController extends Controller
     public function grantSellerPermission(
         Request $request,
         Company $company,
-        CompanyService $companyService,
-        AdminAccessService $adminAccessService
+        CompanyService $companyService
     ): JsonResponse {
-        if (! $adminAccessService->isSuperAdmin($request->user())) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
         }
 
         $validated = Validator::make($request->all(), [
@@ -491,14 +439,10 @@ class CompanyController extends Controller
         Request $request,
         Company $company,
         string $serviceType,
-        CompanyService $companyService,
-        AdminAccessService $adminAccessService
+        CompanyService $companyService
     ): JsonResponse {
-        if (! $adminAccessService->isSuperAdmin($request->user())) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
         }
 
         Validator::make(
@@ -512,5 +456,31 @@ class CompanyController extends Controller
             'success' => true,
             'data' => null,
         ]);
+    }
+
+    private function denyUnlessSuperAdmin(Request $request): ?JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null || ! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        return null;
+    }
+
+    private function denyUnlessCanManageCompany(Request $request, Company $company): ?JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null || ! $this->companyAccessService->canManageCompany($user, $company)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        return null;
     }
 }

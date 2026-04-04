@@ -71,11 +71,14 @@ class HotelWriteApiTest extends TestCase
     }
 
     /**
-     * Seeded `agent` role: .view permissions only (includes hotels.view, excludes hotels.create/update/delete).
+     * Tenant user with hotels.view only (no platform.* permissions).
+     * Seeded `agent` also receives platform.*.view perms, which classify as platform admin for commerce APIs.
      */
     private function createAgentLinkedUser(Company $company): User
     {
-        $agentRole = Role::query()->where('name', 'agent')->firstOrFail();
+        $role = Role::query()->firstOrCreate(['name' => 'tdd_hotel_view_only']);
+        $viewId = Permission::query()->where('name', 'hotels.view')->value('id');
+        $role->permissions()->sync(array_filter([$viewId]));
 
         $user = User::query()->create([
             'name' => 'Agent user',
@@ -87,7 +90,7 @@ class HotelWriteApiTest extends TestCase
         UserCompany::query()->create([
             'user_id' => $user->id,
             'company_id' => $company->id,
-            'role_id' => $agentRole->id,
+            'role_id' => $role->id,
         ]);
 
         return $user;
@@ -195,7 +198,7 @@ class HotelWriteApiTest extends TestCase
         $this->assertEqualsWithDelta(150.0, (float) $res->json('data.rooms.0.pricings.0.price'), 0.01);
 
         $offer->refresh();
-        $this->assertEqualsWithDelta(77.0, (float) $offer->price, 0.01);
+        $this->assertEqualsWithDelta(150.0, (float) $offer->price, 0.01);
     }
 
     public function test_store_rejects_non_hotel_offer(): void
@@ -292,6 +295,369 @@ class HotelWriteApiTest extends TestCase
         $this->patchJson('/api/hotels/'.$hotelId, ['rooms' => []], $headers)
             ->assertStatus(422)
             ->assertJsonValidationErrors(['rooms']);
+    }
+
+    public function test_update_can_sync_rooms(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $offer = $this->makeHotelOffer($company);
+        $headers = $this->authHeaders($admin);
+        $hotelId = (int) $this->postJson('/api/hotels', $this->validCreatePayload($offer->id), $headers)
+            ->json('data.id');
+
+        $res = $this->patchJson('/api/hotels/'.$hotelId, [
+            'rooms' => [
+                [
+                    'room_type' => 'suite',
+                    'room_name' => 'Presidential',
+                    'max_adults' => 4,
+                    'max_children' => 0,
+                    'max_total_guests' => 4,
+                    'pricings' => [
+                        [
+                            'price' => 400,
+                            'currency' => 'EUR',
+                            'pricing_mode' => 'per_night',
+                            'valid_from' => '2026-06-01',
+                            'valid_to' => '2026-08-31',
+                            'min_nights' => 2,
+                            'status' => 'active',
+                        ],
+                    ],
+                ],
+            ],
+        ], $headers);
+
+        $res->assertOk()
+            ->assertJsonPath('data.rooms.0.room_type', 'suite')
+            ->assertJsonPath('data.rooms.0.pricings.0.currency', 'EUR');
+        $this->assertEqualsWithDelta(400.0, (float) $res->json('data.rooms.0.pricings.0.price'), 0.01);
+        $this->assertCount(1, HotelRoom::query()->where('hotel_id', $hotelId)->get());
+    }
+
+    public function test_update_rooms_upsert_preserves_ids_when_ids_sent(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $offer = $this->makeHotelOffer($company);
+        $headers = $this->authHeaders($admin);
+        $create = $this->postJson('/api/hotels', $this->validCreatePayload($offer->id), $headers)
+            ->assertStatus(201)
+            ->json('data');
+        $hotelId = (int) $create['id'];
+        $roomId = (int) $create['rooms'][0]['id'];
+        $pricingId = (int) $create['rooms'][0]['pricings'][0]['id'];
+
+        $patch = $this->patchJson('/api/hotels/'.$hotelId, [
+            'rooms' => [
+                [
+                    'id' => $roomId,
+                    'room_type' => 'double',
+                    'room_name' => 'Deluxe Renamed',
+                    'max_adults' => 2,
+                    'max_children' => 0,
+                    'max_total_guests' => 2,
+                    'pricings' => [
+                        [
+                            'id' => $pricingId,
+                            'price' => 175,
+                            'currency' => 'USD',
+                            'pricing_mode' => 'per_night',
+                            'status' => 'active',
+                        ],
+                    ],
+                ],
+            ],
+        ], $headers);
+
+        $patch->assertOk()
+            ->assertJsonPath('data.rooms.0.id', $roomId)
+            ->assertJsonPath('data.rooms.0.room_name', 'Deluxe Renamed')
+            ->assertJsonPath('data.rooms.0.pricings.0.id', $pricingId);
+        $this->assertEqualsWithDelta(175.0, (float) $patch->json('data.rooms.0.pricings.0.price'), 0.01);
+        $this->assertSame(1, HotelRoom::query()->where('hotel_id', $hotelId)->count());
+        $this->assertDatabaseHas('hotel_room_pricings', [
+            'id' => $pricingId,
+            'hotel_room_id' => $roomId,
+            'price' => '175.00',
+        ]);
+    }
+
+    public function test_update_rooms_deletes_omitted_room_and_pricing_rows(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $offer = $this->makeHotelOffer($company);
+        $headers = $this->authHeaders($admin);
+        $hotelId = (int) $this->postJson('/api/hotels', [
+            'offer_id' => $offer->id,
+            'hotel_name' => 'Two Room Hotel',
+            'property_type' => 'hotel',
+            'hotel_type' => 'resort',
+            'country' => 'AM',
+            'city' => 'Yerevan',
+            'meal_type' => 'bed_and_breakfast',
+            'status' => 'draft',
+            'availability_status' => 'available',
+            'rooms' => [
+                [
+                    'room_type' => 'single',
+                    'room_name' => 'A',
+                    'max_adults' => 1,
+                    'max_children' => 0,
+                    'max_total_guests' => 1,
+                    'pricings' => [['price' => 50, 'currency' => 'USD']],
+                ],
+                [
+                    'room_type' => 'double',
+                    'room_name' => 'B',
+                    'max_adults' => 2,
+                    'max_children' => 0,
+                    'max_total_guests' => 2,
+                    'pricings' => [['price' => 90, 'currency' => 'USD']],
+                ],
+            ],
+        ], $headers)->assertStatus(201)->json('data.id');
+
+        $roomsBefore = HotelRoom::query()->where('hotel_id', $hotelId)->orderBy('id')->get();
+        $this->assertCount(2, $roomsBefore);
+        $keepRoom = $roomsBefore->first();
+        $dropRoom = $roomsBefore->last();
+        $keepPricingId = (int) $keepRoom->pricings()->firstOrFail()->id;
+
+        $this->patchJson('/api/hotels/'.$hotelId, [
+            'rooms' => [
+                [
+                    'id' => $keepRoom->id,
+                    'room_type' => 'single',
+                    'room_name' => 'A Updated',
+                    'max_adults' => 1,
+                    'max_children' => 0,
+                    'max_total_guests' => 1,
+                    'pricings' => [
+                        [
+                            'id' => $keepPricingId,
+                            'price' => 55,
+                            'currency' => 'USD',
+                            'pricing_mode' => 'per_night',
+                            'status' => 'active',
+                        ],
+                        ['price' => 60, 'currency' => 'USD'],
+                    ],
+                ],
+            ],
+        ], $headers)->assertOk();
+
+        $this->assertDatabaseMissing('hotel_rooms', ['id' => $dropRoom->id]);
+        $this->assertDatabaseHas('hotel_rooms', ['id' => $keepRoom->id, 'room_name' => 'A Updated']);
+        $this->assertSame(2, $keepRoom->fresh()->pricings()->count());
+    }
+
+    public function test_update_rejects_room_id_from_another_hotel(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $headers = $this->authHeaders($admin);
+
+        $hotelA = (int) $this->postJson(
+            '/api/hotels',
+            $this->validCreatePayload($this->makeHotelOffer($company, 'HA')->id),
+            $headers
+        )->json('data.id');
+        $foreignRoomId = (int) HotelRoom::query()->where('hotel_id', $hotelA)->value('id');
+
+        $hotelB = (int) $this->postJson(
+            '/api/hotels',
+            $this->validCreatePayload($this->makeHotelOffer($company, 'HB')->id),
+            $headers
+        )->json('data.id');
+
+        $this->patchJson('/api/hotels/'.$hotelB, [
+            'rooms' => [
+                [
+                    'id' => $foreignRoomId,
+                    'room_type' => 'suite',
+                    'room_name' => 'Stolen',
+                    'max_adults' => 2,
+                    'max_children' => 0,
+                    'max_total_guests' => 2,
+                    'pricings' => [
+                        ['price' => 100, 'currency' => 'USD', 'pricing_mode' => 'per_night', 'status' => 'active'],
+                    ],
+                ],
+            ],
+        ], $headers)->assertStatus(422)->assertJsonValidationErrors(['rooms.0.id']);
+    }
+
+    public function test_update_rejects_pricing_id_not_belonging_to_room(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $headers = $this->authHeaders($admin);
+
+        $hotelId = (int) $this->postJson(
+            '/api/hotels',
+            [
+                'offer_id' => $this->makeHotelOffer($company)->id,
+                'hotel_name' => 'H',
+                'property_type' => 'hotel',
+                'hotel_type' => 'resort',
+                'country' => 'AM',
+                'city' => 'Yerevan',
+                'meal_type' => 'bed_and_breakfast',
+                'status' => 'draft',
+                'availability_status' => 'available',
+                'rooms' => [
+                    [
+                        'room_type' => 'a',
+                        'room_name' => 'R1',
+                        'max_adults' => 1,
+                        'max_children' => 0,
+                        'max_total_guests' => 1,
+                        'pricings' => [['price' => 10, 'currency' => 'USD']],
+                    ],
+                    [
+                        'room_type' => 'b',
+                        'room_name' => 'R2',
+                        'max_adults' => 1,
+                        'max_children' => 0,
+                        'max_total_guests' => 1,
+                        'pricings' => [['price' => 20, 'currency' => 'USD']],
+                    ],
+                ],
+            ],
+            $headers
+        )->json('data.id');
+
+        $rooms = HotelRoom::query()->where('hotel_id', $hotelId)->orderBy('id')->get();
+        $room1 = $rooms->first();
+        $room2 = $rooms->last();
+        $pricingFromRoom2 = (int) $room2->pricings()->firstOrFail()->id;
+
+        $this->patchJson('/api/hotels/'.$hotelId, [
+            'rooms' => [
+                [
+                    'id' => $room1->id,
+                    'room_type' => 'a',
+                    'room_name' => 'R1',
+                    'max_adults' => 1,
+                    'max_children' => 0,
+                    'max_total_guests' => 1,
+                    'pricings' => [
+                        [
+                            'id' => $pricingFromRoom2,
+                            'price' => 99,
+                            'currency' => 'USD',
+                            'pricing_mode' => 'per_night',
+                            'status' => 'active',
+                        ],
+                    ],
+                ],
+                [
+                    'id' => $room2->id,
+                    'room_type' => 'b',
+                    'room_name' => 'R2',
+                    'max_adults' => 1,
+                    'max_children' => 0,
+                    'max_total_guests' => 1,
+                    'pricings' => [
+                        [
+                            'id' => $room2->pricings()->firstOrFail()->id,
+                            'price' => 20,
+                            'currency' => 'USD',
+                            'pricing_mode' => 'per_night',
+                            'status' => 'active',
+                        ],
+                    ],
+                ],
+            ],
+        ], $headers)->assertStatus(422)->assertJsonValidationErrors(['rooms.0.pricings.0.id']);
+    }
+
+    public function test_update_rejects_pricing_id_on_new_room_row(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $offer = $this->makeHotelOffer($company);
+        $headers = $this->authHeaders($admin);
+        $hotelId = (int) $this->postJson('/api/hotels', $this->validCreatePayload($offer->id), $headers)
+            ->json('data.id');
+        $existingPricingId = (int) HotelRoomPricing::query()
+            ->whereHas('room', fn ($q) => $q->where('hotel_id', $hotelId))
+            ->value('id');
+
+        $this->patchJson('/api/hotels/'.$hotelId, [
+            'rooms' => [
+                [
+                    'room_type' => 'new',
+                    'room_name' => 'New row',
+                    'max_adults' => 2,
+                    'max_children' => 0,
+                    'max_total_guests' => 2,
+                    'pricings' => [
+                        [
+                            'id' => $existingPricingId,
+                            'price' => 200,
+                            'currency' => 'USD',
+                            'pricing_mode' => 'per_night',
+                            'status' => 'active',
+                        ],
+                    ],
+                ],
+            ],
+        ], $headers)->assertStatus(422)->assertJsonValidationErrors(['rooms.0.pricings.0.id']);
+    }
+
+    public function test_update_rejects_duplicate_room_ids_in_payload(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $headers = $this->authHeaders($admin);
+        $hotelId = (int) $this->postJson(
+            '/api/hotels',
+            $this->validCreatePayload($this->makeHotelOffer($company)->id),
+            $headers
+        )->json('data.id');
+        $roomId = (int) HotelRoom::query()->where('hotel_id', $hotelId)->value('id');
+        $row = [
+            'id' => $roomId,
+            'room_type' => 'double',
+            'room_name' => 'X',
+            'max_adults' => 2,
+            'max_children' => 0,
+            'max_total_guests' => 2,
+            'pricings' => [
+                ['price' => 100, 'currency' => 'USD', 'pricing_mode' => 'per_night', 'status' => 'active'],
+            ],
+        ];
+
+        $this->patchJson('/api/hotels/'.$hotelId, [
+            'rooms' => [$row, $row],
+        ], $headers)->assertStatus(422)->assertJsonValidationErrors(['rooms.1.id']);
+    }
+
+    public function test_store_rejects_room_and_pricing_ids_in_payload(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $offer = $this->makeHotelOffer($company);
+        $headers = $this->authHeaders($admin);
+        $payload = $this->validCreatePayload($offer->id);
+        $payload['rooms'][0]['id'] = 99999;
+        $payload['rooms'][0]['pricings'][0]['id'] = 88888;
+
+        $this->postJson('/api/hotels', $payload, $headers)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['rooms.0.id', 'rooms.0.pricings.0.id']);
     }
 
     public function test_destroy_removes_hotel_and_cascades_children(): void

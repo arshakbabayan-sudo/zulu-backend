@@ -3,13 +3,15 @@
 namespace App\Http\Resources\Api;
 
 use App\Models\Hotel;
+use App\Services\Availability\AvailabilityNormalizerService;
+use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Operator hotel index row — summary + offer + derived pricing hint.
  *
- * @mixin \App\Models\Hotel
+ * @mixin Hotel
  */
 class HotelListResource extends JsonResource
 {
@@ -46,7 +48,11 @@ class HotelListResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $pricing = self::minimumActivePricing($this->resource);
+        $minPricing = self::minimumActivePricing($this->resource);
+        $pricing = app(PriceCalculatorService::class)->normalizedPrice($minPricing['starting_price'], $minPricing['currency']);
+        $availability = app(AvailabilityNormalizerService::class)->normalize([
+            'rooms' => $this->relationLoaded('rooms') ? $this->rooms->count() : null,
+        ]);
 
         return [
             'id' => $this->id,
@@ -72,10 +78,15 @@ class HotelListResource extends JsonResource
             'availability_status' => $this->availability_status,
             'bookable' => (bool) $this->bookable,
             'is_package_eligible' => (bool) $this->is_package_eligible,
+            // Step C3: where hotel is visible + whether it can be included in packages.
+            'visibility_rule' => $this->visibility_rule,
+            'appears_in_packages' => (bool) $this->appears_in_packages,
             'status' => $this->status,
             'rooms_count' => $this->whenLoaded('rooms', fn () => $this->rooms->count()),
-            'starting_price' => $pricing['starting_price'],
-            'currency' => $pricing['currency'],
+            'starting_price' => $minPricing['starting_price'],
+            'currency' => $minPricing['currency'],
+            'pricing' => $pricing,
+            'availability' => $availability,
             'offer' => $this->whenLoaded('offer', fn () => [
                 'id' => $this->offer->id,
                 'company_id' => $this->offer->company_id,

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Company;
 use App\Models\Offer;
+use App\Models\User;
 use App\Services\Flights\FlightService;
 use Database\Seeders\RbacBootstrapSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,7 +27,7 @@ class FlightListApiTest extends TestCase
      */
     private function authHeaders(): array
     {
-        $user = \App\Models\User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
 
         return ['Authorization' => 'Bearer '.$user->createToken('t')->plainTextToken];
     }
@@ -213,5 +214,26 @@ class FlightListApiTest extends TestCase
         $res->assertOk();
         $this->assertCount(1, $res->json('data'));
         $this->assertSame('economy', $res->json('data.0.cabin_class'));
+    }
+
+    public function test_get_flights_honors_admin_visibility_flag(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $company = Company::query()->firstOrFail();
+        $this->seedFlight($company, [
+            'flight_code_internal' => 'VISIBLE-ADMIN',
+            'appears_in_admin' => true,
+        ], 'VA');
+        $this->seedFlight($company, [
+            'flight_code_internal' => 'HIDDEN-ADMIN',
+            'appears_in_admin' => false,
+            'departure_city' => 'Paris',
+            'departure_country' => 'FR',
+        ], 'HA');
+
+        $res = $this->getJson('/api/flights', $this->authHeaders());
+        $res->assertOk();
+        $this->assertCount(1, $res->json('data'));
+        $this->assertSame('VISIBLE-ADMIN', $res->json('data.0.flight_code_internal'));
     }
 }

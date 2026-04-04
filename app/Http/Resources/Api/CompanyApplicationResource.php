@@ -18,6 +18,7 @@ class CompanyApplicationResource extends JsonResource
         return [
             'id' => $this->id,
             'company_name' => $this->company_name,
+            'company_type' => $this->company_type,
             'business_email' => $this->business_email,
             'legal_address' => $this->legal_address,
             'actual_address' => $this->actual_address,

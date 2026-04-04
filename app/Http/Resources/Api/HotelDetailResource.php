@@ -2,13 +2,16 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Models\Hotel;
+use App\Services\Availability\AvailabilityNormalizerService;
+use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Operator hotel show — full module shape with rooms and pricings.
  *
- * @mixin \App\Models\Hotel
+ * @mixin Hotel
  */
 class HotelDetailResource extends JsonResource
 {
@@ -17,6 +20,11 @@ class HotelDetailResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->offer?->price, $this->offer?->currency ?? $this->currency);
+        $availability = app(AvailabilityNormalizerService::class)->normalize([
+            'rooms' => $this->relationLoaded('rooms') ? $this->rooms->count() : null,
+        ]);
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
@@ -59,6 +67,11 @@ class HotelDetailResource extends JsonResource
             'bookable' => (bool) $this->bookable,
             'room_inventory_mode' => $this->room_inventory_mode,
             'is_package_eligible' => (bool) $this->is_package_eligible,
+            // Step C3: where hotel is visible + whether it can be included in packages.
+            'visibility_rule' => $this->visibility_rule,
+            'appears_in_packages' => (bool) $this->appears_in_packages,
+            'pricing' => $pricing,
+            'availability' => $availability,
             'status' => $this->status,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

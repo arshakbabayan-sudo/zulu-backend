@@ -3,10 +3,15 @@
 namespace App\Services\Catalog;
 
 use App\Models\Offer;
+use App\Services\Infrastructure\PlatformSettingsService;
 use Illuminate\Database\Eloquent\Collection;
 
 class CatalogService
 {
+    public function __construct(
+        private readonly PlatformSettingsService $platformSettingsService,
+    ) {}
+
     /** @var list<string> */
     public const PUBLIC_DETAIL_TYPES = Offer::ALLOWED_TYPES;
 
@@ -23,6 +28,18 @@ class CatalogService
 
         if ($type !== null && $type !== '') {
             $query->where('type', $type);
+        }
+
+        $query->where(function ($q): void {
+            $q->where('type', '!=', 'flight')
+                ->orWhereHas('flight', fn ($fq) => $fq->where('appears_in_web', true));
+        });
+
+        if ($this->platformSettingsService->get('excursion_visibility_controls_enabled', false) === true) {
+            $query->where(function ($q): void {
+                $q->where('type', '!=', 'excursion')
+                    ->orWhereHas('excursion', fn ($eq) => $eq->where('appears_in_web', true));
+            });
         }
 
         return $query->get();
@@ -63,6 +80,18 @@ class CatalogService
 
         $offer->loadMissing($relation === 'flight' ? 'flight.cabins' : $relation);
 
+        if ($offer->type === 'flight' && (! $offer->flight || ! $offer->flight->appears_in_web)) {
+            return null;
+        }
+
+        if (
+            $offer->type === 'excursion'
+            && $this->platformSettingsService->get('excursion_visibility_controls_enabled', false) === true
+            && (! $offer->excursion || ! $offer->excursion->appears_in_web)
+        ) {
+            return null;
+        }
+
         return $offer;
     }
 
@@ -86,7 +115,7 @@ class CatalogService
         };
 
         if ($relation === null) {
-            return new Collection();
+            return new Collection;
         }
 
         $query = Offer::query()

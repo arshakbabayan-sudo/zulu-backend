@@ -28,6 +28,13 @@ class CompanyService
                 ->get();
         }
 
+        if ($this->adminAccessService->isPlatformAdmin($user)) {
+            return Company::query()
+                ->whereIn('id', $this->adminAccessService->allCompanyIdsOrdered())
+                ->orderBy('id')
+                ->get();
+        }
+
         $ids = [];
         foreach ($user->companies as $company) {
             if ($user->hasCompanyPermission((int) $company->id, 'companies.view')) {
@@ -44,15 +51,7 @@ class CompanyService
 
     public function findForUser(User $user, Company $company): ?Company
     {
-        if ($this->adminAccessService->isSuperAdmin($user)) {
-            return $company;
-        }
-
-        if (! $user->belongsToCompany((int) $company->id)) {
-            return null;
-        }
-
-        if (! $user->hasCompanyPermission((int) $company->id, 'companies.view')) {
+        if (! $this->adminAccessService->canAccessCompanyScopedResource($user, (int) $company->id, 'companies.view')) {
             return null;
         }
 

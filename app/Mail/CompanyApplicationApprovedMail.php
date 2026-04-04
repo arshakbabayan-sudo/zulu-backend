@@ -32,7 +32,7 @@ class CompanyApplicationApprovedMail extends Mailable
         return new Content(
             view: 'emails.company.application_approved',
             with: [
-                'loginUrl' => rtrim((string) config('app.url'), '/').'/site/login/',
+                'loginUrl' => rtrim((string) config('app.frontend_url', config('app.url')), '/').'/login',
             ],
         );
     }

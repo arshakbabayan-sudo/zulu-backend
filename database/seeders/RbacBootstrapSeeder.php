@@ -99,16 +99,27 @@ class RbacBootstrapSeeder extends Seeder
         'localization.view',
         'localization.manage',
         'platform.settings.manage',
+        'platform.users.list',
+        'platform.inventory.view',
+        'platform.inventory.manage',
+        'platform.finance.view',
+        'company.users.manage',
+        'platform.admin',
+        'platform.manage',
+        'super_admin',
         'reviews.create',
         'reviews.view',
         'reviews.moderate',
+        'imports.upload',
     ];
 
     public function run(): void
     {
         $roles = [
             'super_admin' => Role::query()->firstOrCreate(['name' => 'super_admin']),
+            'platform_admin' => Role::query()->firstOrCreate(['name' => 'platform_admin']),
             'company_admin' => Role::query()->firstOrCreate(['name' => 'company_admin']),
+            'operator_admin' => Role::query()->firstOrCreate(['name' => 'operator_admin']),
             'agent' => Role::query()->firstOrCreate(['name' => 'agent']),
         ];
 
@@ -120,6 +131,16 @@ class RbacBootstrapSeeder extends Seeder
         $allIds = array_map(fn (Permission $p) => $p->id, $permissionModels);
         $roles['super_admin']->permissions()->sync($allIds);
         $roles['company_admin']->permissions()->sync($allIds);
+        $roles['operator_admin']->permissions()->sync($allIds);
+
+        $platformPermissionIds = array_map(
+            fn (string $n) => $permissionModels[$n]->id,
+            array_values(array_filter(
+                array_keys($permissionModels),
+                fn (string $n) => str_starts_with($n, 'platform.') || in_array($n, ['localization.view', 'localization.manage', 'reviews.moderate'], true)
+            ))
+        );
+        $roles['platform_admin']->permissions()->sync($platformPermissionIds);
 
         $viewOnly = array_filter(
             array_keys($permissionModels),
@@ -167,5 +188,13 @@ class RbacBootstrapSeeder extends Seeder
             ],
             ['role_id' => $roles['super_admin']->id]
         );
+
+        if ($this->command) {
+            $this->command->newLine();
+            $this->command->info('RBAC bootstrap: users ready for API (POST /api/login) and Sanctum-protected routes.');
+            $this->command->info('  '.self::PRIMARY_SUPER_ADMIN_EMAIL.' / '.self::PRIMARY_SUPER_ADMIN_PASSWORD.'  (super_admin)');
+            $this->command->info('  admin@zulu.local / password  (super_admin)');
+            $this->command->newLine();
+        }
     }
 }

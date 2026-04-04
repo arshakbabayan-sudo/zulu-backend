@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
 use App\Models\SavedItem;
+use App\Services\Pricing\PriceCalculatorService;
 use App\Services\UserAccount\UserAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -86,6 +87,9 @@ class AccountController extends Controller
     private function savedItemPayload(SavedItem $row): array
     {
         $offer = $row->offer;
+        $pricing = $offer === null
+            ? null
+            : app(PriceCalculatorService::class)->normalizedPrice($offer->price, $offer->currency);
 
         return [
             'id' => $row->id,
@@ -97,8 +101,11 @@ class AccountController extends Controller
                 'id' => $offer->id,
                 'title' => $offer->title,
                 'type' => $offer->type,
-                'price' => $offer->price !== null ? (float) $offer->price : null,
+                'price' => $pricing['calculated_price'],
                 'currency' => $offer->currency,
+                'base_price' => $pricing['base_price'],
+                'calculated_price' => $pricing['calculated_price'],
+                'pricing' => $pricing,
                 'status' => $offer->status,
             ],
         ];

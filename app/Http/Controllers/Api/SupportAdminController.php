@@ -2,21 +2,23 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Admin\AdminSupportController;
 use App\Http\Controllers\Controller;
 use App\Models\SupportMessage;
 use App\Models\SupportTicket;
 use App\Models\User;
-use App\Models\UserCompany;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Admin\CompanyAccessService;
 use App\Services\Support\SupportService;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class SupportAdminController extends Controller
 {
     public function __construct(
-        private AdminAccessService $adminAccess
+        private AdminAccessService $adminAccess,
+        private CompanyAccessService $companyAccessService
     ) {}
 
     public function index(Request $request, SupportService $supportService): JsonResponse
@@ -37,16 +39,16 @@ class SupportAdminController extends Controller
 
         try {
             $result = $supportService->listTickets($companyId, $filters);
-        } catch (QueryException) {
-            $result = collect([
-                'data' => collect(),
-                'meta' => [
-                    'current_page' => 1,
-                    'last_page' => 1,
-                    'total' => 0,
-                    'per_page' => (int) ($filters['per_page'] ?? 20),
-                ],
+        } catch (\Throwable $e) {
+            Log::error('SupportAdminController: failed to list tickets', [
+                'company_id' => $companyId,
+                'error' => $e->getMessage(),
             ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load support tickets.',
+            ], 500);
         }
 
         $tickets = $result->get('data', collect())->map(fn (SupportTicket $t) => $this->ticketListPayload($t));
@@ -122,23 +124,19 @@ class SupportAdminController extends Controller
     }
 
     /**
-     * Mirrors {@see \App\Http\Controllers\Admin\AdminSupportController::resolveCompanyId()}:
-     * super admin → optional ?company_id= (null = all tenants); else first role-bound membership company.
+     * Super admins and platform admins may optionally pass ?company_id= to scope results;
+     * omitting it means "all tenants" (intentional for platform-class oversight roles only).
+     * Operator admins are always scoped to their own first company.
      */
     private function resolveSupportCompanyId(Request $request, User $user): ?int
     {
-        if ($this->adminAccess->isSuperAdmin($user)) {
+        if ($this->adminAccess->isSuperAdmin($user) || $this->adminAccess->isPlatformAdmin($user)) {
             $companyId = $request->query('company_id');
 
             return is_numeric($companyId) ? (int) $companyId : null;
         }
 
-        $first = UserCompany::query()
-            ->where('user_id', $user->id)
-            ->whereNotNull('role_id')
-            ->first();
-
-        return $first !== null ? (int) $first->company_id : null;
+        return $this->companyAccessService->resolveOperatorAdminCompanyId($user);
     }
 
     private function denyUnlessSupportAccess(Request $request): ?JsonResponse
@@ -148,16 +146,11 @@ class SupportAdminController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
         }
 
-        if ($this->adminAccess->isSuperAdmin($user)) {
+        if ($this->adminAccess->isPlatformAdmin($user)) {
             return null;
         }
 
-        $hasMembership = UserCompany::query()
-            ->where('user_id', $user->id)
-            ->whereNotNull('role_id')
-            ->exists();
-
-        if (! $hasMembership) {
+        if ($this->companyAccessService->resolveOperatorAdminCompanyId($user) === null) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 

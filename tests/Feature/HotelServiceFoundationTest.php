@@ -73,7 +73,7 @@ class HotelServiceFoundationTest extends TestCase
         $this->assertSame($offer->id, $hotel->offer_id);
         $this->assertSame($company->id, $hotel->company_id);
         $offer->refresh();
-        $this->assertEqualsWithDelta(50.0, (float) $offer->price, 0.01);
+        $this->assertEqualsWithDelta(120.5, (float) $offer->price, 0.01, 'offer.price syncs from minimum active room pricing');
 
         $this->assertCount(1, $hotel->rooms);
         $room = $hotel->rooms->first();

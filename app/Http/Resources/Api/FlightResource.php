@@ -2,12 +2,14 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Models\Flight;
+use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\Flight
+ * @mixin Flight
  */
 class FlightResource extends JsonResource
 {
@@ -17,6 +19,13 @@ class FlightResource extends JsonResource
     public function toArray(Request $request): array
     {
         $base = $this->resource->toOfferEmbedArray();
+        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->adult_price, $this->offer?->currency);
+        $availability = app(AvailabilityNormalizerService::class)->normalize([
+            'available_from' => $this->departure_at,
+            'available_to' => $this->arrival_at,
+            'capacity' => $this->seat_capacity_available,
+            'seats' => $this->seat_capacity_available,
+        ]);
 
         $dual = null;
         if ($request->user() !== null) {
@@ -28,6 +37,13 @@ class FlightResource extends JsonResource
             'offer_id' => $this->offer_id,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
+            'pricing' => $pricing,
+            'availability' => $availability,
+            // Backward-compatible aliases for older admin/front clients.
+            'flight_number' => $this->flight_code_internal,
+            'airline' => $this->company?->name,
+            'origin' => $this->departure_city,
+            'destination' => $this->arrival_city,
         ], $base, [
             'cabins' => $this->whenLoaded('cabins', fn () => $this->resource->cabinsForApiResponse()),
             'offer' => $this->whenLoaded('offer', fn () => [

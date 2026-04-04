@@ -23,6 +23,7 @@ class CarController extends Controller
     {
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'cars.view');
         $filters = $carService->listingFiltersFromRequest($request);
+        $filters['appearance_context'] = 'admin';
 
         if (! $request->filled('page')) {
             $cars = $carService->listForCompanies($companyIds, $filters);
@@ -59,15 +60,23 @@ class CarController extends Controller
         ]);
     }
 
+    /**
+     * Create car
+     *
+     * Attaches a car module to an existing offer of type `car`.
+     * On success, `offers.price` = `base_price`.
+     *
+     * @group Cars
+     * @bodyParam offer_id int required ID of an existing offer with type=car. Example: 80
+     * @bodyParam pickup_location string required Example: Yerevan Airport
+     * @bodyParam dropoff_location string required Example: Yerevan City Center
+     * @bodyParam vehicle_class string required Example: economy
+     * @bodyParam base_price numeric required Example: 45.00
+     * @bodyParam status string required Example: draft
+     */
     public function store(Request $request, CarService $carService): JsonResponse
     {
-        $request->validate([
-            'offer_id' => ['required', 'integer', 'exists:offers,id'],
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'pickup_location' => ['required', 'string', 'max:255'],
-            'dropoff_location' => ['required', 'string', 'max:255'],
-            'vehicle_class' => ['required', 'string', 'max:255'],
-        ]);
+        $request->validate($carService->carStoreValidationRules());
 
         $offer = Offer::query()->findOrFail((int) $request->input('offer_id'));
 
@@ -86,13 +95,7 @@ class CarController extends Controller
 
     public function update(Request $request, string $car, CarService $carService): JsonResponse
     {
-        $request->validate([
-            'offer_id' => ['prohibited'],
-            'company_id' => ['prohibited'],
-            'pickup_location' => ['sometimes', 'string', 'max:255'],
-            'dropoff_location' => ['sometimes', 'string', 'max:255'],
-            'vehicle_class' => ['sometimes', 'string', 'max:255'],
-        ]);
+        $request->validate($carService->carUpdateValidationRules());
 
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'cars.update');
         $model = $carService->findForCompanyScope($car, $companyIds);

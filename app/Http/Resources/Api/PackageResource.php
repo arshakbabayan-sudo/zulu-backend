@@ -2,14 +2,17 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Models\Package;
+use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Packages\PackageService;
+use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Operator package payload with optional components and derived pricing.
  *
- * @mixin \App\Models\Package
+ * @mixin Package
  */
 class PackageResource extends JsonResource
 {
@@ -19,6 +22,10 @@ class PackageResource extends JsonResource
     public function toArray(Request $request): array
     {
         $componentsLoaded = $this->relationLoaded('components');
+        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->currency);
+        $availability = app(AvailabilityNormalizerService::class)->normalize([
+            'capacity' => $this->adults_count,
+        ]);
 
         return [
             'id' => $this->id,
@@ -37,6 +44,8 @@ class PackageResource extends JsonResource
             'base_price' => $this->base_price !== null ? (float) $this->base_price : null,
             'display_price_mode' => $this->display_price_mode,
             'currency' => $this->currency,
+            'pricing' => $pricing,
+            'availability' => $availability,
             'is_public' => (bool) $this->is_public,
             'is_bookable' => (bool) $this->is_bookable,
             'is_package_eligible' => (bool) $this->is_package_eligible,

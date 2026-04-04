@@ -432,4 +432,62 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
             $this->assertArrayNotHasKey('normalized_offer', $row);
         }
     }
+
+    public function test_catalog_detail_hides_flight_when_not_visible_for_web(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $company = Company::query()->firstOrFail();
+
+        $offer = Offer::query()->create([
+            'company_id' => $company->id,
+            'type' => 'flight',
+            'title' => 'Hidden flight',
+            'price' => 70,
+            'currency' => 'USD',
+            'status' => Offer::STATUS_PUBLISHED,
+        ]);
+
+        Flight::query()->create([
+            'offer_id' => $offer->id,
+            'company_id' => $company->id,
+            'flight_code_internal' => 'HIDE-WEB-1',
+            'service_type' => 'scheduled',
+            'departure_country' => 'AM',
+            'departure_city' => 'Yerevan',
+            'departure_airport' => 'EVN',
+            'arrival_country' => 'EG',
+            'arrival_city' => 'Sharm',
+            'arrival_airport' => 'SSH',
+            'departure_at' => '2026-09-01 08:00:00',
+            'arrival_at' => '2026-09-01 12:00:00',
+            'duration_minutes' => 240,
+            'connection_type' => 'direct',
+            'stops_count' => 0,
+            'cabin_class' => 'economy',
+            'seat_capacity_total' => 150,
+            'seat_capacity_available' => 20,
+            'adult_age_from' => 18,
+            'child_age_from' => 2,
+            'child_age_to' => 11,
+            'infant_age_from' => 0,
+            'infant_age_to' => 1,
+            'adult_price' => 70,
+            'child_price' => 0,
+            'infant_price' => 0,
+            'hand_baggage_included' => false,
+            'checked_baggage_included' => false,
+            'reservation_allowed' => true,
+            'online_checkin_allowed' => true,
+            'airport_checkin_allowed' => true,
+            'cancellation_policy_type' => 'non_refundable',
+            'change_policy_type' => 'not_allowed',
+            'seat_map_available' => false,
+            'extra_baggage_allowed' => false,
+            'is_package_eligible' => false,
+            'appears_in_web' => false,
+            'status' => 'draft',
+        ]);
+
+        $this->getJson('/api/catalog/offers/'.$offer->id)->assertStatus(404);
+    }
 }

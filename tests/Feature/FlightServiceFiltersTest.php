@@ -2,9 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\Booking;
+use App\Models\BookingItem;
 use App\Models\Company;
 use App\Models\Flight;
+use App\Models\Invoice;
 use App\Models\Offer;
+use App\Models\User;
 use App\Services\Flights\FlightService;
 use Database\Seeders\RbacBootstrapSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -285,5 +289,93 @@ class FlightServiceFiltersTest extends TestCase
         $q = Flight::query()->where('flight_code_internal', 'like', 'FLT-FIL-%');
         $this->flights->applyFilters($q, ['status' => 'active']);
         $this->assertGreaterThanOrEqual(1, $q->count());
+    }
+
+    public function test_full_filtration_aliases_are_composeable(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $company = Company::query()->firstOrFail();
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+
+        $o1 = $this->createFlightOffer($company, [
+            'departure_country' => 'AM',
+            'departure_city' => 'Yerevan',
+            'departure_airport' => 'Zvartnots',
+            'arrival_country' => 'FR',
+            'arrival_city' => 'Paris',
+            'arrival_airport' => 'CDG',
+            'cabin_class' => 'business',
+            'hand_baggage_included' => true,
+            'cancellation_policy_type' => 'fully_refundable',
+            'online_checkin_allowed' => true,
+            'reservation_allowed' => true,
+            'seat_capacity_available' => 9,
+            'connection_type' => 'connected',
+            'stops_count' => 1,
+            'departure_at' => '2026-11-20 10:00:00',
+            'arrival_at' => '2026-11-20 16:00:00',
+            'flight_code_internal' => 'F-COMP-1',
+        ], 'Air Armenia');
+        $o1->update(['price' => 580]);
+
+        $o2 = $this->createFlightOffer($company, [
+            'departure_country' => 'AM',
+            'departure_city' => 'Gyumri',
+            'departure_airport' => 'LWN',
+            'arrival_country' => 'IT',
+            'arrival_city' => 'Rome',
+            'arrival_airport' => 'FCO',
+            'cabin_class' => 'economy',
+            'hand_baggage_included' => false,
+            'cancellation_policy_type' => 'non_refundable',
+            'online_checkin_allowed' => false,
+            'reservation_allowed' => false,
+            'seat_capacity_available' => 2,
+            'connection_type' => 'direct',
+            'stops_count' => 0,
+            'departure_at' => '2026-11-21 10:00:00',
+            'arrival_at' => '2026-11-21 13:00:00',
+            'flight_code_internal' => 'F-COMP-2',
+        ], 'Other Air');
+        $o2->update(['price' => 180]);
+
+        $booking = Booking::query()->create([
+            'user_id' => $user->id,
+            'company_id' => $company->id,
+            'status' => Booking::STATUS_CONFIRMED,
+            'total_price' => 580,
+        ]);
+        BookingItem::query()->create([
+            'booking_id' => $booking->id,
+            'offer_id' => $o1->id,
+            'price' => 580,
+        ]);
+        $invoice = Invoice::query()->create([
+            'booking_id' => $booking->id,
+            'total_amount' => 580,
+            'status' => Invoice::STATUS_ISSUED,
+        ]);
+
+        $ids = $this->flights->filteredQuery([
+            'country' => 'AM',
+            'city' => 'Yerevan',
+            'airport' => 'zvart',
+            'airline' => 'Armenia',
+            'date' => '2026-11-20',
+            'transit' => '1',
+            'min_price' => 500,
+            'max_price' => 700,
+            'class' => 'business',
+            'carry_on' => '1',
+            'cancellation' => '1',
+            'registration' => true,
+            'reservation' => true,
+            'quantity' => 4,
+            'invoice_id' => $invoice->id,
+            'user_email' => 'admin@zulu.local',
+        ])->pluck('id')->values()->all();
+
+        $this->assertCount(1, $ids);
+        $this->assertSame($o1->flight->id, $ids[0]);
     }
 }

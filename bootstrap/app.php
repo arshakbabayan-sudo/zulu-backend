@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         \App\Console\Commands\PruneExpiredTokens::class,
+        \App\Console\Commands\PruneOrphanOffers::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([

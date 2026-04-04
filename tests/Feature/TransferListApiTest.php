@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\Booking;
+use App\Models\BookingItem;
 use App\Models\Company;
+use App\Models\Invoice;
 use App\Models\Offer;
 use App\Models\Permission;
 use App\Models\Role;
@@ -346,6 +349,138 @@ class TransferListApiTest extends TestCase
         $ids = collect($res->json('data'))->pluck('id')->all();
         $this->assertContains($t1->id, $ids);
         $this->assertNotContains($t2->id, $ids);
+    }
+
+    public function test_filter_country_partial_matches_pickup_or_dropoff_country(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $service = new TransferService;
+        $t1 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'A')->id, [
+            'pickup_country' => 'AM',
+            'dropoff_country' => 'GE',
+            'transfer_title' => 'AM->GE',
+        ]));
+        $t2 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'B')->id, [
+            'pickup_country' => 'FR',
+            'dropoff_country' => 'FR',
+            'transfer_title' => 'FR',
+        ]));
+
+        $res = $this->getJson('/api/transfers?country=AM', $this->authHeaders($user));
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($t1->id, $ids);
+        $this->assertNotContains($t2->id, $ids);
+    }
+
+    public function test_filter_origin_destination_partial_match_city_or_point_name(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $service = new TransferService;
+        $t1 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'A')->id, [
+            'pickup_city' => 'Yerevan',
+            'pickup_point_name' => 'EVN',
+            'dropoff_city' => 'Tbilisi',
+            'dropoff_point_name' => 'Central',
+            'transfer_title' => 'YVN to TBS',
+        ]));
+        $t2 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'B')->id, [
+            'pickup_city' => 'Paris',
+            'pickup_point_name' => 'CDG',
+            'dropoff_city' => 'Lyon',
+            'dropoff_point_name' => 'Center',
+            'transfer_title' => 'FR ride',
+        ]));
+
+        $res = $this->getJson('/api/transfers?origin=EVN&destination=Tbil', $this->authHeaders($user));
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($t1->id, $ids);
+        $this->assertNotContains($t2->id, $ids);
+    }
+
+    public function test_filter_trip_date_range_and_passengers_and_price_bounds(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $service = new TransferService;
+        $t1 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'A')->id, [
+            'service_date' => '2026-04-10',
+            'passenger_capacity' => 4,
+            'base_price' => 120,
+            'transfer_title' => 'Match',
+        ]));
+        $t2 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'B')->id, [
+            'service_date' => '2026-04-20',
+            'passenger_capacity' => 2,
+            'base_price' => 300,
+            'transfer_title' => 'No',
+        ]));
+
+        $qs = http_build_query([
+            'trip_date_from' => '2026-04-01',
+            'trip_date_to' => '2026-04-15',
+            'passengers' => 3,
+            'price_min' => 100,
+            'price_max' => 200,
+        ]);
+        $res = $this->getJson('/api/transfers?'.$qs, $this->authHeaders($user));
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($t1->id, $ids);
+        $this->assertNotContains($t2->id, $ids);
+    }
+
+    public function test_filter_user_email_invoice_id_and_order_number_via_offer_bookings(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $service = new TransferService;
+        $offer = $this->makeTransferOffer($company, 'A');
+        $transfer = $service->create($this->transferPayload($offer->id, [
+            'transfer_title' => 'Booked Transfer',
+        ]));
+
+        $booking = Booking::query()->create([
+            'user_id' => $admin->id,
+            'company_id' => $company->id,
+            'status' => Booking::STATUS_CONFIRMED,
+            'total_price' => 123.45,
+        ]);
+        BookingItem::query()->create([
+            'booking_id' => $booking->id,
+            'offer_id' => $offer->id,
+            'price' => 123.45,
+        ]);
+        $invoice = Invoice::query()->create([
+            'booking_id' => $booking->id,
+            'unique_booking_reference' => 'ORDER-ABC-123',
+            'total_amount' => 123.45,
+            'currency' => 'USD',
+            'status' => Invoice::STATUS_ISSUED,
+            'vendor_locator' => 'VEND-42',
+            'issuing_date' => '2026-04-01',
+        ]);
+
+        $headers = $this->authHeaders($admin);
+
+        $byEmail = $this->getJson('/api/transfers?user_email=admin@zulu', $headers);
+        $byEmail->assertOk();
+        $this->assertContains($transfer->id, collect($byEmail->json('data'))->pluck('id')->all());
+
+        $byInvoice = $this->getJson('/api/transfers?invoice_id='.$invoice->id, $headers);
+        $byInvoice->assertOk();
+        $this->assertContains($transfer->id, collect($byInvoice->json('data'))->pluck('id')->all());
+
+        $byOrder = $this->getJson('/api/transfers?order_number=ORDER-ABC', $headers);
+        $byOrder->assertOk();
+        $this->assertContains($transfer->id, collect($byOrder->json('data'))->pluck('id')->all());
     }
 
     public function test_transfers_show_returns_404_when_not_found(): void

@@ -16,43 +16,46 @@
  */
 
 use App\Http\Controllers\Api\AccountController;
-use App\Http\Controllers\Api\MarketplaceController;
-use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\EmailVerificationController;
-use App\Http\Controllers\Api\CatalogController;
-use App\Http\Controllers\Api\DiscoveryController;
-use App\Http\Controllers\Api\BookingController;
-use App\Http\Controllers\Api\CommissionController;
-use App\Http\Controllers\Api\FinanceController;
-use App\Http\Controllers\Api\CompanyController;
-use App\Http\Controllers\Api\InvoiceController;
-use App\Http\Controllers\Api\OfferController;
-use App\Http\Controllers\Api\PaymentController;
-use App\Http\Controllers\Api\PaymentWebhookController;
-use App\Http\Controllers\Api\NotificationController;
-use App\Http\Controllers\Api\FlightController;
-use App\Http\Controllers\Api\HotelController;
-use App\Http\Controllers\Api\TransferController;
-use App\Http\Controllers\Api\ConnectionController;
-use App\Http\Controllers\Api\VisaController;
-use App\Http\Controllers\Api\CarController;
-use App\Http\Controllers\Api\ExcursionController;
-use App\Http\Controllers\Api\PackageController;
-use App\Http\Controllers\Api\StorefrontPackageController;
-use App\Http\Controllers\Api\PackageOrderController;
-use App\Http\Controllers\Api\BannerController;
-use App\Http\Controllers\Api\CompanyApplicationController;
-use App\Http\Controllers\Api\PlatformAdminController;
-use App\Http\Controllers\Api\OperatorStatisticsController;
-use App\Http\Controllers\Api\LocalizationController;
-use App\Http\Controllers\Api\ReviewController;
-use App\Http\Controllers\Api\SupportAdminController;
-use App\Http\Controllers\Api\AdminRolloutTelemetryController;
-use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
+use App\Http\Controllers\Api\AdminRolloutTelemetryController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BannerController;
+use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\CarController;
+use App\Http\Controllers\Api\CatalogController;
+use App\Http\Controllers\Api\CommissionController;
+use App\Http\Controllers\Api\CompanyApplicationController;
+use App\Http\Controllers\Api\CompanyController;
+use App\Http\Controllers\Api\ConnectionController;
+use App\Http\Controllers\Api\DiscoveryController;
+use App\Http\Controllers\Api\EmailVerificationController;
+use App\Http\Controllers\Api\ExcursionController;
+use App\Http\Controllers\Api\FinanceController;
+use App\Http\Controllers\Api\FlightController;
+use App\Http\Controllers\Api\HotelController;
+use App\Http\Controllers\Api\ImportSessionController;
+use App\Http\Controllers\Api\ImportUploadController;
+use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\LocalizationController;
+use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\OfferController;
+use App\Http\Controllers\Api\OperatorStatisticsController;
+use App\Http\Controllers\Api\PackageController;
+use App\Http\Controllers\Api\PackageOrderController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\PaymentWebhookController;
+use App\Http\Controllers\Api\PlatformAdminBannerController;
+use App\Http\Controllers\Api\PlatformAdminController;
+use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\StorefrontPackageController;
+use App\Http\Controllers\Api\SupportAdminController;
+use App\Http\Controllers\Api\TransferController;
+use App\Http\Controllers\Api\VisaController;
 use App\Http\Middleware\DeprecateLegacyDiscoveryApi;
 use App\Services\Infrastructure\PlatformReadinessService;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 
 Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
@@ -101,7 +104,7 @@ Route::prefix('packages')->middleware('throttle:api_public')->group(function () 
 Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDiscoveryApi::class])->name('discovery.legacy.')->group($registerPublicDiscoveryRoutes);
 
 Route::post('payments/webhook', [PaymentWebhookController::class, 'handle'])
-    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class]);
+    ->withoutMiddleware([VerifyCsrfToken::class]);
 
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
@@ -137,6 +140,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('bookings/{booking}/checkout', [MarketplaceController::class, 'checkout'])->whereNumber('booking');
     });
 
+    Route::post('import/upload', [ImportUploadController::class, 'store'])->middleware('throttle:file-upload');
+    Route::post('import/{import_session}/stage', [ImportSessionController::class, 'stage'])
+        ->whereNumber('import_session')
+        ->middleware('throttle:file-upload');
+    Route::get('import/{import_session}', [ImportSessionController::class, 'show'])->whereNumber('import_session');
+
     Route::get('companies', [CompanyController::class, 'index']);
     Route::get('companies/{company}/users', [CompanyController::class, 'users'])->whereNumber('company');
     Route::post('companies/{company}/users', [CompanyController::class, 'addUser'])->whereNumber('company');
@@ -155,9 +164,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     Route::get('offers', [OfferController::class, 'index']);
     Route::get('offers/{offer}', [OfferController::class, 'show']);
-    Route::post('offers', [OfferController::class, 'store']);
-    Route::post('offers/{offer}/publish', [OfferController::class, 'publish']);
-    Route::post('offers/{offer}/archive', [OfferController::class, 'archive']);
+    Route::post('offers', [OfferController::class, 'store'])->middleware('throttle:inventory-write');
+    Route::post('offers/{offer}/publish', [OfferController::class, 'publish'])->middleware('throttle:inventory-write');
+    Route::post('offers/{offer}/archive', [OfferController::class, 'archive'])->middleware('throttle:inventory-write');
 
     Route::get('bookings', [BookingController::class, 'index']);
     Route::get('bookings/{booking}', [BookingController::class, 'show']);
@@ -203,54 +212,54 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     Route::get('visas', [VisaController::class, 'index']);
     Route::get('visas/{visa}', [VisaController::class, 'show']);
-    Route::post('visas', [VisaController::class, 'store']);
-    Route::patch('visas/{visa}', [VisaController::class, 'update'])->whereNumber('visa');
-    Route::delete('visas/{visa}', [VisaController::class, 'destroy'])->whereNumber('visa');
+    Route::post('visas', [VisaController::class, 'store'])->middleware('throttle:inventory-write');
+    Route::patch('visas/{visa}', [VisaController::class, 'update'])->whereNumber('visa')->middleware('throttle:inventory-write');
+    Route::delete('visas/{visa}', [VisaController::class, 'destroy'])->whereNumber('visa')->middleware('throttle:inventory-write');
 
     Route::get('cars', [CarController::class, 'index']);
     Route::get('cars/{car}', [CarController::class, 'show'])->whereNumber('car');
-    Route::post('cars', [CarController::class, 'store']);
-    Route::patch('cars/{car}', [CarController::class, 'update'])->whereNumber('car');
-    Route::delete('cars/{car}', [CarController::class, 'destroy'])->whereNumber('car');
+    Route::post('cars', [CarController::class, 'store'])->middleware('throttle:inventory-write');
+    Route::patch('cars/{car}', [CarController::class, 'update'])->whereNumber('car')->middleware('throttle:inventory-write');
+    Route::delete('cars/{car}', [CarController::class, 'destroy'])->whereNumber('car')->middleware('throttle:inventory-write');
 
     Route::get('excursions', [ExcursionController::class, 'index']);
     Route::get('excursions/{excursion}', [ExcursionController::class, 'show'])->whereNumber('excursion');
-    Route::post('excursions', [ExcursionController::class, 'store']);
-    Route::patch('excursions/{excursion}', [ExcursionController::class, 'update'])->whereNumber('excursion');
-    Route::delete('excursions/{excursion}', [ExcursionController::class, 'destroy'])->whereNumber('excursion');
+    Route::post('excursions', [ExcursionController::class, 'store'])->middleware('throttle:inventory-write');
+    Route::patch('excursions/{excursion}', [ExcursionController::class, 'update'])->whereNumber('excursion')->middleware('throttle:inventory-write');
+    Route::delete('excursions/{excursion}', [ExcursionController::class, 'destroy'])->whereNumber('excursion')->middleware('throttle:inventory-write');
 
     Route::get('hotels', [HotelController::class, 'index']);
-    Route::post('hotels', [HotelController::class, 'store']);
+    Route::post('hotels', [HotelController::class, 'store'])->middleware('throttle:inventory-write');
     Route::get('hotels/{hotel}', [HotelController::class, 'show'])->whereNumber('hotel');
-    Route::patch('hotels/{hotel}', [HotelController::class, 'update'])->whereNumber('hotel');
-    Route::delete('hotels/{hotel}', [HotelController::class, 'destroy'])->whereNumber('hotel');
+    Route::patch('hotels/{hotel}', [HotelController::class, 'update'])->whereNumber('hotel')->middleware('throttle:inventory-write');
+    Route::delete('hotels/{hotel}', [HotelController::class, 'destroy'])->whereNumber('hotel')->middleware('throttle:inventory-write');
 
     Route::get('transfers', [TransferController::class, 'index']);
-    Route::post('transfers', [TransferController::class, 'store']);
+    Route::post('transfers', [TransferController::class, 'store'])->middleware('throttle:inventory-write');
     Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereNumber('transfer');
-    Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereNumber('transfer');
-    Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereNumber('transfer');
+    Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereNumber('transfer')->middleware('throttle:inventory-write');
+    Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereNumber('transfer')->middleware('throttle:inventory-write');
 
     Route::get('flights', [FlightController::class, 'index']);
     Route::get('flights/{flight}', [FlightController::class, 'show'])->whereNumber('flight');
-    Route::post('flights', [FlightController::class, 'store']);
-    Route::patch('flights/{flight}', [FlightController::class, 'update'])->whereNumber('flight');
-    Route::delete('flights/{flight}', [FlightController::class, 'destroy'])->whereNumber('flight');
+    Route::post('flights', [FlightController::class, 'store'])->middleware('throttle:inventory-write');
+    Route::patch('flights/{flight}', [FlightController::class, 'update'])->whereNumber('flight')->middleware('throttle:inventory-write');
+    Route::delete('flights/{flight}', [FlightController::class, 'destroy'])->whereNumber('flight')->middleware('throttle:inventory-write');
 
     Route::get('flights/{flight}/cabins', [FlightController::class, 'listCabins'])->whereNumber('flight');
-    Route::post('flights/{flight}/cabins', [FlightController::class, 'addCabin'])->whereNumber('flight');
-    Route::patch('flights/{flight}/cabins/{cabin}', [FlightController::class, 'updateCabin'])->whereNumber('flight')->whereNumber('cabin');
-    Route::delete('flights/{flight}/cabins/{cabin}', [FlightController::class, 'deleteCabin'])->whereNumber('flight')->whereNumber('cabin');
+    Route::post('flights/{flight}/cabins', [FlightController::class, 'addCabin'])->whereNumber('flight')->middleware('throttle:inventory-write');
+    Route::patch('flights/{flight}/cabins/{cabin}', [FlightController::class, 'updateCabin'])->whereNumber('flight')->whereNumber('cabin')->middleware('throttle:inventory-write');
+    Route::delete('flights/{flight}/cabins/{cabin}', [FlightController::class, 'deleteCabin'])->whereNumber('flight')->whereNumber('cabin')->middleware('throttle:inventory-write');
 
     Route::get('packages', [PackageController::class, 'index']);
-    Route::post('packages', [PackageController::class, 'store']);
-    Route::patch('packages/{package}', [PackageController::class, 'update'])->whereNumber('package');
-    Route::delete('packages/{package}', [PackageController::class, 'destroy'])->whereNumber('package');
-    Route::post('packages/{package}/components', [PackageController::class, 'addComponent'])->whereNumber('package');
-    Route::post('packages/{package}/components/reorder', [PackageController::class, 'reorderComponents'])->whereNumber('package');
-    Route::delete('packages/{package}/components/{component}', [PackageController::class, 'removeComponent'])->whereNumber('package')->whereNumber('component');
-    Route::post('packages/{package}/activate', [PackageController::class, 'activate'])->whereNumber('package');
-    Route::post('packages/{package}/deactivate', [PackageController::class, 'deactivate'])->whereNumber('package');
+    Route::post('packages', [PackageController::class, 'store'])->middleware('throttle:inventory-write');
+    Route::patch('packages/{package}', [PackageController::class, 'update'])->whereNumber('package')->middleware('throttle:inventory-write');
+    Route::delete('packages/{package}', [PackageController::class, 'destroy'])->whereNumber('package')->middleware('throttle:inventory-write');
+    Route::post('packages/{package}/components', [PackageController::class, 'addComponent'])->whereNumber('package')->middleware('throttle:inventory-write');
+    Route::post('packages/{package}/components/reorder', [PackageController::class, 'reorderComponents'])->whereNumber('package')->middleware('throttle:inventory-write');
+    Route::delete('packages/{package}/components/{component}', [PackageController::class, 'removeComponent'])->whereNumber('package')->whereNumber('component')->middleware('throttle:inventory-write');
+    Route::post('packages/{package}/activate', [PackageController::class, 'activate'])->whereNumber('package')->middleware('throttle:inventory-write');
+    Route::post('packages/{package}/deactivate', [PackageController::class, 'deactivate'])->whereNumber('package')->middleware('throttle:inventory-write');
 
     Route::post('package-orders', [PackageOrderController::class, 'store']);
     Route::get('package-orders', [PackageOrderController::class, 'index']);

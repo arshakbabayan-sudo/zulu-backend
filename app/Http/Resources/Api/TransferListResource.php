@@ -2,13 +2,16 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Models\Transfer;
+use App\Services\Availability\AvailabilityNormalizerService;
+use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Operator transfer index row — summary + offer (read-only; does not mutate offer price).
  *
- * @mixin \App\Models\Transfer
+ * @mixin Transfer
  */
 class TransferListResource extends JsonResource
 {
@@ -17,10 +20,21 @@ class TransferListResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->offer?->currency);
+        $availability = app(AvailabilityNormalizerService::class)->normalize([
+            'available_from' => $this->availability_window_start ?? $this->service_date,
+            'available_to' => $this->availability_window_end,
+            'capacity' => $this->maximum_passengers,
+        ]);
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
+            'visibility_rule' => $this->visibility_rule,
+            'appears_in_web' => (bool) $this->appears_in_web,
+            'appears_in_admin' => (bool) $this->appears_in_admin,
+            'appears_in_zulu_admin' => (bool) $this->appears_in_zulu_admin,
             'transfer_title' => $this->transfer_title,
             'transfer_type' => $this->transfer_type,
             'pickup_country' => $this->pickup_country,
@@ -56,10 +70,12 @@ class TransferListResource extends JsonResource
             'special_assistance_supported' => (bool) $this->special_assistance_supported,
             'pricing_mode' => $this->pricing_mode,
             'base_price' => $this->base_price !== null ? (float) $this->base_price : null,
+            'pricing' => $pricing,
             'free_cancellation' => (bool) $this->free_cancellation,
             'cancellation_policy_type' => $this->cancellation_policy_type,
             'cancellation_deadline_at' => $this->cancellation_deadline_at?->toIso8601String(),
             'availability_status' => $this->availability_status,
+            'availability' => $availability,
             'bookable' => (bool) $this->bookable,
             'is_package_eligible' => (bool) $this->is_package_eligible,
             'status' => $this->status,

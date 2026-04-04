@@ -4,7 +4,10 @@ namespace App\Services\Transfers;
 
 use App\Models\Offer;
 use App\Models\Transfer;
+use App\Services\Infrastructure\PlatformSettingsService;
+use App\Services\Offers\OfferVisibilityService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -30,6 +33,30 @@ class TransferService
         'transfer_type',
         'vehicle_category',
         'is_package_eligible',
+        // Step C3 — appearance/visibility context filter for inventory listings.
+        'appearance_context',
+        // Step C2 — advanced filters (inventory + operator listing).
+        'country',
+        'city',
+        'origin',
+        'destination',
+        'trip_date',
+        'trip_date_from',
+        'trip_date_to',
+        'passenger',
+        'passengers',
+        'user_email',
+        'order_number',
+        'invoice_id',
+        'price',
+        'price_min',
+        'price_max',
+        // Backward-compatible aliases.
+        'min_price',
+        'max_price',
+        'vehicle_type',
+        // Accepted for forward compatibility (may be implemented later).
+        'fleet',
     ];
 
     /**
@@ -51,22 +78,19 @@ class TransferService
             ]);
         }
 
-        $data['company_id'] = $offer->company_id;
         $data = $this->applyTransferPayloadDefaults($data, $offer);
 
-        $rules = $this->transferCreateValidationRules();
+        $rules = $this->transferStoreValidationRules();
         $attrs = $this->runTransferValidator($data, $rules)->validate();
+        $attrs['company_id'] = $offer->company_id;
 
-        if ((int) $attrs['company_id'] !== (int) $offer->company_id) {
-            throw ValidationException::withMessages([
-                'company_id' => ['Company must match the offer company.'],
-            ]);
-        }
-
-        return DB::transaction(function () use ($attrs) {
-            return Transfer::query()->create(
+        return DB::transaction(function () use ($attrs, $offer) {
+            $transfer = Transfer::query()->create(
                 Arr::only($attrs, (new Transfer)->getFillable())
             );
+            $offer->update(['price' => $transfer->base_price]);
+
+            return $transfer->refresh();
         });
     }
 
@@ -85,7 +109,7 @@ class TransferService
             ]);
         }
 
-        $createRules = $this->transferCreateValidationRules();
+        $createRules = $this->transferStoreValidationRules();
         $partialRules = [];
         foreach (array_keys($data) as $key) {
             if (! isset($createRules[$key])) {
@@ -103,9 +127,15 @@ class TransferService
 
         $clean = $this->runTransferValidator($data, $partialRules, $transfer)->validate();
 
-        return DB::transaction(function () use ($transfer, $clean, $data): Transfer {
+        $basePriceSubmitted = array_key_exists('base_price', $data);
+
+        return DB::transaction(function () use ($transfer, $clean, $data, $basePriceSubmitted): Transfer {
             $transfer->fill(Arr::only($clean, array_keys($data)));
             $transfer->save();
+
+            if ($basePriceSubmitted) {
+                $transfer->offer->update(['price' => $transfer->base_price]);
+            }
 
             return $transfer->refresh();
         });
@@ -258,6 +288,128 @@ class TransferService
                 $query->where($table.'.is_package_eligible', $b);
             }
         }
+
+        // Step C3: apply transfer visibility_rule filtering in admin inventory pages.
+        // Discovery/public web is handled separately in DiscoveryService.
+        $transferVisibilityControlsEnabled = app(PlatformSettingsService::class)->get(
+            'transfer_visibility_controls_enabled',
+            false
+        ) === true;
+        $appearanceContext = $filters['appearance_context'] ?? null;
+        if ($transferVisibilityControlsEnabled === true && is_string($appearanceContext) && trim($appearanceContext) !== '') {
+            $ctx = strtolower(trim($appearanceContext));
+            $mappedContext = $ctx === 'web' ? 'web' : 'admin';
+            app(OfferVisibilityService::class)->applyVisibilityFilter($query, $mappedContext);
+
+            if ($ctx === 'web') {
+                $query->where($table.'.appears_in_web', true);
+            } elseif ($ctx === 'zulu_admin' || $ctx === 'zulu-admin') {
+                $query->where($table.'.appears_in_zulu_admin', true);
+            } else {
+                $query->where($table.'.appears_in_admin', true);
+            }
+        }
+
+        // Step C2 — location-ish filters (partial match; safe ignore on invalid values).
+        $country = $this->normalizeListingString($filters['country'] ?? null);
+        if ($country !== null) {
+            $like = '%'.addcslashes($country, '%_\\').'%';
+            $query->where(function (Builder $q) use ($table, $like): void {
+                $q->where($table.'.pickup_country', 'like', $like)
+                    ->orWhere($table.'.dropoff_country', 'like', $like);
+            });
+        }
+
+        $city = $this->normalizeListingString($filters['city'] ?? null);
+        if ($city !== null) {
+            $like = '%'.addcslashes($city, '%_\\').'%';
+            $query->where(function (Builder $q) use ($table, $like): void {
+                $q->where($table.'.pickup_city', 'like', $like)
+                    ->orWhere($table.'.dropoff_city', 'like', $like);
+            });
+        }
+
+        $origin = $this->normalizeListingString($filters['origin'] ?? null);
+        if ($origin !== null) {
+            $like = '%'.addcslashes($origin, '%_\\').'%';
+            $query->where(function (Builder $q) use ($table, $like): void {
+                $q->where($table.'.pickup_city', 'like', $like)
+                    ->orWhere($table.'.pickup_point_name', 'like', $like);
+            });
+        }
+
+        $destination = $this->normalizeListingString($filters['destination'] ?? null);
+        if ($destination !== null) {
+            $like = '%'.addcslashes($destination, '%_\\').'%';
+            $query->where(function (Builder $q) use ($table, $like): void {
+                $q->where($table.'.dropoff_city', 'like', $like)
+                    ->orWhere($table.'.dropoff_point_name', 'like', $like);
+            });
+        }
+
+        // Step C2 — trip date (service_date).
+        $date = $this->normalizeListingDate($filters['trip_date'] ?? null);
+        if ($date !== null) {
+            $query->whereDate($table.'.service_date', '=', $date);
+        }
+        $dateFrom = $this->normalizeListingDate($filters['trip_date_from'] ?? null);
+        if ($dateFrom !== null) {
+            $query->whereDate($table.'.service_date', '>=', $dateFrom);
+        }
+        $dateTo = $this->normalizeListingDate($filters['trip_date_to'] ?? null);
+        if ($dateTo !== null) {
+            $query->whereDate($table.'.service_date', '<=', $dateTo);
+        }
+
+        // Step C2 — passenger capacity lower bound.
+        $passengersRaw = array_key_exists('passenger', $filters) ? $filters['passenger'] : ($filters['passengers'] ?? null);
+        $passengers = $this->normalizeListingInt($passengersRaw);
+        if ($passengers !== null) {
+            $query->where($table.'.passenger_capacity', '>=', $passengers);
+        }
+
+        // Step C2 — price bounds (list anchor: parent offer.price, synced from base_price on write).
+        $minPrice = $this->normalizeListingFloat($filters['price_min'] ?? ($filters['min_price'] ?? null));
+        $maxPrice = $this->normalizeListingFloat($filters['price_max'] ?? ($filters['max_price'] ?? null));
+        $priceExact = $this->normalizeListingFloat($filters['price'] ?? null);
+        if ($minPrice !== null || $maxPrice !== null || $priceExact !== null) {
+            $query->whereHas('offer', function (Builder $q) use ($minPrice, $maxPrice, $priceExact): void {
+                if ($minPrice !== null) {
+                    $q->where('price', '>=', $minPrice);
+                }
+                if ($maxPrice !== null) {
+                    $q->where('price', '<=', $maxPrice);
+                }
+                if ($priceExact !== null) {
+                    $q->where('price', '=', $priceExact);
+                }
+            });
+        }
+
+        // Step C2 — booking/invoice filters (safe no-ops if relations absent or values invalid).
+        $userEmail = $this->normalizeListingString($filters['user_email'] ?? null);
+        if ($userEmail !== null) {
+            $like = '%'.addcslashes($userEmail, '%_\\').'%';
+            $query->whereHas('offer.bookingItems.booking.user', function (Builder $q) use ($like): void {
+                $q->where('email', 'like', $like);
+            });
+        }
+
+        $invoiceId = $this->normalizeListingInt($filters['invoice_id'] ?? null);
+        if ($invoiceId !== null) {
+            $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($invoiceId): void {
+                $q->whereKey($invoiceId);
+            });
+        }
+
+        $orderNumber = $this->normalizeListingString($filters['order_number'] ?? null);
+        if ($orderNumber !== null) {
+            $like = '%'.addcslashes($orderNumber, '%_\\').'%';
+            $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($like): void {
+                $q->where('unique_booking_reference', 'like', $like)
+                    ->orWhere('vendor_locator', 'like', $like);
+            });
+        }
     }
 
     private function normalizeListingBoolean(mixed $value): ?bool
@@ -276,6 +428,70 @@ class TransferService
         }
 
         return null;
+    }
+
+    private function normalizeListingString(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (! is_string($value) && ! is_numeric($value)) {
+            return null;
+        }
+        $s = trim((string) $value);
+
+        return $s === '' ? null : $s;
+    }
+
+    private function normalizeListingDate(mixed $value): ?string
+    {
+        $s = $this->normalizeListingString($value);
+        if ($s === null) {
+            return null;
+        }
+        // Strict YYYY-MM-DD only.
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) {
+            return null;
+        }
+        $dt = \DateTimeImmutable::createFromFormat('Y-m-d', $s);
+        if ($dt === false) {
+            return null;
+        }
+
+        return $dt->format('Y-m-d');
+    }
+
+    private function normalizeListingInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+        if (is_numeric($value)) {
+            $n = (int) $value;
+
+            return $n > 0 ? $n : null;
+        }
+
+        return null;
+    }
+
+    private function normalizeListingFloat(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (! is_numeric($value)) {
+            return null;
+        }
+        $n = (float) $value;
+        if (! is_finite($n) || $n < 0) {
+            return null;
+        }
+
+        return $n;
     }
 
     /**
@@ -333,6 +549,11 @@ class TransferService
             'bookable' => true,
             'availability_status' => 'available',
             'is_package_eligible' => false,
+            // Step C3: visibility controls and appearance flags (rollout via platform settings).
+            'visibility_rule' => 'show_all',
+            'appears_in_web' => true,
+            'appears_in_admin' => true,
+            'appears_in_zulu_admin' => true,
             'status' => 'draft',
             'cancellation_policy_type' => 'non_refundable',
             'pricing_mode' => 'per_vehicle',
@@ -343,7 +564,7 @@ class TransferService
     }
 
     /**
-     * @param  array<string, array<int, string|\Illuminate\Contracts\Validation\ValidationRule>>  $rules
+     * @param  array<string, array<int, string|ValidationRule>>  $rules
      */
     private function runTransferValidator(array $data, array $rules, ?Transfer $existing = null): \Illuminate\Validation\Validator
     {
@@ -374,13 +595,18 @@ class TransferService
     }
 
     /**
-     * @return array<string, array<int, string|\Illuminate\Contracts\Validation\ValidationRule>>
+     * @return array<string, array<int, string|ValidationRule>>
      */
-    protected function transferCreateValidationRules(): array
+    public function transferStoreValidationRules(): array
     {
+        $visibilityRules = app(OfferVisibilityService::class)->getVisibilityRules();
+
         return [
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'visibility_rule' => ['nullable', 'string', Rule::in($visibilityRules)],
+            'appears_in_web' => ['boolean'],
+            'appears_in_admin' => ['boolean'],
+            'appears_in_zulu_admin' => ['boolean'],
             'transfer_title' => ['required', 'string', 'max:255'],
             'transfer_type' => ['required', 'string', Rule::in(Transfer::TRANSFER_TYPES)],
             'pickup_country' => ['required', 'string', 'max:120'],

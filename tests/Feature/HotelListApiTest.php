@@ -270,6 +270,89 @@ class HotelListApiTest extends TestCase
         $this->assertNotContains($h2->id, $ids);
     }
 
+    public function test_filter_country(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $service = new HotelService;
+        $p1 = $this->hotelPayload($this->makeHotelOffer($company, 'A')->id, 'X', 'H1');
+        $p1['country'] = 'AM';
+        $h1 = $service->create($p1);
+        $p2 = $this->hotelPayload($this->makeHotelOffer($company, 'B')->id, 'Y', 'H2');
+        $p2['country'] = 'GE';
+        $h2 = $service->create($p2);
+
+        $headers = $this->authHeaders($user);
+        $res = $this->getJson('/api/hotels?country=AM', $headers);
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($h1->id, $ids);
+        $this->assertNotContains($h2->id, $ids);
+    }
+
+    public function test_filter_free_cancellation(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $service = new HotelService;
+        $p1 = $this->hotelPayload($this->makeHotelOffer($company, 'A')->id, 'X', 'H1');
+        $p1['free_cancellation'] = true;
+        $h1 = $service->create($p1);
+        $p2 = $this->hotelPayload($this->makeHotelOffer($company, 'B')->id, 'Y', 'H2');
+        $p2['free_cancellation'] = false;
+        $h2 = $service->create($p2);
+
+        $headers = $this->authHeaders($user);
+        $res = $this->getJson('/api/hotels?free_cancellation=1', $headers);
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($h1->id, $ids);
+        $this->assertNotContains($h2->id, $ids);
+    }
+
+    public function test_filter_starting_price_range(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $company = Company::query()->firstOrFail();
+        $service = new HotelService;
+        $p1 = $this->hotelPayload($this->makeHotelOffer($company, 'A')->id, 'X', 'H1');
+        $p1['rooms'][0]['pricings'][0]['price'] = 50;
+        $h1 = $service->create($p1);
+        $p2 = $this->hotelPayload($this->makeHotelOffer($company, 'B')->id, 'Y', 'H2');
+        $p2['rooms'][0]['pricings'][0]['price'] = 200;
+        $h2 = $service->create($p2);
+
+        $all = $service->listForCompanies([$company->id], []);
+        $this->assertGreaterThanOrEqual(2, $all->count(), 'unfiltered list should include both hotels');
+
+        $minPriceH1 = DB::table('hotel_room_pricings as hrp')
+            ->join('hotel_rooms as hr', 'hr.id', '=', 'hrp.hotel_room_id')
+            ->where('hr.hotel_id', $h1->id)
+            ->where('hrp.status', 'active')
+            ->min('hrp.price');
+        $this->assertEqualsWithDelta(50.0, (float) $minPriceH1, 0.01, 'h1 min active room price should be 50');
+
+        $listed = $service->listForCompanies([$company->id], [
+            'starting_price_min' => 40,
+            'starting_price_max' => 60,
+        ]);
+        $this->assertTrue(
+            $listed->pluck('id')->contains($h1->id),
+            'expected h1 in list; count='.$listed->count().' ids='.$listed->pluck('id')->implode(',')
+        );
+        $this->assertFalse($listed->pluck('id')->contains($h2->id));
+
+        $headers = $this->authHeaders($user);
+        $res = $this->getJson('/api/hotels?page=1&starting_price_min=40&starting_price_max=60', $headers);
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+        $this->assertContains($h1->id, $ids);
+        $this->assertNotContains($h2->id, $ids);
+    }
+
     public function test_hotels_show_returns_404_when_not_found_or_out_of_scope(): void
     {
         $this->seed(RbacBootstrapSeeder::class);

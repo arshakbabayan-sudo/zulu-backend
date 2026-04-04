@@ -21,6 +21,7 @@ class VisaService
         }
 
         return Visa::query()
+            ->with('offer')
             ->whereHas('offer', function ($q) use ($companyIds) {
                 $q->whereIn('company_id', $companyIds);
             })
@@ -38,6 +39,7 @@ class VisaService
         }
 
         return Visa::query()
+            ->with('offer')
             ->whereHas('offer', function ($q) use ($companyIds) {
                 $q->whereIn('company_id', $companyIds);
             })

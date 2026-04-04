@@ -1,15 +1,46 @@
 <?php
+
 namespace App\Services\Bookings;
+
 use App\Models\Booking;
 use App\Models\Flight;
+use App\Models\Offer;
 use App\Models\Passenger;
 use App\Services\Finance\FinanceService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+
 class BookingService
 {
+    /**
+     * @param  array<int,array{offer_id:int,price:numeric}>  $itemsData
+     */
+    public function assertItemsAvailability(array $itemsData): void
+    {
+        foreach ($itemsData as $itemData) {
+            $offerId = (int) ($itemData['offer_id'] ?? 0);
+            if ($offerId <= 0) {
+                continue;
+            }
+
+            $offer = Offer::query()->with('flight')->find($offerId);
+            if (! $offer) {
+                continue;
+            }
+
+            if ($offer->type === 'flight' && $offer->flight) {
+                if ((int) ($offer->flight->seat_capacity_available ?? 0) <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => ['No seats available for flight: '.($offer->flight->flight_code_internal ?? 'unknown')],
+                    ]);
+                }
+            }
+        }
+    }
+
     /**
      * @param  list<int>  $companyIds
      * @return Collection<int, Booking>
@@ -19,11 +50,13 @@ class BookingService
         if ($companyIds === []) {
             return new Collection;
         }
+
         return Booking::query()
             ->whereIn('company_id', $companyIds)
             ->orderBy('id')
             ->get();
     }
+
     /**
      * @param  list<int>  $companyIds
      */
@@ -33,14 +66,16 @@ class BookingService
         if ($companyIds === []) {
             return $query->whereRaw('0 = 1')->paginate($perPage);
         }
+
         return $query
             ->whereIn('company_id', $companyIds)
             ->paginate($perPage);
     }
+
     /**
      * @param  array{user_id:int,company_id:int,status?:string,total_price?:numeric}  $bookingData
      * @param  array<int,array{offer_id:int,price:numeric}>  $itemsData
-     * @param  array<int, array<string, mixed>> $passengersData
+     * @param  array<int, array<string, mixed>>  $passengersData
      */
     public function create(array $bookingData, array $itemsData, array $passengersData = []): Booking
     {
@@ -83,13 +118,16 @@ class BookingService
             return $this->recalculateTotal($booking->fresh(['items', 'passengers']));
         });
     }
+
     public function recalculateTotal(Booking $booking): Booking
     {
         $total = (float) $booking->items()->sum('price');
         $booking->total_price = $total;
         $booking->save();
+
         return $booking->fresh(['items', 'passengers']);
     }
+
     public function confirm(Booking $booking): Booking
     {
         $booking->status = Booking::STATUS_CONFIRMED;
@@ -138,6 +176,7 @@ class BookingService
 
         return $booking;
     }
+
     public function cancel(Booking $booking): Booking
     {
         $booking->status = Booking::STATUS_CANCELLED;
@@ -163,6 +202,7 @@ class BookingService
 
         return $booking->fresh(['items', 'passengers']);
     }
+
     public function getWithDetails(int $id): ?Booking
     {
         return Booking::with(['user', 'company', 'passengers', 'items', 'invoices'])->find($id);

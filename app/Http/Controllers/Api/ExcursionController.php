@@ -23,6 +23,7 @@ class ExcursionController extends Controller
     {
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'excursions.view');
         $filters = $excursionService->listingFiltersFromRequest($request);
+        $filters['appearance_context'] = 'admin';
 
         if (! $request->filled('page')) {
             $excursions = $excursionService->listForCompanies($companyIds, $filters);
@@ -59,15 +60,23 @@ class ExcursionController extends Controller
         ]);
     }
 
+    /**
+     * Create excursion
+     *
+     * Attaches an excursion module to an existing offer of type `excursion`.
+     * On success, `offers.price` = `base_price`.
+     *
+     * @group Excursions
+     * @bodyParam offer_id int required ID of an existing offer with type=excursion. Example: 90
+     * @bodyParam location string required Example: Garni, Armenia
+     * @bodyParam duration string required Example: 4 hours
+     * @bodyParam group_size int required Minimum 1. Example: 10
+     * @bodyParam base_price numeric required Example: 25.00
+     * @bodyParam status string required Example: draft
+     */
     public function store(Request $request, ExcursionService $excursionService): JsonResponse
     {
-        $request->validate([
-            'offer_id' => ['required', 'integer', 'exists:offers,id'],
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'location' => ['required', 'string', 'max:255'],
-            'duration' => ['required', 'string', 'max:255'],
-            'group_size' => ['required', 'integer', 'min:1'],
-        ]);
+        $request->validate($excursionService->excursionStoreValidationRules());
 
         $offer = Offer::query()->findOrFail((int) $request->input('offer_id'));
 
@@ -86,13 +95,7 @@ class ExcursionController extends Controller
 
     public function update(Request $request, string $excursion, ExcursionService $excursionService): JsonResponse
     {
-        $request->validate([
-            'offer_id' => ['prohibited'],
-            'company_id' => ['prohibited'],
-            'location' => ['sometimes', 'string', 'max:255'],
-            'duration' => ['sometimes', 'string', 'max:255'],
-            'group_size' => ['sometimes', 'integer', 'min:1'],
-        ]);
+        $request->validate($excursionService->excursionUpdateValidationRules());
 
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'excursions.update');
         $model = $excursionService->findForCompanyScope($excursion, $companyIds);

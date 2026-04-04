@@ -29,7 +29,7 @@ class AdminRolloutTelemetryController extends Controller
         }
 
         $isSuper = $this->adminAccessService->isSuperAdmin($user);
-        $role = $isSuper ? 'super_admin' : 'company_admin';
+        $role = $this->adminAccessService->canonicalRoleForUser($user);
 
         Log::info('admin_next_screen_view', [
             'user_id' => $user->id,

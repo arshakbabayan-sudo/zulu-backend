@@ -10,6 +10,7 @@ use App\Models\Offer;
 use App\Models\Package;
 use App\Models\Transfer;
 use App\Models\Visa;
+use App\Services\Cars\CarAdvancedOptionsNormalizer;
 use App\Services\Pricing\PriceCalculatorService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -18,7 +19,7 @@ use Carbon\CarbonInterface;
  * Maps all offer module rows + parent {@see Offer} into the unified
  * normalized offer shape from project-docs/architecture/NORMALIZATION_MATRIX.md.
  *
- * Missing module fields become null. No synthetic values.
+ * Missing module fields become null. Car advanced_options uses stored JSON or defaults.
  */
 class OfferNormalizationService
 {
@@ -60,6 +61,7 @@ class OfferNormalizationService
         'vehicle_type',
         'is_package_eligible',
         'package_role',
+        'advanced_options',
         'cabins',
     ];
 
@@ -208,6 +210,9 @@ class OfferNormalizationService
         $base['from_location'] = $this->nullableNonEmptyString($c->pickup_location);
         $base['to_location'] = $this->nullableNonEmptyString($c->dropoff_location);
         $base['vehicle_type'] = $this->nullableNonEmptyString($c->vehicle_class);
+        $base['advanced_options'] = app(CarAdvancedOptionsNormalizer::class)->forApi(
+            is_array($c->advanced_options) ? $c->advanced_options : null
+        );
 
         return $this->assertKeyOrder($base);
     }

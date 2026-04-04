@@ -40,19 +40,19 @@ class PackageController extends Controller
 
     public function store(Request $request, PackageService $packageService): JsonResponse
     {
-        $request->validate([
+        $validated = $request->validate([
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
-            'company_id' => ['sometimes', 'integer', 'exists:companies,id'],
+            'company_id' => ['prohibited'],
             'package_type' => ['required', 'string', 'max:32'],
         ]);
 
-        $offer = Offer::query()->findOrFail((int) $request->input('offer_id'));
+        $offer = Offer::query()->findOrFail((int) $validated['offer_id']);
 
         if ($response = $this->ensureCommerceAccess($request, (int) $offer->company_id, 'packages.create')) {
             return $response;
         }
 
-        $package = $packageService->create($request->all());
+        $package = $packageService->create($validated);
         $package->load(['offer', 'components.offer']);
 
         return response()->json([

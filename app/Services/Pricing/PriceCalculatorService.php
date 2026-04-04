@@ -36,4 +36,22 @@ class PriceCalculatorService
             'b2c_price' => $this->b2cPrice($b2bPrice),
         ];
     }
+
+    /**
+     * @return array{
+     *   base_price: float,
+     *   calculated_price: float,
+     *   currency: string|null
+     * }
+     */
+    public function normalizedPrice(string|float|null $basePrice, ?string $currency): array
+    {
+        $base = round((float) ($basePrice ?? 0), 2);
+
+        return [
+            'base_price' => $base,
+            'calculated_price' => $this->b2cPrice($base),
+            'currency' => $currency !== null ? strtoupper($currency) : null,
+        ];
+    }
 }

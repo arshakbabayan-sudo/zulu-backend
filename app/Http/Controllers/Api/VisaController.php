@@ -41,6 +41,7 @@ class VisaController extends Controller
 
     public function show(Request $request, Visa $visa): JsonResponse
     {
+        $visa->loadMissing('offer');
         $offer = $visa->offer;
         if ($response = $this->ensureCommerceAccess($request, (int) $offer->company_id, 'visas.view')) {
             return $response;
@@ -79,20 +80,23 @@ class VisaController extends Controller
             'processing_days' => $validated['processing_days'] ?? null,
         ]);
 
+        $visa->load('offer');
+
         return response()->json([
             'success' => true,
             'data' => VisaResource::make($visa)->toArray($request),
-        ]);
+        ], 201);
     }
 
     public function update(Request $request, VisaService $visaService, Visa $visa): JsonResponse
     {
         $offer = $visa->offer;
-        if ($response = $this->ensureCommerceAccessAny($request, (int) $offer->company_id, ['visas.view', 'visas.update'])) {
+        if ($response = $this->ensureCommerceAccess($request, (int) $offer->company_id, 'visas.update')) {
             return $response;
         }
 
         $visa = $visaService->update($visa, $request->all());
+        $visa->loadMissing('offer');
 
         return response()->json([
             'success' => true,
@@ -127,20 +131,5 @@ class VisaController extends Controller
         return null;
     }
 
-    /**
-     * @param  list<string>  $permissions
-     */
-    private function ensureCommerceAccessAny(Request $request, int $companyId, array $permissions): ?JsonResponse
-    {
-        foreach ($permissions as $permission) {
-            if ($this->adminAccessService->allowsCommerceOperatorAccess($request->user(), $companyId, $permission)) {
-                return null;
-            }
-        }
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Forbidden',
-        ], 403);
-    }
 }

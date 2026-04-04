@@ -12,32 +12,43 @@ class OfferService
      * @param  list<int>  $companyIds
      * @return Collection<int, Offer>
      */
-    public function listForCompanies(array $companyIds): Collection
+    public function listForCompanies(array $companyIds, ?string $type = null): Collection
     {
         if ($companyIds === []) {
             return new Collection;
         }
 
-        return Offer::query()
+        $query = Offer::query()
             ->whereIn('company_id', $companyIds)
-            ->orderBy('id')
-            ->get();
+            ->select(['id', 'company_id', 'type', 'title', 'price', 'currency', 'status', 'created_at', 'updated_at'])
+            ->orderBy('id');
+
+        if ($type !== null && $type !== '') {
+            $query->where('type', $type);
+        }
+
+        return $query->get();
     }
 
     /**
      * @param  list<int>  $companyIds
      */
-    public function paginateForCompanies(array $companyIds, int $perPage = 20): LengthAwarePaginator
+    public function paginateForCompanies(array $companyIds, int $perPage = 20, ?string $type = null): LengthAwarePaginator
     {
-        $query = Offer::query()->orderBy('id');
+        $query = Offer::query()
+            ->select(['id', 'company_id', 'type', 'title', 'price', 'currency', 'status', 'created_at', 'updated_at'])
+            ->orderBy('id');
 
         if ($companyIds === []) {
             return $query->whereRaw('0 = 1')->paginate($perPage);
         }
 
-        return $query
-            ->whereIn('company_id', $companyIds)
-            ->paginate($perPage);
+        $query->whereIn('company_id', $companyIds);
+        if ($type !== null && $type !== '') {
+            $query->where('type', $type);
+        }
+
+        return $query->paginate($perPage);
     }
 
     /**
@@ -66,6 +77,12 @@ class OfferService
         $offer->status = Offer::STATUS_PUBLISHED;
         $offer->save();
 
+        $module = $this->loadInventoryModule($offer);
+        if ($module !== null && $module->status === 'draft') {
+            $module->status = 'active';
+            $module->save();
+        }
+
         return $offer->fresh();
     }
 
@@ -74,7 +91,27 @@ class OfferService
         $offer->status = Offer::STATUS_ARCHIVED;
         $offer->save();
 
+        $module = $this->loadInventoryModule($offer);
+        if ($module !== null && $module->status !== 'archived') {
+            $module->status = 'archived';
+            $module->save();
+        }
+
         return $offer->fresh();
+    }
+
+    private function loadInventoryModule(Offer $offer): ?\Illuminate\Database\Eloquent\Model
+    {
+        $relation = match ($offer->type) {
+            'flight', 'hotel', 'transfer', 'car', 'excursion' => $offer->type,
+            default => null,
+        };
+
+        if ($relation === null) {
+            return null;
+        }
+
+        return $offer->{$relation};
     }
 
     public function setStatus(Offer $offer, string $status): Offer

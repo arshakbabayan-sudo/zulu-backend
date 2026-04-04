@@ -186,6 +186,10 @@ class OfferNormalizationServiceTest extends TestCase
         $this->assertSame('EVN Airport', $n['from_location']);
         $this->assertSame('City center', $n['to_location']);
         $this->assertSame('economy', $n['vehicle_type']);
+        $this->assertIsArray($n['advanced_options']);
+        $this->assertSame(1, $n['advanced_options']['v']);
+        $this->assertFalse($n['advanced_options']['child_seats']['available']);
+        $this->assertSame([], $n['advanced_options']['services']);
         $this->assertSame(80, $n['price']);
         $this->assertNull($n['capacity_type']);
         $this->assertNull($n['price_type']);

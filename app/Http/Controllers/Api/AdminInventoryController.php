@@ -14,6 +14,7 @@ use App\Services\Excursions\ExcursionService;
 use App\Services\Flights\FlightService;
 use App\Services\Hotels\HotelService;
 use App\Services\Transfers\TransferService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -27,6 +28,7 @@ class AdminInventoryController extends Controller
     {
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'flights.view');
         $filters = $flightService->listingFiltersFromRequest($request);
+        $filters['appearance_context'] = 'zulu_admin';
         $paginator = $flightService->paginateForCompanies($companyIds, $filters, $this->perPage($request));
 
         return response()->json([
@@ -40,6 +42,7 @@ class AdminInventoryController extends Controller
     {
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'hotels.view');
         $filters = $hotelService->listingFiltersFromRequest($request);
+        $filters['appearance_context'] = 'zulu_admin';
         $paginator = $hotelService->paginateForCompanies($companyIds, $filters, $this->perPage($request));
 
         return response()->json([
@@ -66,6 +69,7 @@ class AdminInventoryController extends Controller
     {
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'cars.view');
         $filters = $carService->listingFiltersFromRequest($request);
+        $filters['appearance_context'] = 'zulu_admin';
         $paginator = $carService->paginateForCompanies($companyIds, $filters, $this->perPage($request));
 
         return response()->json([
@@ -79,6 +83,7 @@ class AdminInventoryController extends Controller
     {
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'excursions.view');
         $filters = $excursionService->listingFiltersFromRequest($request);
+        $filters['appearance_context'] = 'zulu_admin';
         $paginator = $excursionService->paginateForCompanies($companyIds, $filters, $this->perPage($request));
 
         return response()->json([
@@ -98,7 +103,7 @@ class AdminInventoryController extends Controller
     /**
      * @return array<string, int>
      */
-    private function meta(\Illuminate\Contracts\Pagination\LengthAwarePaginator $paginator): array
+    private function meta(LengthAwarePaginator $paginator): array
     {
         return [
             'current_page' => $paginator->currentPage(),
