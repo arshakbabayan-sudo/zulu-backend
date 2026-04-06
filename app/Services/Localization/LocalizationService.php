@@ -6,7 +6,9 @@ use App\Models\ContentTranslation;
 use App\Models\Notification;
 use App\Models\NotificationTemplate;
 use App\Models\SupportedLanguage;
+use App\Models\UiTranslation;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 use Throwable;
 
@@ -30,11 +32,156 @@ class LocalizationService
         return SupportedLanguage::query()->where('is_default', true)->first();
     }
 
+    /**
+     * @return Collection<int, SupportedLanguage>
+     */
+    public function getAllLanguages(): Collection
+    {
+        return SupportedLanguage::query()->orderBy('sort_order')->orderBy('code')->get();
+    }
+
+    public function setDefaultLanguage(SupportedLanguage $language): SupportedLanguage
+    {
+        SupportedLanguage::query()->update(['is_default' => false]);
+        $language->update(['is_default' => true, 'is_enabled' => true]);
+
+        return $language->fresh();
+    }
+
+    public function updateLanguage(SupportedLanguage $language, string $name, string $nameEn, bool $rtl): SupportedLanguage
+    {
+        $language->update([
+            'name'    => trim($name),
+            'name_en' => trim($nameEn),
+            'rtl'     => $rtl,
+        ]);
+
+        return $language->fresh();
+    }
+
     public function toggleLanguageEnabled(SupportedLanguage $language): SupportedLanguage
     {
         $language->update(['is_enabled' => ! $language->is_enabled]);
 
         return $language->fresh();
+    }
+
+    public function createLanguage(string $code, string $name, string $nameEn, bool $rtl = false): SupportedLanguage
+    {
+        $code = strtolower(trim($code));
+
+        $exists = SupportedLanguage::query()->where('code', $code)->exists();
+        if ($exists) {
+            throw new InvalidArgumentException('A language with this code already exists.');
+        }
+
+        $maxSort = (int) SupportedLanguage::query()->max('sort_order');
+
+        return SupportedLanguage::query()->create([
+            'code'       => $code,
+            'name'       => trim($name),
+            'name_en'    => trim($nameEn),
+            'is_default' => false,
+            'is_enabled' => true,
+            'sort_order' => $maxSort + 1,
+        ]);
+    }
+
+    public function deleteLanguage(SupportedLanguage $language): void
+    {
+        if ($language->is_default) {
+            throw new InvalidArgumentException('Cannot delete the default language.');
+        }
+
+        $language->delete();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function getUiTranslations(string $languageCode): array
+    {
+        $cacheKey = 'ui_translations_' . $languageCode;
+
+        return Cache::rememberForever($cacheKey, function () use ($languageCode): array {
+            return UiTranslation::query()
+                ->where('language_code', $languageCode)
+                ->pluck('value', 'key')
+                ->all();
+        });
+    }
+
+    /**
+     * @param  array<string, string>  $keyValues
+     */
+    public function setUiTranslations(string $languageCode, array $keyValues): int
+    {
+        $langExists = SupportedLanguage::query()->where('code', $languageCode)->exists();
+        if (! $langExists) {
+            throw new InvalidArgumentException('Invalid or unsupported language_code.');
+        }
+
+        $count = 0;
+        foreach ($keyValues as $key => $value) {
+            UiTranslation::query()->updateOrCreate(
+                ['language_code' => $languageCode, 'key' => (string) $key],
+                ['value' => (string) $value]
+            );
+            $count++;
+        }
+
+        Cache::forget('ui_translations_' . $languageCode);
+
+        return $count;
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    public function deleteUiTranslations(string $languageCode, array $keys = []): int
+    {
+        $q = UiTranslation::query()->where('language_code', $languageCode);
+
+        if ($keys !== []) {
+            $q->whereIn('key', $keys);
+        }
+
+        $deleted = (int) $q->delete();
+        Cache::forget('ui_translations_' . $languageCode);
+
+        return $deleted;
+    }
+
+    /**
+     * @return array<string, string>  Paginated key-value rows for admin editor
+     */
+    public function getUiTranslationsPaginated(string $languageCode, int $page, int $perPage, string $search = ''): array
+    {
+        $q = UiTranslation::query()->where('language_code', $languageCode);
+
+        if ($search !== '') {
+            $q->where(function ($sub) use ($search): void {
+                $sub->where('key', 'like', '%' . $search . '%')
+                    ->orWhere('value', 'like', '%' . $search . '%');
+            });
+        }
+
+        $total = (int) $q->count();
+        $rows = $q->orderBy('key')
+            ->offset(($page - 1) * $perPage)
+            ->limit($perPage)
+            ->get(['key', 'value'])
+            ->map(fn ($r) => ['key' => $r->key, 'value' => $r->value])
+            ->values()
+            ->all();
+
+        return [
+            'data'         => $rows,
+            'total'        => $total,
+            'per_page'     => $perPage,
+            'current_page' => $page,
+            'last_page'    => (int) ceil($total / $perPage),
+        ];
     }
 
     public function upsertNotificationTemplate(

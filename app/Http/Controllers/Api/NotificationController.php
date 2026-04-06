@@ -16,12 +16,11 @@ class NotificationController extends Controller
 
     public function index(Request $request, NotificationService $notificationService): JsonResponse
     {
-        $notifications = $notificationService->listForUser((int) $request->user()->id);
+        $perPage = min((int) $request->query('per_page', 20), 100);
+        $perPage = max(1, $perPage);
+        $paginator = $notificationService->paginateForUser((int) $request->user()->id, $perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => NotificationResource::collection($notifications)->resolve(),
-        ]);
+        return $this->paginatedCommerceResourceResponse($request, $paginator, NotificationResource::class);
     }
 
     public function markRead(Request $request, Notification $notification, NotificationService $notificationService): JsonResponse

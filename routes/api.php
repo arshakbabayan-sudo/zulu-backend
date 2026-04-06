@@ -84,6 +84,7 @@ Route::prefix('localization')->group(function () {
     Route::get('languages', [LocalizationController::class, 'languages']);
     Route::get('translations', [LocalizationController::class, 'translations']);
     Route::get('templates/{event}', [LocalizationController::class, 'getTemplate']);
+    Route::get('ui-translations', [LocalizationController::class, 'uiTranslations']);
 });
 
 Route::get('reviews', [ReviewController::class, 'getReviews'])->middleware('throttle:api_public');
@@ -120,8 +121,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('localization/translations', [LocalizationController::class, 'setTranslations']);
     Route::delete('localization/translations', [LocalizationController::class, 'deleteTranslations']);
     Route::patch('localization/languages/{language}/toggle', [LocalizationController::class, 'toggleLanguage']);
+    Route::get('localization/languages/all', [LocalizationController::class, 'adminLanguages']);
+    Route::post('localization/languages', [LocalizationController::class, 'createLanguage']);
+    Route::patch('localization/languages/{language}/set-default', [LocalizationController::class, 'setDefaultLanguage']);
+    Route::patch('localization/languages/{language}/edit', [LocalizationController::class, 'editLanguage']);
+    Route::delete('localization/languages/{language}', [LocalizationController::class, 'deleteLanguage']);
     Route::patch('localization/templates/{event}', [LocalizationController::class, 'updateTemplate'])
         ->where('event', '[A-Za-z0-9._-]+');
+    Route::get('localization/ui-translations/admin', [LocalizationController::class, 'uiTranslationsPaginated']);
+    Route::post('localization/ui-translations', [LocalizationController::class, 'setUiTranslations']);
 
     Route::get('account/me', [AccountController::class, 'me']);
     Route::post('rollout/admin-next/screen-view', [AdminRolloutTelemetryController::class, 'screenView']);

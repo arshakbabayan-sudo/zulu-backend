@@ -79,15 +79,18 @@ class AdminAccessService
             return $this->cache[$key];
         }
 
-        $result = $user->memberships()
-            ->where(function (Builder $query): void {
-                $query->whereHas('role', function (Builder $roleQuery): void {
-                    $roleQuery->whereIn('name', self::SUPER_ADMIN_ROLE_NAMES);
-                })->orWhereHas('role.permissions', function (Builder $permQuery): void {
-                    $permQuery->whereIn('name', self::SUPER_ADMIN_PERMISSION_NAMES);
-                });
-            })
-            ->exists();
+        $cacheKey = 'admin_is_super_'.$user->id;
+        $result = Cache::remember($cacheKey, 300, function () use ($user): bool {
+            return $user->memberships()
+                ->where(function (Builder $query): void {
+                    $query->whereHas('role', function (Builder $roleQuery): void {
+                        $roleQuery->whereIn('name', self::SUPER_ADMIN_ROLE_NAMES);
+                    })->orWhereHas('role.permissions', function (Builder $permQuery): void {
+                        $permQuery->whereIn('name', self::SUPER_ADMIN_PERMISSION_NAMES);
+                    });
+                })
+                ->exists();
+        });
 
         return $this->cache[$key] = $result;
     }
@@ -134,13 +137,16 @@ class AdminAccessService
             return $this->cache[$key] = true;
         }
 
-        $result = $user->memberships()
-            ->whereHas('role', function (Builder $query): void {
-                $query->whereIn('name', self::PLATFORM_ADMIN_ROLE_NAMES);
-            })
-            ->exists()
-            || $this->hasAnyPermission($user, self::PLATFORM_ADMIN_PERMISSION_NAMES)
-            || $this->hasPermissionPrefix($user, 'platform.');
+        $cacheKey = 'admin_is_platform_'.$user->id;
+        $result = Cache::remember($cacheKey, 300, function () use ($user): bool {
+            return $user->memberships()
+                ->whereHas('role', function (Builder $query): void {
+                    $query->whereIn('name', self::PLATFORM_ADMIN_ROLE_NAMES);
+                })
+                ->exists()
+                || $this->hasAnyPermission($user, self::PLATFORM_ADMIN_PERMISSION_NAMES)
+                || $this->hasPermissionPrefix($user, 'platform.');
+        });
 
         return $this->cache[$key] = $result;
     }

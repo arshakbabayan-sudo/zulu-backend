@@ -40,7 +40,7 @@ class NotificationService
         $notification->status = 'read';
         $notification->save();
 
-        return $notification->fresh();
+        return $notification;
     }
 
     /**

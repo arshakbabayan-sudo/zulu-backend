@@ -83,7 +83,7 @@ class OfferService
             $module->save();
         }
 
-        return $offer->fresh();
+        return $offer;
     }
 
     public function archive(Offer $offer): Offer
@@ -97,7 +97,7 @@ class OfferService
             $module->save();
         }
 
-        return $offer->fresh();
+        return $offer;
     }
 
     private function loadInventoryModule(Offer $offer): ?\Illuminate\Database\Eloquent\Model

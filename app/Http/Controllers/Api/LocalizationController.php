@@ -204,6 +204,84 @@ class LocalizationController extends Controller
         ]);
     }
 
+    public function adminLanguages(Request $request, LocalizationService $service): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $langs = $service->getAllLanguages()->map(fn ($row) => [
+            'id'         => (int) $row->id,
+            'code'       => $row->code,
+            'name'       => $row->name,
+            'name_en'    => $row->name_en,
+            'is_default' => (bool) $row->is_default,
+            'is_enabled' => (bool) $row->is_enabled,
+            'rtl'        => (bool) ($row->rtl ?? false),
+            'sort_order' => (int) $row->sort_order,
+        ])->values();
+
+        return response()->json(['success' => true, 'data' => $langs]);
+    }
+
+    public function setDefaultLanguage(Request $request, SupportedLanguage $language, LocalizationService $service): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $updated = $service->setDefaultLanguage($language);
+
+        return response()->json(['success' => true, 'data' => [
+            'id'         => $updated->id,
+            'code'       => $updated->code,
+            'is_default' => (bool) $updated->is_default,
+        ]]);
+    }
+
+    public function editLanguage(Request $request, SupportedLanguage $language, LocalizationService $service): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'name'    => ['required', 'string', 'max:64'],
+            'name_en' => ['required', 'string', 'max:64'],
+            'rtl'     => ['sometimes', 'boolean'],
+        ]);
+
+        $updated = $service->updateLanguage(
+            $language,
+            $validated['name'],
+            $validated['name_en'],
+            (bool) ($validated['rtl'] ?? false)
+        );
+
+        return response()->json(['success' => true, 'data' => [
+            'id'         => $updated->id,
+            'code'       => $updated->code,
+            'name'       => $updated->name,
+            'name_en'    => $updated->name_en,
+            'rtl'        => (bool) $updated->rtl,
+            'is_default' => (bool) $updated->is_default,
+            'is_enabled' => (bool) $updated->is_enabled,
+            'sort_order' => (int) $updated->sort_order,
+        ]]);
+    }
+
     public function toggleLanguage(Request $request, SupportedLanguage $language, LocalizationService $service): JsonResponse
     {
         $user = $request->user();
@@ -282,6 +360,132 @@ class LocalizationController extends Controller
                 'updated_at' => $template->updated_at?->toIso8601String(),
             ],
         ]);
+    }
+
+    public function uiTranslations(Request $request, LocalizationService $service): JsonResponse
+    {
+        $langRaw = $request->query('lang') ?? 'en';
+        $lang = is_string($langRaw) ? $langRaw : 'en';
+        $lang = $service->resolveLanguage($lang);
+
+        $translations = $service->getUiTranslations($lang);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'language_code' => $lang,
+                'translations' => $translations,
+            ],
+        ]);
+    }
+
+    public function uiTranslationsPaginated(Request $request, LocalizationService $service): JsonResponse
+    {
+        $validated = $request->validate([
+            'lang'     => ['required', 'string', 'max:8'],
+            'page'     => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:5', 'max:100'],
+            'search'   => ['sometimes', 'string', 'max:100'],
+        ]);
+
+        $result = $service->getUiTranslationsPaginated(
+            $validated['lang'],
+            (int) ($validated['page'] ?? 1),
+            (int) ($validated['per_page'] ?? 50),
+            (string) ($validated['search'] ?? '')
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $result,
+        ]);
+    }
+
+    public function setUiTranslations(Request $request, LocalizationService $service): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'language_code'  => ['required', 'string', 'max:8'],
+            'translations'   => ['required', 'array', 'min:1'],
+            'translations.*' => ['string'],
+        ]);
+
+        try {
+            $count = $service->setUiTranslations($validated['language_code'], $validated['translations']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => ['saved' => $count],
+        ]);
+    }
+
+    public function createLanguage(Request $request, LocalizationService $service): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'code'    => ['required', 'string', 'max:8'],
+            'name'    => ['required', 'string', 'max:64'],
+            'name_en' => ['required', 'string', 'max:64'],
+        ]);
+
+        try {
+            $lang = $service->createLanguage(
+                $validated['code'],
+                $validated['name'],
+                $validated['name_en']
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id'         => $lang->id,
+                'code'       => $lang->code,
+                'name'       => $lang->name,
+                'name_en'    => $lang->name_en,
+                'is_default' => $lang->is_default,
+                'is_enabled' => $lang->is_enabled,
+                'sort_order' => $lang->sort_order,
+            ],
+        ], 201);
+    }
+
+    public function deleteLanguage(Request $request, SupportedLanguage $language, LocalizationService $service): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        try {
+            $service->deleteLanguage($language);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true]);
     }
 
     private function resolveOwningCompanyId(string $entityType, int $entityId): ?int

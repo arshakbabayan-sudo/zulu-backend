@@ -65,6 +65,11 @@ class VisaController extends Controller
             'country' => ['required', 'string', 'max:255'],
             'visa_type' => ['required', 'string', 'max:255'],
             'processing_days' => ['nullable', 'integer', 'min:0'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'required_documents' => VisaService::storeRequiredDocumentsRules(),
+            'price' => ['nullable', 'numeric', 'min:0'],
+            'country_id' => ['nullable', 'integer', Rule::exists('countries', 'id')],
         ]);
 
         $offer = Offer::query()->findOrFail((int) $validated['offer_id']);
@@ -78,6 +83,11 @@ class VisaController extends Controller
             'country' => $validated['country'],
             'visa_type' => $validated['visa_type'],
             'processing_days' => $validated['processing_days'] ?? null,
+            'name' => $validated['name'] ?? null,
+            'description' => $validated['description'] ?? null,
+            'required_documents' => VisaService::normalizeRequiredDocuments($validated['required_documents'] ?? null),
+            'price' => $validated['price'] ?? null,
+            'country_id' => $validated['country_id'] ?? null,
         ]);
 
         $visa->load('offer');

@@ -41,10 +41,6 @@ class BookingService
         }
     }
 
-    /**
-     * @param  list<int>  $companyIds
-     * @return Collection<int, Booking>
-     */
     public function listForCompanies(array $companyIds): Collection
     {
         if ($companyIds === []) {
@@ -52,17 +48,18 @@ class BookingService
         }
 
         return Booking::query()
+            ->with(['items', 'passengers', 'user'])
             ->whereIn('company_id', $companyIds)
             ->orderBy('id')
             ->get();
     }
 
-    /**
-     * @param  list<int>  $companyIds
-     */
     public function paginateForCompanies(array $companyIds, int $perPage = 20): LengthAwarePaginator
     {
-        $query = Booking::query()->orderBy('id');
+        $query = Booking::query()
+            ->with(['items', 'passengers', 'user'])
+            ->orderBy('id');
+
         if ($companyIds === []) {
             return $query->whereRaw('0 = 1')->paginate($perPage);
         }
@@ -115,7 +112,8 @@ class BookingService
                 ]);
             }
 
-            return $this->recalculateTotal($booking->fresh(['items', 'passengers']));
+            $booking->load(['items', 'passengers']);
+            return $this->recalculateTotal($booking);
         });
     }
 
@@ -125,7 +123,9 @@ class BookingService
         $booking->total_price = $total;
         $booking->save();
 
-        return $booking->fresh(['items', 'passengers']);
+        $booking->load(['items', 'passengers']);
+
+        return $booking;
     }
 
     public function confirm(Booking $booking): Booking
@@ -163,10 +163,10 @@ class BookingService
             ]);
         }
 
-        $booking = $booking->fresh(['items', 'passengers']);
+        $booking->load(['items', 'passengers']);
 
         try {
-            app(FinanceService::class)->createEntitlementsForBooking($booking->fresh());
+            app(FinanceService::class)->createEntitlementsForBooking($booking);
         } catch (\Throwable $e) {
             Log::warning('Booking entitlement creation failed', [
                 'booking_id' => $booking->id,
@@ -200,7 +200,9 @@ class BookingService
             ]);
         }
 
-        return $booking->fresh(['items', 'passengers']);
+        $booking->load(['items', 'passengers']);
+
+        return $booking;
     }
 
     public function getWithDetails(int $id): ?Booking
