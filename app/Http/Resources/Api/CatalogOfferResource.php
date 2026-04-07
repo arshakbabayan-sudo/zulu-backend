@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Offer;
 use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
@@ -14,6 +15,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class CatalogOfferResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
@@ -21,11 +24,12 @@ class CatalogOfferResource extends JsonResource
     {
         $b2cPrice = app(PriceCalculatorService::class)->b2cPrice($this->price ?? 0);
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->price, $this->currency);
+        $lang = $this->apiLang($request);
 
         return [
             'id' => $this->id,
             'type' => $this->type,
-            'title' => $this->title,
+            'title' => $this->getTranslated('title', $lang) ?? $this->title,
             'price' => $b2cPrice,
             'currency' => $this->currency,
             'pricing' => $pricing,

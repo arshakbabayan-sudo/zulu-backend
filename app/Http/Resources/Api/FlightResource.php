@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Flight;
 use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Pricing\PriceCalculatorService;
@@ -13,11 +14,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class FlightResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
         $base = $this->resource->toOfferEmbedArray();
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->adult_price, $this->offer?->currency);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
@@ -50,7 +54,7 @@ class FlightResource extends JsonResource
                 'id' => $this->offer->id,
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
-                'title' => $this->offer->title,
+                'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
                 'price' => $this->offer->price,
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,

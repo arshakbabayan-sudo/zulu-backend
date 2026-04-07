@@ -2,16 +2,20 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class VisaResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
         $offer = $this->whenLoaded('offer', fn () => $this->offer);
         $offerPrice = $offer?->price ?? null;
 
@@ -22,8 +26,8 @@ class VisaResource extends JsonResource
             'country' => $this->country,
             'visa_type' => $this->visa_type,
             'processing_days' => $this->processing_days,
-            'name' => $this->name,
-            'description' => $this->description,
+            'name' => $this->getTranslated('title', $lang, $this->name) ?? $this->name,
+            'description' => $this->getTranslated('description', $lang) ?? $this->description,
             'required_documents' => self::requiredDocumentsAsArray($this->required_documents),
             'visa_price' => $this->price,
             'offer_price' => $offerPrice,

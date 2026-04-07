@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Transfer;
 use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Pricing\PriceCalculatorService;
@@ -15,11 +16,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class TransferDetailResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->offer?->currency);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
             'available_from' => $this->availability_window_start ?? $this->service_date,
@@ -35,7 +39,7 @@ class TransferDetailResource extends JsonResource
             'appears_in_web' => (bool) $this->appears_in_web,
             'appears_in_admin' => (bool) $this->appears_in_admin,
             'appears_in_zulu_admin' => (bool) $this->appears_in_zulu_admin,
-            'transfer_title' => $this->transfer_title,
+            'transfer_title' => $this->getTranslated('title', $lang, $this->transfer_title) ?? $this->transfer_title,
             'transfer_type' => $this->transfer_type,
             'pickup_country' => $this->pickup_country,
             'pickup_city' => $this->pickup_city,
@@ -85,7 +89,7 @@ class TransferDetailResource extends JsonResource
                 'id' => $this->offer->id,
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
-                'title' => $this->offer->title,
+                'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
                 'price' => $this->offer->price,
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,

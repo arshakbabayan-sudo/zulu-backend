@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Hotel;
 use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Pricing\PriceCalculatorService;
@@ -15,6 +16,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class HotelListResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * Minimum price among active {@see HotelRoomPricing} rows for this hotel.
      *
@@ -48,6 +51,7 @@ class HotelListResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
         $minPricing = self::minimumActivePricing($this->resource);
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($minPricing['starting_price'], $minPricing['currency']);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
@@ -58,7 +62,7 @@ class HotelListResource extends JsonResource
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
-            'hotel_name' => $this->hotel_name,
+            'hotel_name' => $this->getTranslated('hotel_name', $lang) ?? $this->hotel_name,
             'property_type' => $this->property_type,
             'hotel_type' => $this->hotel_type,
             'star_rating' => $this->star_rating,
@@ -69,7 +73,7 @@ class HotelListResource extends JsonResource
             'full_address' => $this->full_address,
             'latitude' => $this->latitude !== null ? (float) $this->latitude : null,
             'longitude' => $this->longitude !== null ? (float) $this->longitude : null,
-            'short_description' => $this->short_description,
+            'short_description' => $this->getTranslated('short_description', $lang) ?? $this->short_description,
             'main_image' => $this->main_image,
             'meal_type' => $this->meal_type,
             'review_score' => $this->review_score !== null ? (float) $this->review_score : null,
@@ -91,7 +95,7 @@ class HotelListResource extends JsonResource
                 'id' => $this->offer->id,
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
-                'title' => $this->offer->title,
+                'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
                 'price' => $this->offer->price,
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,

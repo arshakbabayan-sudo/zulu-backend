@@ -48,14 +48,14 @@ trait SummarizesOfferModules
     /**
      * @return array<string, mixed>
      */
-    private function hotelModuleSummary(): array
+    private function hotelModuleSummary(string $lang): array
     {
         $h = $this->hotel;
 
         return [
             'id' => $h->id,
             'offer_id' => $h->offer_id,
-            'hotel_name' => $h->hotel_name,
+            'hotel_name' => $h->getTranslated('hotel_name', $lang) ?? $h->hotel_name,
             'country' => $h->country,
             'city' => $h->city,
             'district_or_area' => $h->district_or_area,
@@ -70,14 +70,14 @@ trait SummarizesOfferModules
     /**
      * @return array<string, mixed>
      */
-    private function transferModuleSummary(): array
+    private function transferModuleSummary(string $lang): array
     {
         $t = $this->transfer;
 
         return [
             'id' => $t->id,
             'offer_id' => $t->offer_id,
-            'transfer_title' => $t->transfer_title,
+            'transfer_title' => $t->getTranslated('title', $lang, $t->transfer_title) ?? $t->transfer_title,
             'pickup_city' => $t->pickup_city,
             'pickup_point_name' => $t->pickup_point_name,
             'dropoff_city' => $t->dropoff_city,
@@ -116,14 +116,14 @@ trait SummarizesOfferModules
     /**
      * @return array<string, mixed>
      */
-    private function excursionModuleSummary(): array
+    private function excursionModuleSummary(string $lang): array
     {
         $e = $this->excursion;
 
         return [
             'id' => $e->id,
             'offer_id' => $e->offer_id,
-            'tour_name' => $e->tour_name,
+            'tour_name' => $e->getTranslated('title', $lang, $e->tour_name) ?? $e->tour_name,
             'location' => $e->location,
             'country' => $e->country,
             'city' => $e->city,

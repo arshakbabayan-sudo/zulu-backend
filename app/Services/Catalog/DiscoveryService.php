@@ -24,10 +24,12 @@ class DiscoveryService
 
     /**
      * @param  array<string, mixed>  $input
+     * @param  string|null  $languageCode  Resolved locale for normalized titles (see {@see OfferNormalizationService}).
      * @return array{items: list<array<string, mixed>>, meta: array<string, int>}
      */
-    public function search(array $input): array
+    public function search(array $input, ?string $languageCode = null): array
     {
+        $lang = $languageCode ?? config('app.locale', 'en');
         $perPage = (int) ($input['per_page'] ?? 20);
         $perPage = max(1, min(100, $perPage));
         $page = max(1, (int) ($input['page'] ?? 1));
@@ -68,7 +70,7 @@ class DiscoveryService
             if ($relation !== null) {
                 $offer->loadMissing($relation === 'flight' ? 'flight.cabins' : $relation);
             }
-            $normalized = $this->normalizationService->normalize($offer, true);
+            $normalized = $this->normalizationService->normalize($offer, true, $lang);
             if ($normalized !== null) {
                 $items[] = $normalized;
             }
@@ -100,10 +102,12 @@ class DiscoveryService
     }
 
     /**
+     * @param  string|null  $languageCode  Resolved locale for offer title + normalized copy.
      * @return array{offer: array<string, mixed>, normalized: array<string, mixed>, hotel_rooms?: list<array<string, mixed>>, review_target?: array{entity_type: string, entity_id: int}}|null
      */
-    public function findPublishedOfferWithNormalized(int $id): ?array
+    public function findPublishedOfferWithNormalized(int $id, ?string $languageCode = null): ?array
     {
+        $lang = $languageCode ?? config('app.locale', 'en');
         $offer = Offer::query()
             ->where('status', Offer::STATUS_PUBLISHED)
             ->whereKey($id)
@@ -134,7 +138,7 @@ class DiscoveryService
             return null;
         }
 
-        $normalized = $this->normalizationService->normalize($offer, true);
+        $normalized = $this->normalizationService->normalize($offer, true, $lang);
         if ($normalized === null) {
             return null;
         }
@@ -145,7 +149,7 @@ class DiscoveryService
             'offer' => [
                 'id' => $offer->id,
                 'type' => $offer->type,
-                'title' => $offer->title,
+                'title' => $offer->getTranslated('title', $lang) ?? $offer->title,
                 'price' => $pricing['calculated_price'],
                 'base_price' => $pricing['base_price'],
                 'calculated_price' => $pricing['calculated_price'],

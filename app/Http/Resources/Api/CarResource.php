@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Car;
 use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Cars\CarAdvancedOptionsNormalizer;
@@ -16,11 +17,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class CarResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
         $pricing = $this->base_price !== null
             ? app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->offer?->currency)
             : null;
@@ -72,7 +76,7 @@ class CarResource extends JsonResource
                 'id' => $this->offer->id,
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
-                'title' => $this->offer->title,
+                'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
                 'price' => $this->offer->price,
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,

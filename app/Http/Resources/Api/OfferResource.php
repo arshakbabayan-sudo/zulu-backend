@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Http\Resources\Api\Concerns\SummarizesOfferModules;
 use App\Services\Offers\OfferNormalizationService;
 use App\Services\Pricing\PriceCalculatorService;
@@ -15,6 +16,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class OfferResource extends JsonResource
 {
+    use ResolvesApiLanguage;
     use SummarizesOfferModules;
 
     /**
@@ -24,12 +26,13 @@ class OfferResource extends JsonResource
     {
         $dual = app(PriceCalculatorService::class)->dualPrice($this->price ?? 0);
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->price, $this->currency);
+        $lang = $this->apiLang($request);
 
         $data = [
             'id' => $this->id,
             'company_id' => $this->company_id,
             'type' => $this->type,
-            'title' => $this->title,
+            'title' => $this->getTranslated('title', $lang) ?? $this->title,
             'price' => $dual['b2b_price'],
             'b2b_price' => $dual['b2b_price'],
             'b2c_price' => $dual['b2c_price'],
@@ -42,11 +45,11 @@ class OfferResource extends JsonResource
             ),
             'hotel' => $this->when(
                 $this->relationLoaded('hotel'),
-                fn () => $this->hotel ? $this->hotelModuleSummary() : null
+                fn () => $this->hotel ? $this->hotelModuleSummary($lang) : null
             ),
             'transfer' => $this->when(
                 $this->relationLoaded('transfer'),
-                fn () => $this->transfer ? $this->transferModuleSummary() : null
+                fn () => $this->transfer ? $this->transferModuleSummary($lang) : null
             ),
             'car' => $this->when(
                 $this->relationLoaded('car'),
@@ -54,7 +57,7 @@ class OfferResource extends JsonResource
             ),
             'excursion' => $this->when(
                 $this->relationLoaded('excursion'),
-                fn () => $this->excursion ? $this->excursionModuleSummary() : null
+                fn () => $this->excursion ? $this->excursionModuleSummary($lang) : null
             ),
             'package' => $this->when(
                 $this->relationLoaded('package'),
@@ -66,7 +69,7 @@ class OfferResource extends JsonResource
             ),
         ];
 
-        $normalized = app(OfferNormalizationService::class)->normalize($this->resource);
+        $normalized = app(OfferNormalizationService::class)->normalize($this->resource, false, $lang);
         if ($normalized !== null) {
             $data['normalized_offer'] = $normalized;
         }

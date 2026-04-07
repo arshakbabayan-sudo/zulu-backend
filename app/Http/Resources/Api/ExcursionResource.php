@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Excursion;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -11,17 +12,21 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class ExcursionResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->whenLoaded('offer', fn () => $this->offer !== null ? (int) $this->offer->company_id : null),
             // Convenience mirrors of commercial fields (same values as nested `offer`) for operator/inventory tables.
-            'title' => $this->whenLoaded('offer', fn () => $this->offer?->title),
+            'title' => $this->whenLoaded('offer', fn () => $this->offer !== null ? ($this->offer->getTranslated('title', $lang) ?? $this->offer->title) : null),
             'price' => $this->whenLoaded('offer', fn () => $this->offer?->price !== null ? (float) $this->offer->price : null),
             'currency' => $this->whenLoaded('offer', fn () => $this->offer?->currency),
             'location' => $this->location,
@@ -30,8 +35,8 @@ class ExcursionResource extends JsonResource
             'general_category' => $this->general_category,
             'category' => $this->category,
             'excursion_type' => $this->excursion_type,
-            'tour_name' => $this->tour_name,
-            'overview' => $this->overview,
+            'tour_name' => $this->getTranslated('title', $lang, $this->tour_name) ?? $this->tour_name,
+            'overview' => $this->getTranslated('description', $lang) ?? $this->overview,
             'duration' => $this->duration,
             'starts_at' => $this->starts_at?->toIso8601String(),
             'ends_at' => $this->ends_at?->toIso8601String(),
@@ -57,7 +62,7 @@ class ExcursionResource extends JsonResource
                 'id' => $this->offer->id,
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
-                'title' => $this->offer->title,
+                'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
                 'price' => $this->offer->price,
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,

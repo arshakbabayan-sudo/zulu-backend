@@ -72,8 +72,11 @@ class DiscoveryController extends Controller
             'private_only' => $this->parseBooleanish($request->query('private_only')),
         ];
 
+        $lang = $request->attributes->get('lang');
+        $lang = is_string($lang) && $lang !== '' ? $lang : null;
+
         // TODO: apply visibility filter when direct queries are added
-        $result = $discoveryService->search($input);
+        $result = $discoveryService->search($input, $lang);
 
         return response()->json([
             'success' => true,
@@ -81,9 +84,12 @@ class DiscoveryController extends Controller
         ]);
     }
 
-    public function show(int $id, DiscoveryService $discoveryService): JsonResponse
+    public function show(int $id, Request $request, DiscoveryService $discoveryService): JsonResponse
     {
-        $payload = $discoveryService->findPublishedOfferWithNormalized($id);
+        $lang = $request->attributes->get('lang');
+        $lang = is_string($lang) && $lang !== '' ? $lang : null;
+
+        $payload = $discoveryService->findPublishedOfferWithNormalized($id, $lang);
 
         if ($payload === null) {
             return response()->json([

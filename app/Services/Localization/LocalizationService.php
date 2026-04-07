@@ -9,6 +9,7 @@ use App\Models\SupportedLanguage;
 use App\Models\UiTranslation;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
 
@@ -157,6 +158,49 @@ class LocalizationService
      */
     public function getUiTranslationsPaginated(string $languageCode, int $page, int $perPage, string $search = ''): array
     {
+        $defaultCode = $this->getDefaultLanguage()?->code ?? 'en';
+
+        // Non-default languages: full canonical key list from default language, overlay selected values.
+        if ($languageCode !== $defaultCode) {
+            $q = DB::table('ui_translations as d')
+                ->leftJoin('ui_translations as s', function ($join) use ($languageCode): void {
+                    $join->on('d.key', '=', 's.key')
+                        ->where('s.language_code', '=', $languageCode);
+                })
+                ->where('d.language_code', $defaultCode);
+
+            if ($search !== '') {
+                $like = '%' . $search . '%';
+                $q->where(function ($sub) use ($like): void {
+                    $sub->where('d.key', 'like', $like)
+                        ->orWhere('d.value', 'like', $like)
+                        ->orWhere('s.value', 'like', $like);
+                });
+            }
+
+            $total = (int) (clone $q)->count();
+            $rows = (clone $q)
+                ->select([
+                    'd.key',
+                    DB::raw("COALESCE(s.value, '') as value"),
+                ])
+                ->orderBy('d.key')
+                ->offset(($page - 1) * $perPage)
+                ->limit($perPage)
+                ->get()
+                ->map(fn ($r) => ['key' => $r->key, 'value' => (string) $r->value])
+                ->values()
+                ->all();
+
+            return [
+                'data'         => $rows,
+                'total'        => $total,
+                'per_page'     => $perPage,
+                'current_page' => $page,
+                'last_page'    => (int) ceil($total / $perPage),
+            ];
+        }
+
         $q = UiTranslation::query()->where('language_code', $languageCode);
 
         if ($search !== '') {

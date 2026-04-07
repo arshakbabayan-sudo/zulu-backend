@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Package;
 use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Packages\PackageService;
@@ -16,11 +17,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class PackageResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
         $componentsLoaded = $this->relationLoaded('components');
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->currency);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
@@ -32,8 +36,8 @@ class PackageResource extends JsonResource
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
             'package_type' => $this->package_type,
-            'package_title' => $this->package_title,
-            'package_subtitle' => $this->package_subtitle,
+            'package_title' => $this->getTranslated('package_title', $lang) ?? $this->package_title,
+            'package_subtitle' => $this->getTranslated('package_subtitle', $lang) ?? $this->package_subtitle,
             'destination_country' => $this->destination_country,
             'destination_city' => $this->destination_city,
             'duration_days' => $this->duration_days,
@@ -52,10 +56,10 @@ class PackageResource extends JsonResource
             'status' => $this->status,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
-            'offer' => $this->whenLoaded('offer', function () {
+            'offer' => $this->whenLoaded('offer', function () use ($lang) {
                 return [
                     'id' => $this->offer->id,
-                    'title' => $this->offer->title,
+                    'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
                     'price' => $this->offer->price !== null ? (float) $this->offer->price : null,
                     'currency' => $this->offer->currency,
                     'status' => $this->offer->status,
@@ -68,8 +72,8 @@ class PackageResource extends JsonResource
                     'slug' => $this->company->slug,
                 ];
             }),
-            'components' => $this->when($componentsLoaded, function () {
-                return $this->components->map(function ($c) {
+            'components' => $this->when($componentsLoaded, function () use ($lang) {
+                return $this->components->map(function ($c) use ($lang) {
                     $offer = $c->relationLoaded('offer') ? $c->offer : null;
 
                     return [
@@ -83,7 +87,7 @@ class PackageResource extends JsonResource
                         'price_override' => $c->price_override !== null ? (float) $c->price_override : null,
                         'offer' => $offer ? [
                             'id' => $offer->id,
-                            'title' => $offer->title,
+                            'title' => $offer->getTranslated('title', $lang) ?? $offer->title,
                             'price' => $offer->price !== null ? (float) $offer->price : null,
                             'currency' => $offer->currency,
                             'status' => $offer->status,

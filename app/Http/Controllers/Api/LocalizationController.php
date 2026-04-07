@@ -56,8 +56,12 @@ class LocalizationController extends Controller
             'fields.*' => ['string', Rule::in(ContentTranslation::TRANSLATABLE_FIELDS)],
         ]);
 
-        $lang = $validated['lang'] ?? $request->attributes->get('lang', 'en');
-        $lang = is_string($lang) ? $lang : 'en';
+        $langRaw = $validated['lang'] ?? $request->query('lang');
+        if ($langRaw === null || $langRaw === '') {
+            $langRaw = $request->attributes->get('lang', 'en');
+        }
+        $lang = is_string($langRaw) ? $langRaw : 'en';
+        $lang = $service->resolveLanguage($lang);
         $fields = $validated['fields'] ?? [];
 
         $translations = $service->getTranslations(
@@ -364,7 +368,10 @@ class LocalizationController extends Controller
 
     public function uiTranslations(Request $request, LocalizationService $service): JsonResponse
     {
-        $langRaw = $request->query('lang') ?? 'en';
+        $langRaw = $request->query('lang');
+        if ($langRaw === null || $langRaw === '') {
+            $langRaw = $request->attributes->get('lang', 'en');
+        }
         $lang = is_string($langRaw) ? $langRaw : 'en';
         $lang = $service->resolveLanguage($lang);
 

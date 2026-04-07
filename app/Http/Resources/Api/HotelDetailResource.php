@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Hotel;
 use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Pricing\PriceCalculatorService;
@@ -15,11 +16,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class HotelDetailResource extends JsonResource
 {
+    use ResolvesApiLanguage;
+
     /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $lang = $this->apiLang($request);
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->offer?->price, $this->offer?->currency ?? $this->currency);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
             'rooms' => $this->relationLoaded('rooms') ? $this->rooms->count() : null,
@@ -29,7 +33,7 @@ class HotelDetailResource extends JsonResource
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
-            'hotel_name' => $this->hotel_name,
+            'hotel_name' => $this->getTranslated('hotel_name', $lang) ?? $this->hotel_name,
             'property_type' => $this->property_type,
             'hotel_type' => $this->hotel_type,
             'star_rating' => $this->star_rating,
@@ -40,7 +44,7 @@ class HotelDetailResource extends JsonResource
             'full_address' => $this->full_address,
             'latitude' => $this->latitude !== null ? (float) $this->latitude : null,
             'longitude' => $this->longitude !== null ? (float) $this->longitude : null,
-            'short_description' => $this->short_description,
+            'short_description' => $this->getTranslated('short_description', $lang) ?? $this->short_description,
             'main_image' => $this->main_image,
             'check_in_time' => $this->check_in_time,
             'check_out_time' => $this->check_out_time,
@@ -79,7 +83,7 @@ class HotelDetailResource extends JsonResource
                 'id' => $this->offer->id,
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
-                'title' => $this->offer->title,
+                'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
                 'price' => $this->offer->price,
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,

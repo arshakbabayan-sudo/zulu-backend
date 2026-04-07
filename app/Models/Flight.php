@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasTranslations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Flight extends Model
 {
-    use HasFactory;
+    use HasFactory, HasTranslations;
 
     /** @var list<string> */
     public const SERVICE_TYPES = ['scheduled', 'charter', 'package_flight', 'private_special'];
