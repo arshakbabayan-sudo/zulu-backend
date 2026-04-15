@@ -19,7 +19,7 @@ return new class extends Migration
                 $table->boolean('released')->default(false);
                 $table->timestamps();
 
-                $table->index(['holdable_type', 'holdable_id', 'released', 'expires_at']);
+                $table->index(['holdable_type', 'holdable_id', 'released', 'expires_at'], 'service_holds_holdable_release_expiry_idx');
                 $table->index('user_id');
                 $table->index('expires_at');
             });

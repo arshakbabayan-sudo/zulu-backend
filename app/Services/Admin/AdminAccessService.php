@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\UserCompany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 class AdminAccessService
@@ -79,6 +80,13 @@ class AdminAccessService
             return $this->cache[$key];
         }
 
+        $loadedMemberships = $this->loadedMemberships($user);
+        if ($loadedMemberships !== null) {
+            $result = $this->isSuperAdminFromLoadedMemberships($loadedMemberships);
+
+            return $this->cache[$key] = $result;
+        }
+
         $cacheKey = 'admin_is_super_'.$user->id;
         $result = Cache::remember($cacheKey, 300, function () use ($user): bool {
             return $user->memberships()
@@ -135,6 +143,21 @@ class AdminAccessService
 
         if ($this->isSuperAdmin($user)) {
             return $this->cache[$key] = true;
+        }
+
+        $loadedMemberships = $this->loadedMemberships($user);
+        if ($loadedMemberships !== null) {
+            foreach ($loadedMemberships as $membership) {
+                $role = $membership->role;
+                if ($role !== null && in_array($role->name, self::PLATFORM_ADMIN_ROLE_NAMES, true)) {
+                    return $this->cache[$key] = true;
+                }
+            }
+
+            $result = $this->hasAnyPermission($user, self::PLATFORM_ADMIN_PERMISSION_NAMES)
+                || $this->hasPermissionPrefix($user, 'platform.');
+
+            return $this->cache[$key] = $result;
         }
 
         $cacheKey = 'admin_is_platform_'.$user->id;
@@ -254,12 +277,20 @@ class AdminAccessService
 
     public function resolveFirstOperatorAdminCompanyId(User $user): ?int
     {
-        $memberships = UserCompany::query()
-            ->where('user_id', $user->id)
-            ->whereNotNull('role_id')
-            ->with('role.permissions')
-            ->orderBy('id')
-            ->get();
+        $memberships = $this->loadedMemberships($user);
+        if ($memberships === null) {
+            $memberships = UserCompany::query()
+                ->where('user_id', $user->id)
+                ->whereNotNull('role_id')
+                ->with('role.permissions')
+                ->orderBy('id')
+                ->get();
+        } else {
+            $memberships = $memberships
+                ->whereNotNull('role_id')
+                ->sortBy('id')
+                ->values();
+        }
 
         foreach ($memberships as $membership) {
             if ($membership->role === null) {
@@ -379,6 +410,19 @@ class AdminAccessService
             return $this->cache[$key];
         }
 
+        $loadedMemberships = $this->loadedMemberships($user);
+        if ($loadedMemberships !== null) {
+            $result = $loadedMemberships
+                ->map(fn (UserCompany $m) => $m->role)
+                ->filter()
+                ->flatMap(fn ($role) => $role->permissions->pluck('name'))
+                ->unique()
+                ->values()
+                ->all();
+
+            return $this->cache[$key] = $result;
+        }
+
         $memberships = UserCompany::query()
             ->where('user_id', $user->id)
             ->whereNotNull('role_id')
@@ -394,5 +438,45 @@ class AdminAccessService
             ->all();
 
         return $this->cache[$key] = $result;
+    }
+
+    /**
+     * @return Collection<int, UserCompany>|null
+     */
+    private function loadedMemberships(User $user): ?Collection
+    {
+        if (! $user->relationLoaded('memberships')) {
+            return null;
+        }
+
+        /** @var Collection<int, UserCompany> $memberships */
+        $memberships = $user->getRelation('memberships');
+        $memberships->loadMissing('role.permissions');
+
+        return $memberships;
+    }
+
+    /**
+     * @param  Collection<int, UserCompany>  $memberships
+     */
+    private function isSuperAdminFromLoadedMemberships(Collection $memberships): bool
+    {
+        foreach ($memberships as $membership) {
+            $role = $membership->role;
+            if ($role === null) {
+                continue;
+            }
+
+            if (in_array($role->name, self::SUPER_ADMIN_ROLE_NAMES, true)) {
+                return true;
+            }
+
+            $permissionNames = $role->permissions->pluck('name')->all();
+            if (count(array_intersect($permissionNames, self::SUPER_ADMIN_PERMISSION_NAMES)) > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -25,3 +25,5 @@ Thumbs.db
 
 # Scrap / draft route fragments — never load these; real API is routes/api.php
 /routes/*.tmp
+rr
+.rr.yaml

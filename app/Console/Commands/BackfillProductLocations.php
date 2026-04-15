@@ -134,8 +134,38 @@ class BackfillProductLocations extends Command
             ->all();
     }
 
+    private function shouldSkipLegacyBackfill(string $entity, string $table, array $legacyColumns): bool
+    {
+        $missing = [];
+        foreach ($legacyColumns as $column) {
+            if (! Schema::hasColumn($table, $column)) {
+                $missing[] = $column;
+            }
+        }
+
+        if ($missing === []) {
+            return false;
+        }
+
+        $this->initStats($entity);
+        $this->stats[$entity]['skipped'] = true;
+        $this->stats[$entity]['skip_reason'] = sprintf(
+            'legacy columns already dropped: %s',
+            implode(', ', $missing)
+        );
+
+        $this->info(sprintf(
+            '[%s] skipping backfill — %s',
+            $entity,
+            $this->stats[$entity]['skip_reason']
+        ));
+
+        return true;
+    }
+
     private function backfillHotels(int $chunkSize): void
     {
+        if ($this->shouldSkipLegacyBackfill('hotels', 'hotels', ['country', 'region_or_state', 'city'])) { return; }
         $key = 'hotels';
         $this->initStats($key);
 
@@ -178,6 +208,7 @@ class BackfillProductLocations extends Command
 
     private function backfillFlights(int $chunkSize): void
     {
+        if ($this->shouldSkipLegacyBackfill('flights', 'flights', ['departure_country', 'departure_city', 'arrival_country', 'arrival_city'])) { return; }
         $key = 'flights';
         $this->initStats($key);
 
@@ -230,6 +261,7 @@ class BackfillProductLocations extends Command
 
     private function backfillCars(int $chunkSize): void
     {
+        if ($this->shouldSkipLegacyBackfill('cars', 'cars', ['pickup_location', 'dropoff_location'])) { return; }
         $key = 'cars';
         $this->initStats($key);
 
@@ -271,6 +303,7 @@ class BackfillProductLocations extends Command
 
     private function backfillVisas(int $chunkSize): void
     {
+        if ($this->shouldSkipLegacyBackfill('visas', 'visas', ['country'])) { return; }
         $key = 'visas';
         $this->initStats($key);
 
@@ -316,6 +349,7 @@ class BackfillProductLocations extends Command
 
     private function backfillExcursions(int $chunkSize): void
     {
+        if ($this->shouldSkipLegacyBackfill('excursions', 'excursions', ['country', 'city', 'location'])) { return; }
         $key = 'excursions';
         $this->initStats($key);
 
@@ -361,6 +395,7 @@ class BackfillProductLocations extends Command
 
     private function backfillTransfers(int $chunkSize): void
     {
+        if ($this->shouldSkipLegacyBackfill('transfers', 'transfers', ['pickup_country', 'pickup_city', 'dropoff_country', 'dropoff_city'])) { return; }
         $key = 'transfers';
         $this->initStats($key);
 
@@ -611,6 +646,8 @@ class BackfillProductLocations extends Command
             'processed' => 0,
             'updated' => 0,
             'unresolved' => 0,
+            'skipped' => false,
+            'skip_reason' => null,
         ];
     }
 
@@ -637,18 +674,32 @@ class BackfillProductLocations extends Command
         $totalUnresolved = 0;
 
         foreach ($this->stats as $entity => $data) {
-            $rows[] = [
-                $entity,
-                (string) $data['processed'],
-                (string) $data['updated'],
-                (string) $data['unresolved'],
-            ];
+            if (($data['skipped'] ?? false) === true) {
+                $rows[] = [$entity, 'skipped', 'skipped', 'skipped'];
+            } else {
+                $rows[] = [
+                    $entity,
+                    (string) $data['processed'],
+                    (string) $data['updated'],
+                    (string) $data['unresolved'],
+                ];
+            }
             $totalProcessed += $data['processed'];
             $totalUpdated += $data['updated'];
             $totalUnresolved += $data['unresolved'];
         }
 
         $this->table($headers, $rows);
+        $anySkipped = false;
+        foreach ($this->stats as $entityStats) {
+            if (! empty($entityStats['skipped'])) {
+                $anySkipped = true;
+                break;
+            }
+        }
+        if ($anySkipped) {
+            $this->info('Some entities were skipped because their legacy columns have already been dropped — location_id is assumed to be already backfilled for those tables.');
+        }
         $this->newLine();
         $this->info('Backfill complete.');
         $this->line('Total processed: '.$totalProcessed);

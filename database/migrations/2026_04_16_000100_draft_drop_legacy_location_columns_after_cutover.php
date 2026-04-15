@@ -18,6 +18,8 @@ return new class extends Migration
         $this->dropColumnsIfExist('visas', ['country', 'country_id']);
         $this->dropColumnsIfExist('excursions', ['location', 'country', 'city']);
         $this->dropColumnsIfExist('transfers', ['pickup_country', 'pickup_city', 'dropoff_country', 'dropoff_city']);
+        $this->dropColumnsIfExist('flights', ['departure_country', 'departure_city', 'arrival_country', 'arrival_city']);
+        $this->dropColumnsIfExist('cars', ['pickup_location', 'dropoff_location']);
     }
 
     public function down(): void
@@ -67,6 +69,30 @@ return new class extends Migration
             }
             if (! Schema::hasColumn('transfers', 'dropoff_city')) {
                 $table->string('dropoff_city', 255)->nullable()->after('dropoff_country');
+            }
+        });
+
+        Schema::table('flights', function (Blueprint $table) {
+            if (! Schema::hasColumn('flights', 'departure_country')) {
+                $table->string('departure_country')->nullable()->after('company_id');
+            }
+            if (! Schema::hasColumn('flights', 'departure_city')) {
+                $table->string('departure_city')->nullable()->after('departure_country');
+            }
+            if (! Schema::hasColumn('flights', 'arrival_country')) {
+                $table->string('arrival_country')->nullable()->after('departure_city');
+            }
+            if (! Schema::hasColumn('flights', 'arrival_city')) {
+                $table->string('arrival_city')->nullable()->after('arrival_country');
+            }
+        });
+
+        Schema::table('cars', function (Blueprint $table) {
+            if (! Schema::hasColumn('cars', 'pickup_location')) {
+                $table->string('pickup_location')->nullable()->after('location_id');
+            }
+            if (! Schema::hasColumn('cars', 'dropoff_location')) {
+                $table->string('dropoff_location')->nullable()->after('pickup_location');
             }
         });
     }

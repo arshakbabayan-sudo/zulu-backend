@@ -16,6 +16,9 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RbacBootstrapSeeder::class,
+            WidgetSeeder::class,
+            LocationSeeder::class,
+            ProductsQaSeeder::class,
         ]);
     }
 }

@@ -30,6 +30,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'resolve.language' => \App\Http\Middleware\ResolveLanguage::class,
         ]);
+        $middleware->redirectGuestsTo(function ($request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return null;
+            }
+
+            return '/login';
+        });
         $middleware->web(append: [
             \App\Http\Middleware\ResolveLanguage::class,
         ]);

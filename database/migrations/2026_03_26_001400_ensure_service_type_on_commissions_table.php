@@ -23,10 +23,14 @@ return new class extends Migration
                 $table->timestamps();
             });
 
-            $foreignKeys = array_column(Schema::getForeignKeys('commissions'), 'name');
-            if (! in_array('commissions_company_id_foreign', $foreignKeys, true)) {
-                Schema::table('commissions', function (Blueprint $table): void {
-                    $table->foreign('company_id')->references('id')->on('companies')->cascadeOnDelete();
+            $globalForeignKeyNames = collect(DB::select(
+                "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+            ))->pluck('CONSTRAINT_NAME')->all();
+
+            $fkName = 'commissions_v2_company_id_foreign';
+            if (! in_array($fkName, $globalForeignKeyNames, true)) {
+                Schema::table('commissions', function (Blueprint $table) use ($fkName): void {
+                    $table->foreign('company_id', $fkName)->references('id')->on('companies')->cascadeOnDelete();
                 });
             }
 

@@ -6,6 +6,18 @@ use Symfony\Component\Console\Input\ArgvInput;
 
 define('LARAVEL_START', microtime(true));
 
+// Octane signal constants are not available on Windows (no pcntl), but
+// Symfony/Laravel still references them when building the command definition.
+if (! defined('SIGINT')) {
+    define('SIGINT', 2);
+}
+if (! defined('SIGTERM')) {
+    define('SIGTERM', 15);
+}
+if (! defined('SIGHUP')) {
+    define('SIGHUP', 1);
+}
+
 // Register the Composer autoloader...
 require __DIR__.'/vendor/autoload.php';
 

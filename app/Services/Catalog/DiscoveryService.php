@@ -13,6 +13,7 @@ use App\Services\Pricing\PriceCalculatorService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Cache;
 
 class DiscoveryService
 {
@@ -30,6 +31,9 @@ class DiscoveryService
     public function search(array $input, ?string $languageCode = null): array
     {
         $lang = $languageCode ?? config('app.locale', 'en');
+        $cacheKey = 'discovery_search:'.md5(json_encode([$input, $lang], JSON_UNESCAPED_UNICODE));
+
+        return Cache::remember($cacheKey, 30, function () use ($input, $lang): array {
         $perPage = (int) ($input['per_page'] ?? 20);
         $perPage = max(1, min(100, $perPage));
         $page = max(1, (int) ($input['page'] ?? 1));
@@ -64,12 +68,36 @@ class DiscoveryService
         /** @var LengthAwarePaginator<int, Offer> $paginator */
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
 
+        $offers = $paginator->getCollection();
+        $relations = [];
+        $types = $offers->pluck('type')->filter()->unique()->values()->all();
+        if (in_array('flight', $types, true)) {
+            $relations[] = 'flight.cabins';
+        }
+        if (in_array('hotel', $types, true)) {
+            $relations[] = 'hotel';
+        }
+        if (in_array('transfer', $types, true)) {
+            $relations[] = 'transfer';
+        }
+        if (in_array('car', $types, true)) {
+            $relations[] = 'car';
+        }
+        if (in_array('excursion', $types, true)) {
+            $relations[] = 'excursion';
+        }
+        if (in_array('package', $types, true)) {
+            $relations[] = 'package';
+        }
+        if (in_array('visa', $types, true)) {
+            $relations[] = 'visa';
+        }
+        if ($relations !== []) {
+            $offers->loadMissing($relations);
+        }
+
         $items = [];
-        foreach ($paginator->items() as $offer) {
-            $relation = $this->relationNameForType($offer->type);
-            if ($relation !== null) {
-                $offer->loadMissing($relation === 'flight' ? 'flight.cabins' : $relation);
-            }
+        foreach ($offers as $offer) {
             $normalized = $this->normalizationService->normalize($offer, true, $lang);
             if ($normalized !== null) {
                 $items[] = $normalized;
@@ -85,6 +113,7 @@ class DiscoveryService
                 'per_page' => $paginator->perPage(),
             ],
         ];
+        });
     }
 
     /**

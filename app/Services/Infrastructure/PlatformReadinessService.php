@@ -3,11 +3,17 @@
 namespace App\Services\Infrastructure;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 class PlatformReadinessService
 {
     public function getHealthPayload(): array
+    {
+        return Cache::remember('platform_health_payload', 30, fn (): array => $this->buildHealthPayload());
+    }
+
+    private function buildHealthPayload(): array
     {
         $status = 'ok';
 

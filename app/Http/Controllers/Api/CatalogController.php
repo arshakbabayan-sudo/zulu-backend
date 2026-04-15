@@ -8,6 +8,7 @@ use App\Http\Resources\Api\CatalogOfferResource;
 use App\Services\Catalog\CatalogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 
 class CatalogController extends Controller
@@ -24,11 +25,18 @@ class CatalogController extends Controller
         ]);
 
         $type = $validated['type'] ?? null;
-        $offers = $catalogService->listPublishedOffers($type);
+        $lang = $request->attributes->get('lang');
+        $lang = is_string($lang) && $lang !== '' ? $lang : (string) config('app.locale', 'en');
+        $cacheKey = 'catalog_offers:'.md5(json_encode([$type, $lang], JSON_UNESCAPED_UNICODE));
+        $data = Cache::remember($cacheKey, 30, function () use ($catalogService, $type, $request) {
+            $offers = $catalogService->listPublishedOffers($type);
+
+            return CatalogOfferResource::collection($offers)->resolve($request);
+        });
 
         return response()->json([
             'success' => true,
-            'data' => CatalogOfferResource::collection($offers)->resolve(),
+            'data' => $data,
         ]);
     }
 

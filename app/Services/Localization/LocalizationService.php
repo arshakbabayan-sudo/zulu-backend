@@ -15,23 +15,46 @@ use Throwable;
 
 class LocalizationService
 {
+    private const LANGUAGE_CACHE_TTL_SECONDS = 600;
+
+    private const CACHE_KEY_ENABLED_LANGUAGE_MAP = 'localization_enabled_language_map';
+
+    private const CACHE_KEY_DEFAULT_LANGUAGE_CODE = 'localization_default_language_code';
+
     /**
      * @return array<string, string> lower-case code => canonical DB code
      */
     private function enabledLanguageCodeMap(): array
     {
-        $codes = SupportedLanguage::query()
-            ->where('is_enabled', true)
-            ->pluck('code')
-            ->all();
+        return Cache::remember(self::CACHE_KEY_ENABLED_LANGUAGE_MAP, self::LANGUAGE_CACHE_TTL_SECONDS, function (): array {
+            $codes = SupportedLanguage::query()
+                ->where('is_enabled', true)
+                ->pluck('code')
+                ->all();
 
-        $map = [];
-        foreach ($codes as $code) {
-            $canonical = (string) $code;
-            $map[strtolower($canonical)] = $canonical;
-        }
+            $map = [];
+            foreach ($codes as $code) {
+                $canonical = (string) $code;
+                $map[strtolower($canonical)] = $canonical;
+            }
 
-        return $map;
+            return $map;
+        });
+    }
+
+    private function defaultLanguageCode(): string
+    {
+        return Cache::remember(self::CACHE_KEY_DEFAULT_LANGUAGE_CODE, self::LANGUAGE_CACHE_TTL_SECONDS, function (): string {
+            $default = SupportedLanguage::query()->where('is_default', true)->value('code');
+
+            return is_string($default) && $default !== '' ? $default : 'en';
+        });
+    }
+
+    private function forgetLanguageCaches(): void
+    {
+        Cache::forget(self::CACHE_KEY_ENABLED_LANGUAGE_MAP);
+        Cache::forget(self::CACHE_KEY_DEFAULT_LANGUAGE_CODE);
     }
 
     /**
@@ -51,7 +74,7 @@ class LocalizationService
             return $lowerToCanonical[$primary];
         }
 
-        return $this->getDefaultLanguage()?->code ?? 'en';
+        return $this->defaultLanguageCode();
     }
 
     /**
@@ -107,6 +130,7 @@ class LocalizationService
     {
         SupportedLanguage::query()->update(['is_default' => false]);
         $language->update(['is_default' => true, 'is_enabled' => true]);
+        $this->forgetLanguageCaches();
 
         return $language->fresh();
     }
@@ -118,6 +142,7 @@ class LocalizationService
             'name_en' => trim($nameEn),
             'rtl'     => $rtl,
         ]);
+        $this->forgetLanguageCaches();
 
         return $language->fresh();
     }
@@ -125,6 +150,7 @@ class LocalizationService
     public function toggleLanguageEnabled(SupportedLanguage $language): SupportedLanguage
     {
         $language->update(['is_enabled' => ! $language->is_enabled]);
+        $this->forgetLanguageCaches();
 
         return $language->fresh();
     }
@@ -140,7 +166,7 @@ class LocalizationService
 
         $maxSort = (int) SupportedLanguage::query()->max('sort_order');
 
-        return SupportedLanguage::query()->create([
+        $created = SupportedLanguage::query()->create([
             'code'       => $code,
             'name'       => trim($name),
             'name_en'    => trim($nameEn),
@@ -148,6 +174,9 @@ class LocalizationService
             'is_enabled' => true,
             'sort_order' => $maxSort + 1,
         ]);
+        $this->forgetLanguageCaches();
+
+        return $created;
     }
 
     public function deleteLanguage(SupportedLanguage $language): void
@@ -157,6 +186,7 @@ class LocalizationService
         }
 
         $language->delete();
+        $this->forgetLanguageCaches();
     }
 
     /**
@@ -340,7 +370,7 @@ class LocalizationService
     {
         $requested = trim($requested);
         if ($requested === '') {
-            return $this->getDefaultLanguage()?->code ?? 'en';
+            return $this->defaultLanguageCode();
         }
 
         try {

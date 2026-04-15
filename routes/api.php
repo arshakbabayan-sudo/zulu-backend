@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
+use App\Http\Controllers\Api\Admin\PageController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BookingController;
@@ -48,6 +49,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
 use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
+use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\SupportAdminController;
@@ -100,6 +102,8 @@ Route::prefix('packages')->middleware('throttle:api_public')->group(function () 
     Route::get('{package}/pricing', [StorefrontPackageController::class, 'pricing'])->whereNumber('package');
     Route::get('{package}', [StorefrontPackageController::class, 'show'])->whereNumber('package');
 });
+
+Route::get('pages/{slug}', [PublicPageController::class, 'show']);
 
 // Backward-compatible alias: same handlers as v1/discovery/*; DeprecateLegacyDiscoveryApi adds Link / optional Sunset.
 Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDiscoveryApi::class])->name('discovery.legacy.')->group($registerPublicDiscoveryRoutes);
@@ -321,6 +325,20 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('banners', [PlatformAdminBannerController::class, 'store']);
         Route::patch('banners/{banner}', [PlatformAdminBannerController::class, 'update'])->whereNumber('banner');
         Route::delete('banners/{banner}', [PlatformAdminBannerController::class, 'destroy'])->whereNumber('banner');
+    });
+
+    Route::prefix('admin/pages')->group(function () {
+        Route::get('/', [PageController::class, 'index']);
+        Route::post('/', [PageController::class, 'store']);
+        Route::get('{id}', [PageController::class, 'show'])->whereNumber('id');
+        Route::patch('{id}', [PageController::class, 'update'])->whereNumber('id');
+        Route::delete('{id}', [PageController::class, 'destroy'])->whereNumber('id');
+        Route::patch('change-status', [PageController::class, 'changeStatus']);
+        Route::post('widgets/add', [PageController::class, 'addWidget']);
+        Route::post('widgets/update', [PageController::class, 'updateWidget']);
+        Route::delete('widgets/{id}', [PageController::class, 'deleteWidget'])->whereNumber('id');
+        Route::post('widgets/sort', [PageController::class, 'sortWidgets']);
+        Route::post('widgets/upload-image', [PageController::class, 'uploadImage']);
     });
 
     // Operator inventory oversight lists (Sanctum; same RBAC as admin/inventory via AdminAccessService).
