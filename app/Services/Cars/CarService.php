@@ -3,8 +3,10 @@
 namespace App\Services\Cars;
 
 use App\Models\Car;
+use App\Models\Location;
 use App\Models\Offer;
 use App\Services\Infrastructure\PlatformSettingsService;
+use App\Services\Locations\LocationBusinessValidator;
 use App\Services\Offers\OfferVisibilityService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -27,6 +29,7 @@ class CarService
      */
     public const LISTING_FILTER_KEYS = [
         'company_id',
+        'location_id',
         'vehicle_class',
         'vehicle_type',
         'brand',
@@ -126,8 +129,12 @@ class CarService
     private function carExpandedFieldRules(bool $partial): array
     {
         $opt = $partial ? ['sometimes', 'nullable'] : ['nullable'];
+        $locationRules = $partial
+            ? ['sometimes', 'nullable', 'integer', Rule::exists('locations', 'id')]
+            : ['required', 'integer', Rule::exists('locations', 'id')];
 
         return [
+            'location_id' => $locationRules,
             'vehicle_type' => array_merge($opt, ['string', 'max:255']),
             'brand' => array_merge($opt, ['string', 'max:255']),
             'model' => array_merge($opt, ['string', 'max:255']),
@@ -478,6 +485,7 @@ class CarService
         $payload = Arr::only($data, $fillable);
         $payload = $this->applyAdvancedOptions($payload, $incoming, null);
         $this->assertAvailabilityWindowOrder($payload['availability_window_start'] ?? null, $payload['availability_window_end'] ?? null);
+        $this->validateCarLocationBusinessRules($payload);
 
         return DB::transaction(function () use ($payload, $offer): Car {
             $car = Car::query()->create($payload);
@@ -513,6 +521,9 @@ class CarService
             ? $data['availability_window_end']
             : $car->availability_window_end;
         $this->assertAvailabilityWindowOrder($start, $end);
+        $this->validateCarLocationBusinessRules(array_merge([
+            'location_id' => $car->location_id,
+        ], $data));
 
         $basePriceSubmitted = array_key_exists('base_price', $data);
 
@@ -600,6 +611,11 @@ class CarService
             });
         }
 
+        $locationId = $this->normalizeListingInt($filters['location_id'] ?? null);
+        if ($locationId !== null) {
+            $query->forLocation($locationId);
+        }
+
         $table = $query->getModel()->getTable();
 
         // Step C3: visibility_rule + appearance flags (rollout via platform settings).
@@ -654,42 +670,7 @@ class CarService
             }
         }
 
-        // Location-ish filters (substring; free-text pickup/dropoff locations).
-        $country = $this->normalizeListingString($filters['country'] ?? null);
-        if ($country !== null) {
-            $like = '%'.addcslashes($country, '%_\\').'%';
-            $query->where(function (Builder $q) use ($table, $like): void {
-                $q->where($table.'.pickup_location', 'like', $like)
-                    ->orWhere($table.'.dropoff_location', 'like', $like);
-            });
-        }
-
-        $city = $this->normalizeListingString($filters['city'] ?? null);
-        if ($city !== null) {
-            $like = '%'.addcslashes($city, '%_\\').'%';
-            $query->where(function (Builder $q) use ($table, $like): void {
-                $q->where($table.'.pickup_location', 'like', $like)
-                    ->orWhere($table.'.dropoff_location', 'like', $like);
-            });
-        }
-
-        $origin = $this->normalizeListingString($filters['origin'] ?? null);
-        if ($origin === null) {
-            $origin = $this->normalizeListingString($filters['pickup_location'] ?? null);
-        }
-        if ($origin !== null) {
-            $like = '%'.addcslashes($origin, '%_\\').'%';
-            $query->where($table.'.pickup_location', 'like', $like);
-        }
-
-        $destination = $this->normalizeListingString($filters['destination'] ?? null);
-        if ($destination === null) {
-            $destination = $this->normalizeListingString($filters['dropoff_location'] ?? null);
-        }
-        if ($destination !== null) {
-            $like = '%'.addcslashes($destination, '%_\\').'%';
-            $query->where($table.'.dropoff_location', 'like', $like);
-        }
+        // Deprecated: textual location filters were removed after location tree cutover.
 
         $this->applyCarRentalAvailabilityDateFilters($query, $table, $filters);
 
@@ -897,5 +878,19 @@ class CarService
                 'availability_window_end' => ['The availability end must be on or after the start.'],
             ]);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function validateCarLocationBusinessRules(array $payload): void
+    {
+        app(LocationBusinessValidator::class)->requireLocationOfTypes(
+            isset($payload['location_id']) ? (int) $payload['location_id'] : null,
+            'location_id',
+            [Location::TYPE_REGION, Location::TYPE_CITY],
+            'Car rental requires a region or city location.',
+            'Car location must be region or city.'
+        );
     }
 }

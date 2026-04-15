@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\HasTranslations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -64,10 +65,12 @@ class Transfer extends Model
         'transfer_type',
         'pickup_country',
         'pickup_city',
+        'origin_location_id',
         'pickup_point_type',
         'pickup_point_name',
         'dropoff_country',
         'dropoff_city',
+        'destination_location_id',
         'dropoff_point_type',
         'dropoff_point_name',
         'pickup_latitude',
@@ -109,6 +112,8 @@ class Transfer extends Model
     {
         return [
             'service_date' => 'date',
+            'origin_location_id' => 'integer',
+            'destination_location_id' => 'integer',
             'availability_window_start' => 'datetime',
             'availability_window_end' => 'datetime',
             'passenger_capacity' => 'integer',
@@ -145,6 +150,16 @@ class Transfer extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function originLocation(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'origin_location_id');
+    }
+
+    public function destinationLocation(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'destination_location_id');
     }
 
     /**
@@ -211,5 +226,25 @@ class Transfer extends Model
         }
 
         return (string) $value;
+    }
+
+    public function scopeForLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        $table = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $q) use ($table, $ids): void {
+            $q->whereIn($table.'.origin_location_id', $ids)
+                ->orWhereIn($table.'.destination_location_id', $ids);
+        });
     }
 }

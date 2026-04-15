@@ -49,21 +49,29 @@ class TransferWriteApiTest extends TestCase
      */
     private function validCreatePayload(int $offerId, array $overrides = []): array
     {
+        $offerPrice = (float) Offer::query()->findOrFail($offerId)->price;
+
         return array_merge([
             'offer_id' => $offerId,
             'transfer_title' => 'API Transfer',
             'transfer_type' => 'private_transfer',
-            'pickup_country' => 'AM',
-            'pickup_city' => 'Yerevan',
+            'origin_location_id' => $this->locationIds()['yerevan_city'],
+            'destination_location_id' => $this->locationIds()['gyumri_city'],
             'pickup_point_type' => 'airport',
             'pickup_point_name' => 'EVN',
-            'dropoff_country' => 'AM',
-            'dropoff_city' => 'Yerevan',
             'dropoff_point_type' => 'address',
             'dropoff_point_name' => 'City center',
+            'service_date' => '2026-09-01',
+            'pickup_time' => '10:00:00',
+            'estimated_duration_minutes' => 45,
             'vehicle_category' => 'sedan',
             'passenger_capacity' => 3,
             'luggage_capacity' => 2,
+            'minimum_passengers' => 1,
+            'maximum_passengers' => 3,
+            'pricing_mode' => 'per_vehicle',
+            'base_price' => $offerPrice,
+            'cancellation_policy_type' => 'non_refundable',
             'status' => 'draft',
             'availability_status' => 'available',
         ], $overrides);

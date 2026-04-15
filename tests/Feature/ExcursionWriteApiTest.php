@@ -46,11 +46,9 @@ class ExcursionWriteApiTest extends TestCase
         return array_merge([
             'offer_id' => $offerId,
             'company_id' => $companyId,
-            'location' => 'Republic Square',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'duration' => '3 hours',
             'group_size' => 12,
-            'country' => 'AM',
-            'city' => 'Yerevan',
             'general_category' => 'culture',
             'category' => 'walking',
             'excursion_type' => 'guided',
@@ -117,11 +115,10 @@ class ExcursionWriteApiTest extends TestCase
         $res->assertStatus(201)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.offer.type', 'excursion')
+            ->assertJsonPath('data.location_id', $this->locationIds()['yerevan_city'])
             ->assertJsonPath('data.title', 'City walk')
             ->assertJsonPath('data.price', 49.99)
             ->assertJsonPath('data.currency', 'USD')
-            ->assertJsonPath('data.country', 'AM')
-            ->assertJsonPath('data.city', 'Yerevan')
             ->assertJsonPath('data.excursion_type', 'guided')
             ->assertJsonPath('data.ticket_max_count', 20)
             ->assertJsonPath('data.is_available', true)
@@ -132,8 +129,7 @@ class ExcursionWriteApiTest extends TestCase
 
         $this->assertDatabaseHas('excursions', [
             'offer_id' => $offer->id,
-            'country' => 'AM',
-            'city' => 'Yerevan',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'excursion_type' => 'guided',
         ]);
     }
@@ -188,7 +184,7 @@ class ExcursionWriteApiTest extends TestCase
             [
                 'offer_id' => $offer->id,
                 'company_id' => $company->id,
-                'location' => 'X',
+                'location_id' => $this->locationIds()['yerevan_city'],
                 'duration' => '1h',
                 // group_size missing
             ],
@@ -207,27 +203,31 @@ class ExcursionWriteApiTest extends TestCase
         $o2 = $this->makeExcursionOffer($company, 'Tour B');
 
         $this->postJson('/api/excursions', $this->validCreatePayload($o1->id, $company->id, [
-            'country' => 'AM',
-            'city' => 'Yerevan',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'excursion_type' => 'guided',
             'status' => 'published',
         ]), $headers)->assertStatus(201);
 
         $this->postJson('/api/excursions', $this->validCreatePayload($o2->id, $company->id, [
-            'country' => 'GE',
-            'city' => 'Tbilisi',
+            'location_id' => $this->locationIds()['tbilisi_city'],
             'excursion_type' => 'self_guided',
             'status' => 'draft',
         ]), $headers)->assertStatus(201);
 
-        $json = $this->getJson('/api/excursions?country=AM&excursion_type=guided', $headers)->json('data');
+        $json = $this->getJson(
+            '/api/excursions?location_id='.$this->locationIds()['am_country'].'&excursion_type=guided',
+            $headers
+        )->json('data');
         $this->assertCount(1, $json);
-        $this->assertSame('AM', $json[0]['country']);
+        $this->assertSame($this->locationIds()['yerevan_city'], (int) $json[0]['location_id']);
         $this->assertSame('guided', $json[0]['excursion_type']);
 
-        $json2 = $this->getJson('/api/excursions?city=Tbilisi&status=draft', $headers)->json('data');
+        $json2 = $this->getJson(
+            '/api/excursions?location_id='.$this->locationIds()['tbilisi_city'].'&status=draft',
+            $headers
+        )->json('data');
         $this->assertCount(1, $json2);
-        $this->assertSame('GE', $json2[0]['country']);
+        $this->assertSame($this->locationIds()['tbilisi_city'], (int) $json2[0]['location_id']);
     }
 
     public function test_update_partial_expanded_fields(): void
@@ -245,13 +245,13 @@ class ExcursionWriteApiTest extends TestCase
         )->json('data.id');
 
         $this->patchJson('/api/excursions/'.$id, [
-            'city' => 'Gyumri',
+            'location_id' => $this->locationIds()['gyumri_city'],
             'language' => 'hy',
             'ticket_max_count' => 15,
             'status' => 'published',
         ], $headers)
             ->assertOk()
-            ->assertJsonPath('data.city', 'Gyumri')
+            ->assertJsonPath('data.location_id', $this->locationIds()['gyumri_city'])
             ->assertJsonPath('data.language', 'hy')
             ->assertJsonPath('data.ticket_max_count', 15)
             ->assertJsonPath('data.status', 'published');

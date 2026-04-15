@@ -16,6 +16,20 @@ class DiscoveryController extends Controller
     ) {
     }
 
+    /**
+     * Public discovery search endpoint.
+     *
+     * Date filter contract:
+     * - `start_date` and `end_date` are optional and can be sent independently.
+     * - Accepted format: `YYYY-MM-DD` (recommended) or any Carbon-parsable datetime string.
+     * - Filters are applied per module semantics:
+     *   - flight: departure/arrival range
+     *   - transfer: service date / availability window overlap
+     *   - car: availability window overlap
+     *   - excursion: starts/ends overlap
+     *   - hotel: room pricing validity overlap
+     *   - package/visa: record creation date range fallback
+     */
     public function search(Request $request, DiscoveryService $discoveryService): JsonResponse
     {
         $validated = $request->validate([

@@ -11,6 +11,8 @@ use App\Services\Admin\AdminAccessService;
 use App\Services\Visas\VisaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class VisaController extends Controller
@@ -24,9 +26,10 @@ class VisaController extends Controller
     public function index(Request $request, VisaService $visaService): JsonResponse
     {
         $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'visas.view');
+        $filters = $visaService->listingFiltersFromRequest($request);
 
         if (! $request->filled('page')) {
-            $visas = $visaService->listForCompanies($companyIds);
+            $visas = $visaService->listForCompanies($companyIds, $filters);
 
             return response()->json([
                 'success' => true,
@@ -34,7 +37,7 @@ class VisaController extends Controller
             ]);
         }
 
-        $paginator = $visaService->paginateForCompanies($companyIds, $this->commerceListPerPage($request));
+        $paginator = $visaService->paginateForCompanies($companyIds, $filters, $this->commerceListPerPage($request));
 
         return $this->paginatedCommerceResourceResponse($request, $paginator, VisaResource::class);
     }
@@ -62,7 +65,8 @@ class VisaController extends Controller
                 Rule::exists('offers', 'id')->where('type', 'visa'),
                 Rule::unique('visas', 'offer_id'),
             ],
-            'country' => ['required', 'string', 'max:255'],
+            // Deprecated: legacy text country is now derived from location_id.
+            'country' => ['sometimes', 'nullable', 'string', 'max:255'],
             'visa_type' => ['required', 'string', 'max:255'],
             'processing_days' => ['nullable', 'integer', 'min:0'],
             'name' => ['nullable', 'string', 'max:255'],
@@ -70,6 +74,7 @@ class VisaController extends Controller
             'required_documents' => VisaService::storeRequiredDocumentsRules(),
             'price' => ['nullable', 'numeric', 'min:0'],
             'country_id' => ['nullable', 'integer', Rule::exists('countries', 'id')],
+            'location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
         ]);
 
         $offer = Offer::query()->findOrFail((int) $validated['offer_id']);
@@ -78,9 +83,16 @@ class VisaController extends Controller
             return $response;
         }
 
-        $visa = Visa::query()->create([
+        $visaService = app(VisaService::class);
+        $visaService->validateVisaLocationBusinessRules($validated);
+        $validated = array_merge(
+            $validated,
+            $visaService->deriveDeprecatedVisaLocationFields((int) $validated['location_id'])
+        );
+
+        $visaPayload = [
             'offer_id' => (int) $validated['offer_id'],
-            'country' => $validated['country'],
+            'country' => $validated['country'] ?? null,
             'visa_type' => $validated['visa_type'],
             'processing_days' => $validated['processing_days'] ?? null,
             'name' => $validated['name'] ?? null,
@@ -88,7 +100,11 @@ class VisaController extends Controller
             'required_documents' => VisaService::normalizeRequiredDocuments($validated['required_documents'] ?? null),
             'price' => $validated['price'] ?? null,
             'country_id' => $validated['country_id'] ?? null,
-        ]);
+            'location_id' => $validated['location_id'] ?? null,
+        ];
+        $visaPayload = Arr::only($visaPayload, $this->existingVisaColumns(array_keys($visaPayload)));
+
+        $visa = Visa::query()->create($visaPayload);
 
         $visa->load('offer');
 
@@ -139,6 +155,22 @@ class VisaController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $columns
+     * @return list<string>
+     */
+    private function existingVisaColumns(array $columns): array
+    {
+        $existing = [];
+        foreach ($columns as $column) {
+            if (Schema::hasColumn('visas', $column)) {
+                $existing[] = $column;
+            }
+        }
+
+        return $existing;
     }
 
 

@@ -16,8 +16,7 @@ use Carbon\Carbon;
 use Carbon\CarbonInterface;
 
 /**
- * Maps all offer module rows + parent {@see Offer} into the unified
- * normalized offer shape from project-docs/architecture/NORMALIZATION_MATRIX.md.
+ * Maps all offer module rows + parent {@see Offer} into one unified normalized offer shape.
  *
  * Missing module fields become null. Car advanced_options uses stored JSON or defaults.
  */

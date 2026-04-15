@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\HotelDetailResource;
 use App\Http\Resources\Api\HotelListResource;
 use App\Models\Company;
+use App\Models\Location;
 use App\Models\Offer;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Hotels\HotelService;
@@ -74,8 +75,7 @@ class HotelController extends Controller
      * @bodyParam hotel_name string required Example: Grand Zulu Hotel
      * @bodyParam property_type string required Example: hotel
      * @bodyParam hotel_type string required Example: city
-     * @bodyParam country string required Example: Armenia
-     * @bodyParam city string required Example: Yerevan
+     * @bodyParam location_id int required City location id from location tree. Example: 1201
      * @bodyParam meal_type string required Example: breakfast
      * @bodyParam availability_status string required Example: available
      * @bodyParam status string required Example: draft
@@ -94,7 +94,14 @@ class HotelController extends Controller
         }
 
         $company = Company::find($offer->company_id);
-        $hotelCountry = $validated['country'] ?? '';
+        $hotelCountry = '';
+        if (isset($validated['location_id'])) {
+            $location = Location::query()->find((int) $validated['location_id']);
+            $lineage = $location?->ancestors()->push($location)->values();
+            $hotelCountry = (string) (optional($lineage?->firstWhere('type', Location::TYPE_COUNTRY))->name ?? '');
+        } else {
+            $hotelCountry = (string) ($validated['country'] ?? '');
+        }
         $error = app(GeoRestrictionService::class)->validateServiceCountry($company, $hotelCountry, 'hotel');
         if ($error !== null) {
             return response()->json(['success' => false, 'message' => $error], 422);

@@ -48,11 +48,9 @@ class ExcursionListFiltersApiTest extends TestCase
         $e1 = $service->create([
             'offer_id' => $offerCheap->id,
             'company_id' => $company->id,
-            'location' => 'Square',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'duration' => '2h',
             'group_size' => 10,
-            'country' => 'AM',
-            'city' => 'Yerevan',
             'category' => 'walking',
             'starts_at' => '2026-06-10T09:00:00Z',
             'ends_at' => '2026-06-10T12:00:00Z',
@@ -63,11 +61,9 @@ class ExcursionListFiltersApiTest extends TestCase
         $e2 = $service->create([
             'offer_id' => $offerPricey->id,
             'company_id' => $company->id,
-            'location' => 'Lake',
+            'location_id' => $this->locationIds()['tbilisi_city'],
             'duration' => '1d',
             'group_size' => 5,
-            'country' => 'GE',
-            'city' => 'Tbilisi',
             'category' => 'hike',
             'starts_at' => '2026-08-01T09:00:00Z',
             'ends_at' => '2026-08-05T18:00:00Z',
@@ -134,7 +130,7 @@ class ExcursionListFiltersApiTest extends TestCase
         $ex = $service->create([
             'offer_id' => $offer->id,
             'company_id' => $company->id,
-            'location' => 'A',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'duration' => '1h',
             'group_size' => 4,
         ]);

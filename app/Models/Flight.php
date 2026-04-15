@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\HasTranslations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -44,6 +45,7 @@ class Flight extends Model
         'departure_airport',
         'arrival_country',
         'arrival_city',
+        'location_id',
         'arrival_airport',
         'departure_airport_code',
         'arrival_airport_code',
@@ -115,6 +117,7 @@ class Flight extends Model
             'adult_price' => 'decimal:2',
             'child_price' => 'decimal:2',
             'infant_price' => 'decimal:2',
+            'location_id' => 'integer',
             'seat_map_available' => 'boolean',
             'appears_in_web' => 'boolean',
             'appears_in_admin' => 'boolean',
@@ -138,6 +141,11 @@ class Flight extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id');
     }
 
     public function cabins(): HasMany
@@ -225,5 +233,20 @@ class Flight extends Model
             'is_package_eligible' => $this->is_package_eligible,
             'status' => $this->status,
         ];
+    }
+
+    public function scopeForLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        return $query->whereIn($query->getModel()->getTable().'.location_id', $ids);
     }
 }

@@ -36,6 +36,7 @@ class HotelServiceFoundationTest extends TestCase
     {
         return [
             'offer_id' => $offerId,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'hotel_name' => 'ZULU Test Hotel',
             'property_type' => 'hotel',
             'hotel_type' => 'resort',

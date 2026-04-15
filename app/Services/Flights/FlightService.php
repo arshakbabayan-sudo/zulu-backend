@@ -4,7 +4,9 @@ namespace App\Services\Flights;
 
 use App\Models\Flight;
 use App\Models\FlightCabin;
+use App\Models\Location;
 use App\Models\Offer;
+use App\Services\Locations\LocationBusinessValidator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -26,6 +28,7 @@ class FlightService
      */
     public const LISTING_FILTER_KEYS = [
         'country',
+        'location_id',
         'city',
         'airport',
         'airline',
@@ -139,6 +142,7 @@ class FlightService
         });
 
         $clean = $v->validate();
+        $this->validateFlightLocationBusinessRules($clean);
         $clean['company_id'] = $offer->company_id;
 
         $payload = Arr::only($clean, (new Flight)->getFillable());
@@ -220,6 +224,9 @@ class FlightService
         });
 
         $clean = $v->validate();
+        $this->validateFlightLocationBusinessRules(array_merge([
+            'location_id' => $flight->location_id,
+        ], $clean));
 
         DB::transaction(function () use ($flight, $clean, $data, $adultPriceSubmitted): void {
             $flight->fill(Arr::only($clean, array_keys($data)));
@@ -586,6 +593,11 @@ class FlightService
             }
         }
 
+        $locationId = $this->normalizeListingInt($filters['location_id'] ?? null);
+        if ($locationId !== null) {
+            $query->forLocation($locationId);
+        }
+
         if (array_key_exists('is_package_eligible', $filters)) {
             $b = $this->normalizeListingBoolean($filters['is_package_eligible']);
             if ($b !== null) {
@@ -789,6 +801,23 @@ class FlightService
         return (string) $value;
     }
 
+    private function normalizeListingInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+        if (is_numeric($value)) {
+            $n = (int) $value;
+
+            return $n > 0 ? $n : null;
+        }
+
+        return null;
+    }
+
     private function applyAppearanceContextConstraints(Builder $query, mixed $context): void
     {
         if (! is_string($context) || trim($context) === '') {
@@ -822,6 +851,7 @@ class FlightService
     {
         return [
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
+            'location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
             'flight_code_internal' => ['required', 'string', 'max:191'],
             'service_type' => ['required', 'string', Rule::in(Flight::SERVICE_TYPES)],
             'departure_country' => ['required', 'string', 'max:191'],
@@ -879,5 +909,19 @@ class FlightService
             'appears_in_zulu_admin' => ['required', 'boolean'],
             'status' => ['required', 'string', Rule::in(Flight::STATUSES)],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function validateFlightLocationBusinessRules(array $payload): void
+    {
+        app(LocationBusinessValidator::class)->requireLocationOfTypes(
+            isset($payload['location_id']) ? (int) $payload['location_id'] : null,
+            'location_id',
+            [Location::TYPE_CITY],
+            'Flight requires a city-level location.',
+            'Flight location must be a city.'
+        );
     }
 }

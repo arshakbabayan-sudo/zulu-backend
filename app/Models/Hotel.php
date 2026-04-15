@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\HasTranslations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -23,6 +24,7 @@ class Hotel extends Model
         'country',
         'region_or_state',
         'city',
+        'location_id',
         'district_or_area',
         'full_address',
         'latitude',
@@ -83,6 +85,7 @@ class Hotel extends Model
             'review_score' => 'decimal:2',
             'latitude' => 'decimal:8',
             'longitude' => 'decimal:8',
+            'location_id' => 'integer',
         ];
     }
 
@@ -94,6 +97,11 @@ class Hotel extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id');
     }
 
     public function rooms(): HasMany
@@ -128,5 +136,20 @@ class Hotel extends Model
     public function getTranslatableEntityType(): string
     {
         return 'hotel';
+    }
+
+    public function scopeForLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        return $query->whereIn($query->getModel()->getTable().'.location_id', $ids);
     }
 }

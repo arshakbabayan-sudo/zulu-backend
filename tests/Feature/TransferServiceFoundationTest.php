@@ -32,21 +32,29 @@ class TransferServiceFoundationTest extends TestCase
      */
     private function validTransferPayload(int $offerId): array
     {
+        $offerPrice = (float) Offer::query()->findOrFail($offerId)->price;
+
         return [
             'offer_id' => $offerId,
             'transfer_title' => 'ZULU Test Transfer',
             'transfer_type' => 'private_transfer',
-            'pickup_country' => 'AM',
-            'pickup_city' => 'Yerevan',
+            'origin_location_id' => $this->locationIds()['yerevan_city'],
+            'destination_location_id' => $this->locationIds()['gyumri_city'],
             'pickup_point_type' => 'airport',
             'pickup_point_name' => 'EVN Terminal 1',
-            'dropoff_country' => 'AM',
-            'dropoff_city' => 'Yerevan',
             'dropoff_point_type' => 'hotel',
             'dropoff_point_name' => 'Grand Hotel Yerevan',
+            'service_date' => '2026-09-01',
+            'pickup_time' => '10:00:00',
+            'estimated_duration_minutes' => 45,
             'vehicle_category' => 'sedan',
             'passenger_capacity' => 3,
             'luggage_capacity' => 3,
+            'minimum_passengers' => 1,
+            'maximum_passengers' => 3,
+            'pricing_mode' => 'per_vehicle',
+            'base_price' => $offerPrice,
+            'cancellation_policy_type' => 'non_refundable',
         ];
     }
 
@@ -78,7 +86,9 @@ class TransferServiceFoundationTest extends TestCase
         $offer = $this->makeTransferOffer($company, 99.5);
         $service = new TransferService;
 
-        $transfer = $service->create($this->validTransferPayload($offer->id));
+        $payload = $this->validTransferPayload($offer->id);
+        unset($payload['base_price']);
+        $transfer = $service->create($payload);
 
         $this->assertEqualsWithDelta(99.5, (float) $transfer->base_price, 0.01);
     }

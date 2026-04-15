@@ -117,7 +117,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         ->middleware('throttle:6,1')
         ->name('verification.send');
 
-    // Admin translations UI (ZuluApi): mutates translations; web POST admin/localization/translations/update is legacy/alternate.
+    // Admin translations UI (ZuluApi): canonical mutation surface stays under /api/localization/*.
     Route::post('localization/translations', [LocalizationController::class, 'setTranslations']);
     Route::delete('localization/translations', [LocalizationController::class, 'deleteTranslations']);
     Route::patch('localization/languages/{language}/toggle', [LocalizationController::class, 'toggleLanguage']);
@@ -349,6 +349,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('locations/regions', [AdminLocationController::class, 'regions']);
     Route::get('locations/regions/{id}/cities', [AdminLocationController::class, 'cities'])->whereNumber('id');
     Route::post('locations/cities', [AdminLocationController::class, 'cities']);
+    Route::get('locations/tree/children', [AdminLocationController::class, 'treeChildren']);
+    Route::get('locations/tree/node/{id}', [AdminLocationController::class, 'treeNode'])->whereNumber('id');
 
     // Admin support (Bearer): mirrors Blade admin/support* + SupportService (super admin or company admin with role membership).
     Route::get('support/tickets', [SupportAdminController::class, 'index']);

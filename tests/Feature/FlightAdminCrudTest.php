@@ -28,6 +28,7 @@ class FlightAdminCrudTest extends TestCase
     {
         return [
             'offer_id' => $offerId,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'T-CRUD-1',
             'service_type' => 'scheduled',
             'departure_country' => 'AM',
@@ -61,6 +62,9 @@ class FlightAdminCrudTest extends TestCase
             'change_policy_type' => 'not_allowed',
             'seat_map_available' => false,
             'extra_baggage_allowed' => false,
+            'appears_in_web' => true,
+            'appears_in_admin' => true,
+            'appears_in_zulu_admin' => true,
             'is_package_eligible' => true,
             'status' => 'draft',
         ];

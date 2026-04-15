@@ -39,6 +39,7 @@ class FlightListApiTest extends TestCase
     {
         return [
             'offer_id' => $offerId,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => $code,
             'service_type' => 'scheduled',
             'departure_country' => 'AM',

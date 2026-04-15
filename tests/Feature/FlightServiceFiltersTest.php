@@ -33,6 +33,7 @@ class FlightServiceFiltersTest extends TestCase
     {
         return [
             'offer_id' => $offerId,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'FLT-FIL-'.$codeSuffix,
             'service_type' => 'scheduled',
             'departure_country' => 'AM',

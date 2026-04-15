@@ -819,72 +819,164 @@ class DiscoveryService
             return;
         }
 
+        $start = $startDate !== null ? Carbon::parse($startDate)->startOfDay() : null;
+        $end = $endDate !== null ? Carbon::parse($endDate)->endOfDay() : null;
+
         if ($moduleType === 'flight') {
-            $query->whereHas('flight', function (Builder $q) use ($startDate, $endDate): void {
-                if ($startDate !== null) {
-                    $q->where('departure_at', '>=', Carbon::parse($startDate)->startOfDay());
-                }
-                if ($endDate !== null) {
-                    $q->where('arrival_at', '<=', Carbon::parse($endDate)->endOfDay());
-                }
-            });
+            $query->whereHas('flight', fn (Builder $q) => $this->applyFlightDateRange($q, $start, $end));
 
             return;
         }
 
         if ($moduleType === 'transfer') {
-            $query->whereHas('transfer', function (Builder $q) use ($startDate, $endDate): void {
-                if ($startDate !== null) {
-                    $start = Carbon::parse($startDate)->startOfDay();
-                    $q->where(function (Builder $tq) use ($start): void {
-                        $tq->whereDate('service_date', '>=', $start)
-                            ->orWhere('availability_window_start', '>=', $start);
-                    });
-                }
-                if ($endDate !== null) {
-                    $end = Carbon::parse($endDate)->endOfDay();
-                    $q->where(function (Builder $tq) use ($end): void {
-                        $tq->whereDate('service_date', '<=', $end)
-                            ->orWhere('availability_window_end', '<=', $end);
-                    });
-                }
-            });
+            $query->whereHas('transfer', fn (Builder $q) => $this->applyTransferDateRange($q, $start, $end));
+
+            return;
+        }
+
+        if ($moduleType === 'car') {
+            $query->whereHas('car', fn (Builder $q) => $this->applyCarDateRange($q, $start, $end));
+
+            return;
+        }
+
+        if ($moduleType === 'excursion') {
+            $query->whereHas('excursion', fn (Builder $q) => $this->applyExcursionDateRange($q, $start, $end));
+
+            return;
+        }
+
+        if ($moduleType === 'hotel') {
+            $query->whereHas('hotel', fn (Builder $q) => $this->applyHotelDateRange($q, $start, $end));
+
+            return;
+        }
+
+        if ($moduleType === 'package') {
+            $query->whereHas('package', fn (Builder $q) => $this->applyRecordCreatedAtDateRange($q, $start, $end));
+
+            return;
+        }
+
+        if ($moduleType === 'visa') {
+            $query->whereHas('visa', fn (Builder $q) => $this->applyRecordCreatedAtDateRange($q, $start, $end));
 
             return;
         }
 
         if ($moduleType === null) {
-            $query->where(function (Builder $outer) use ($startDate, $endDate): void {
-                $outer->where(function (Builder $q) use ($startDate, $endDate): void {
+            $query->where(function (Builder $outer) use ($start, $end): void {
+                $outer->where(function (Builder $q) use ($start, $end): void {
                     $q->where('type', 'flight')
-                        ->whereHas('flight', function (Builder $fq) use ($startDate, $endDate): void {
-                            if ($startDate !== null) {
-                                $fq->where('departure_at', '>=', Carbon::parse($startDate)->startOfDay());
-                            }
-                            if ($endDate !== null) {
-                                $fq->where('arrival_at', '<=', Carbon::parse($endDate)->endOfDay());
-                            }
-                        });
-                })->orWhere(function (Builder $q) use ($startDate, $endDate): void {
+                        ->whereHas('flight', fn (Builder $fq) => $this->applyFlightDateRange($fq, $start, $end));
+                })->orWhere(function (Builder $q) use ($start, $end): void {
                     $q->where('type', 'transfer')
-                        ->whereHas('transfer', function (Builder $tq) use ($startDate, $endDate): void {
-                            if ($startDate !== null) {
-                                $start = Carbon::parse($startDate)->startOfDay();
-                                $tq->where(function (Builder $t2) use ($start): void {
-                                    $t2->whereDate('service_date', '>=', $start)
-                                        ->orWhere('availability_window_start', '>=', $start);
-                                });
-                            }
-                            if ($endDate !== null) {
-                                $end = Carbon::parse($endDate)->endOfDay();
-                                $tq->where(function (Builder $t2) use ($end): void {
-                                    $t2->whereDate('service_date', '<=', $end)
-                                        ->orWhere('availability_window_end', '<=', $end);
-                                });
-                            }
-                        });
-                })->orWhereNotIn('type', ['flight', 'transfer']);
+                        ->whereHas('transfer', fn (Builder $tq) => $this->applyTransferDateRange($tq, $start, $end));
+                })->orWhere(function (Builder $q) use ($start, $end): void {
+                    $q->where('type', 'car')
+                        ->whereHas('car', fn (Builder $cq) => $this->applyCarDateRange($cq, $start, $end));
+                })->orWhere(function (Builder $q) use ($start, $end): void {
+                    $q->where('type', 'excursion')
+                        ->whereHas('excursion', fn (Builder $eq) => $this->applyExcursionDateRange($eq, $start, $end));
+                })->orWhere(function (Builder $q) use ($start, $end): void {
+                    $q->where('type', 'hotel')
+                        ->whereHas('hotel', fn (Builder $hq) => $this->applyHotelDateRange($hq, $start, $end));
+                })->orWhere(function (Builder $q) use ($start, $end): void {
+                    $q->where('type', 'package')
+                        ->whereHas('package', fn (Builder $pq) => $this->applyRecordCreatedAtDateRange($pq, $start, $end));
+                })->orWhere(function (Builder $q) use ($start, $end): void {
+                    $q->where('type', 'visa')
+                        ->whereHas('visa', fn (Builder $vq) => $this->applyRecordCreatedAtDateRange($vq, $start, $end));
+                });
             });
+        }
+    }
+
+    private function applyFlightDateRange(Builder $query, ?Carbon $start, ?Carbon $end): void
+    {
+        if ($start !== null) {
+            $query->where('departure_at', '>=', $start);
+        }
+        if ($end !== null) {
+            $query->where('arrival_at', '<=', $end);
+        }
+    }
+
+    private function applyTransferDateRange(Builder $query, ?Carbon $start, ?Carbon $end): void
+    {
+        if ($start !== null) {
+            $query->where(function (Builder $q) use ($start): void {
+                $q->whereDate('service_date', '>=', $start)
+                    ->orWhere('availability_window_end', '>=', $start)
+                    ->orWhereNull('availability_window_end');
+            });
+        }
+        if ($end !== null) {
+            $query->where(function (Builder $q) use ($end): void {
+                $q->whereDate('service_date', '<=', $end)
+                    ->orWhere('availability_window_start', '<=', $end)
+                    ->orWhereNull('availability_window_start');
+            });
+        }
+    }
+
+    private function applyCarDateRange(Builder $query, ?Carbon $start, ?Carbon $end): void
+    {
+        if ($start !== null) {
+            $query->where(function (Builder $q) use ($start): void {
+                $q->whereNull('availability_window_end')
+                    ->orWhere('availability_window_end', '>=', $start);
+            });
+        }
+        if ($end !== null) {
+            $query->where(function (Builder $q) use ($end): void {
+                $q->whereNull('availability_window_start')
+                    ->orWhere('availability_window_start', '<=', $end);
+            });
+        }
+    }
+
+    private function applyExcursionDateRange(Builder $query, ?Carbon $start, ?Carbon $end): void
+    {
+        if ($start !== null) {
+            $query->where(function (Builder $q) use ($start): void {
+                $q->whereNull('ends_at')
+                    ->orWhere('ends_at', '>=', $start);
+            });
+        }
+        if ($end !== null) {
+            $query->where(function (Builder $q) use ($end): void {
+                $q->whereNull('starts_at')
+                    ->orWhere('starts_at', '<=', $end);
+            });
+        }
+    }
+
+    private function applyHotelDateRange(Builder $query, ?Carbon $start, ?Carbon $end): void
+    {
+        $query->whereHas('rooms.pricings', function (Builder $pricing) use ($start, $end): void {
+            if ($start !== null) {
+                $pricing->where(function (Builder $q) use ($start): void {
+                    $q->whereNull('valid_to')
+                        ->orWhereDate('valid_to', '>=', $start);
+                });
+            }
+            if ($end !== null) {
+                $pricing->where(function (Builder $q) use ($end): void {
+                    $q->whereNull('valid_from')
+                        ->orWhereDate('valid_from', '<=', $end);
+                });
+            }
+        });
+    }
+
+    private function applyRecordCreatedAtDateRange(Builder $query, ?Carbon $start, ?Carbon $end): void
+    {
+        if ($start !== null) {
+            $query->where('created_at', '>=', $start);
+        }
+        if ($end !== null) {
+            $query->where('created_at', '<=', $end);
         }
     }
 

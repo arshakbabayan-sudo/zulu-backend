@@ -90,6 +90,7 @@ class LocalizationController extends Controller
 
         $langRaw = $request->query('lang') ?? $request->attributes->get('lang', 'en');
         $lang = is_string($langRaw) ? $langRaw : 'en';
+        $lang = $service->resolveLanguage($lang);
         $channelRaw = $validated['channel'] ?? $request->query('channel', 'in_app');
         $channel = is_string($channelRaw) ? $channelRaw : 'in_app';
 
@@ -151,10 +152,11 @@ class LocalizationController extends Controller
         }
 
         try {
+            $languageCode = $service->resolveWritableLanguage($validated['language_code']);
             $service->setTranslations(
                 $validated['entity_type'],
                 (int) $validated['entity_id'],
-                $validated['language_code'],
+                $languageCode,
                 $validated['translations']
             );
         } catch (\InvalidArgumentException $e) {
@@ -168,7 +170,7 @@ class LocalizationController extends Controller
             'data' => [
                 'entity_type' => $validated['entity_type'],
                 'entity_id' => (int) $validated['entity_id'],
-                'language_code' => $validated['language_code'],
+                'language_code' => $languageCode,
                 'fields_saved' => count($validated['translations']),
             ],
         ]);
@@ -194,10 +196,21 @@ class LocalizationController extends Controller
             'language_code' => ['nullable', 'string', 'max:8'],
         ]);
 
+        try {
+            $languageCode = null;
+            if (is_string($validated['language_code'] ?? null) && $validated['language_code'] !== '') {
+                $languageCode = $service->resolveWritableLanguage($validated['language_code']);
+            }
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'language_code' => [$e->getMessage()],
+            ]);
+        }
+
         $deleted = $service->deleteTranslations(
             $validated['entity_type'],
             (int) $validated['entity_id'],
-            $validated['language_code'] ?? null
+            $languageCode
         );
 
         return response()->json([
@@ -337,9 +350,10 @@ class LocalizationController extends Controller
         ]);
 
         try {
+            $languageCode = $service->resolveWritableLanguage($validated['lang']);
             $template = $service->upsertNotificationTemplate(
                 $event,
-                $validated['lang'],
+                $languageCode,
                 $validated['channel'],
                 $validated['title_template'],
                 $validated['body_template'],
@@ -396,7 +410,7 @@ class LocalizationController extends Controller
         ]);
 
         $result = $service->getUiTranslationsPaginated(
-            $validated['lang'],
+            $service->resolveLanguage($validated['lang']),
             (int) ($validated['page'] ?? 1),
             (int) ($validated['per_page'] ?? 50),
             (string) ($validated['search'] ?? '')
@@ -425,14 +439,15 @@ class LocalizationController extends Controller
         ]);
 
         try {
-            $count = $service->setUiTranslations($validated['language_code'], $validated['translations']);
+            $languageCode = $service->resolveWritableLanguage($validated['language_code']);
+            $count = $service->setUiTranslations($languageCode, $validated['translations']);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
 
         return response()->json([
             'success' => true,
-            'data' => ['saved' => $count],
+            'data' => ['saved' => $count, 'language_code' => $languageCode],
         ]);
     }
 

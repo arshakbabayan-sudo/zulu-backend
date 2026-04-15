@@ -16,6 +16,68 @@ use Throwable;
 class LocalizationService
 {
     /**
+     * @return array<string, string> lower-case code => canonical DB code
+     */
+    private function enabledLanguageCodeMap(): array
+    {
+        $codes = SupportedLanguage::query()
+            ->where('is_enabled', true)
+            ->pluck('code')
+            ->all();
+
+        $map = [];
+        foreach ($codes as $code) {
+            $canonical = (string) $code;
+            $map[strtolower($canonical)] = $canonical;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Read-path resolver: falls back to default language on unknown input.
+     */
+    private function resolveLanguageOrDefault(string $requested, array $lowerToCanonical): string
+    {
+        $normalized = strtolower(trim($requested));
+        if ($normalized !== '' && isset($lowerToCanonical[$normalized])) {
+            return $lowerToCanonical[$normalized];
+        }
+
+        // Accept region variants on read paths (e.g. hy-AM -> hy, ru_RU -> ru).
+        $normalized = str_replace('_', '-', $normalized);
+        $primary = explode('-', $normalized)[0] ?? '';
+        if ($primary !== '' && isset($lowerToCanonical[$primary])) {
+            return $lowerToCanonical[$primary];
+        }
+
+        return $this->getDefaultLanguage()?->code ?? 'en';
+    }
+
+    /**
+     * Write-path resolver: returns canonical DB code or null for unknown input.
+     */
+    private function resolveLanguageForWrite(string $requested, array $lowerToCanonical): ?string
+    {
+        $normalized = strtolower(trim($requested));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (isset($lowerToCanonical[$normalized])) {
+            return $lowerToCanonical[$normalized];
+        }
+
+        $normalized = str_replace('_', '-', $normalized);
+        $primary = explode('-', $normalized)[0] ?? '';
+        if ($primary !== '' && isset($lowerToCanonical[$primary])) {
+            return $lowerToCanonical[$primary];
+        }
+
+        return null;
+    }
+
+    /**
      * @return Collection<int, SupportedLanguage>
      */
     public function getSupportedLanguages(bool $enabledOnly = true): Collection
@@ -117,7 +179,9 @@ class LocalizationService
      */
     public function setUiTranslations(string $languageCode, array $keyValues): int
     {
-        $langExists = SupportedLanguage::query()->where('code', $languageCode)->exists();
+        $canonicalCode = $this->resolveWritableLanguage($languageCode);
+
+        $langExists = SupportedLanguage::query()->where('code', $canonicalCode)->exists();
         if (! $langExists) {
             throw new InvalidArgumentException('Invalid or unsupported language_code.');
         }
@@ -125,13 +189,13 @@ class LocalizationService
         $count = 0;
         foreach ($keyValues as $key => $value) {
             UiTranslation::query()->updateOrCreate(
-                ['language_code' => $languageCode, 'key' => (string) $key],
+                ['language_code' => $canonicalCode, 'key' => (string) $key],
                 ['value' => (string) $value]
             );
             $count++;
         }
 
-        Cache::forget('ui_translations_' . $languageCode);
+        Cache::forget('ui_translations_' . $canonicalCode);
 
         return $count;
     }
@@ -243,14 +307,16 @@ class LocalizationService
             throw new InvalidArgumentException('Invalid channel.');
         }
 
-        $langExists = SupportedLanguage::query()->where('code', $languageCode)->exists();
+        $canonicalCode = $this->resolveWritableLanguage($languageCode);
+
+        $langExists = SupportedLanguage::query()->where('code', $canonicalCode)->exists();
         if (! $langExists) {
             throw new InvalidArgumentException('Invalid language_code.');
         }
 
         $existing = NotificationTemplate::query()
             ->where('event_type', $eventType)
-            ->where('language_code', $languageCode)
+            ->where('language_code', $canonicalCode)
             ->where('channel', $channel)
             ->first();
 
@@ -259,7 +325,7 @@ class LocalizationService
         return NotificationTemplate::query()->updateOrCreate(
             [
                 'event_type' => $eventType,
-                'language_code' => $languageCode,
+                'language_code' => $canonicalCode,
                 'channel' => $channel,
             ],
             [
@@ -278,32 +344,26 @@ class LocalizationService
         }
 
         try {
-            $codes = SupportedLanguage::query()
-                ->where('is_enabled', true)
-                ->pluck('code')
-                ->all();
-
-            /** @var array<string, string> $lowerToCanonical */
-            $lowerToCanonical = [];
-            foreach ($codes as $code) {
-                $c = (string) $code;
-                $lowerToCanonical[strtolower($c)] = $c;
-            }
-
-            $lower = strtolower($requested);
-            if (isset($lowerToCanonical[$lower])) {
-                return $lowerToCanonical[$lower];
-            }
-
-            $prefix = strtolower(substr($requested, 0, 2));
-            if (strlen($prefix) === 2 && isset($lowerToCanonical[$prefix])) {
-                return $lowerToCanonical[$prefix];
-            }
-
-            return $this->getDefaultLanguage()?->code ?? 'en';
+            $lowerToCanonical = $this->enabledLanguageCodeMap();
+            return $this->resolveLanguageOrDefault($requested, $lowerToCanonical);
         } catch (Throwable) {
             return 'en';
         }
+    }
+
+    public function resolveWritableLanguage(string $requested): string
+    {
+        try {
+            $lowerToCanonical = $this->enabledLanguageCodeMap();
+            $resolved = $this->resolveLanguageForWrite($requested, $lowerToCanonical);
+            if ($resolved !== null) {
+                return $resolved;
+            }
+        } catch (Throwable) {
+            // Normalize downstream error message for API clients.
+        }
+
+        throw new InvalidArgumentException('Invalid or unsupported language_code.');
     }
 
     public function getTranslation(
@@ -404,8 +464,10 @@ class LocalizationService
             throw new InvalidArgumentException('Invalid field_name.');
         }
 
+        $canonicalCode = $this->resolveWritableLanguage($languageCode);
+
         $exists = SupportedLanguage::query()
-            ->where('code', $languageCode)
+            ->where('code', $canonicalCode)
             ->where('is_enabled', true)
             ->exists();
 
@@ -417,7 +479,7 @@ class LocalizationService
             [
                 'entity_type' => $entityType,
                 'entity_id' => $entityId,
-                'language_code' => $languageCode,
+                'language_code' => $canonicalCode,
                 'field_name' => $fieldName,
             ],
             ['translated_value' => $value]

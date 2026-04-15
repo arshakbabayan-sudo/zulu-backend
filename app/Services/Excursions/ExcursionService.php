@@ -4,8 +4,10 @@ namespace App\Services\Excursions;
 
 use App\Http\Controllers\Api\ExcursionController;
 use App\Models\Excursion;
+use App\Models\Location;
 use App\Models\Offer;
 use App\Services\Infrastructure\PlatformSettingsService;
+use App\Services\Locations\LocationBusinessValidator;
 use App\Services\Offers\OfferVisibilityService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -27,6 +29,7 @@ class ExcursionService
      */
     public const LISTING_FILTER_KEYS = [
         'company_id',
+        'location_id',
         'location',
         'country',
         'city',
@@ -87,7 +90,8 @@ class ExcursionService
         return [
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
             'company_id' => ['sometimes', 'integer', 'exists:companies,id'],
-            'location' => ['required', 'string', 'max:255'],
+            // Deprecated: legacy text location is derived from location_id.
+            'location' => ['sometimes', 'nullable', 'string', 'max:255'],
             'duration' => ['required', 'string', 'max:255'],
             'group_size' => ['required', 'integer', 'min:1'],
         ];
@@ -102,8 +106,13 @@ class ExcursionService
     private function excursionExpandedFieldRules(bool $partial): array
     {
         $opt = $partial ? ['sometimes', 'nullable'] : ['sometimes', 'nullable'];
+        $locationRules = $partial
+            ? ['sometimes', 'nullable', 'integer', Rule::exists('locations', 'id')]
+            : ['required', 'integer', Rule::exists('locations', 'id')];
 
         return [
+            'location_id' => $locationRules,
+            // Deprecated: legacy text location fields are now derived from location_id.
             'country' => array_merge($opt, ['string', 'max:255']),
             'city' => array_merge($opt, ['string', 'max:255']),
             'general_category' => array_merge($opt, ['string', 'max:255']),
@@ -235,6 +244,11 @@ class ExcursionService
             $payload['starts_at'] ?? null,
             $payload['ends_at'] ?? null
         );
+        $this->validateExcursionLocationBusinessRules($payload);
+        $payload = array_merge(
+            $payload,
+            $this->deriveDeprecatedExcursionLocationFields((int) $payload['location_id'])
+        );
 
         return DB::transaction(function () use ($payload, $offer): Excursion {
             $excursion = Excursion::query()->create($payload);
@@ -270,6 +284,13 @@ class ExcursionService
             ? $data['ends_at']
             : $excursion->ends_at?->toIso8601String();
         $this->assertExcursionScheduleOrder($mergedStarts, $mergedEnds);
+        $this->validateExcursionLocationBusinessRules(array_merge([
+            'location_id' => $excursion->location_id,
+        ], $data));
+        $resolvedLocationId = isset($data['location_id'])
+            ? (int) $data['location_id']
+            : (int) $excursion->location_id;
+        $data = array_merge($data, $this->deriveDeprecatedExcursionLocationFields($resolvedLocationId));
 
         return DB::transaction(function () use ($excursion, $data, $priceByDatesProvided): Excursion {
             $excursion->fill($data);
@@ -344,6 +365,11 @@ class ExcursionService
             });
         }
 
+        $locationId = $this->normalizeListingInt($filters['location_id'] ?? null);
+        if ($locationId !== null) {
+            $query->forLocation($locationId);
+        }
+
         $table = $query->getModel()->getTable();
 
         // Step C3: visibility_rule + appearance flags (rollout via platform settings).
@@ -366,15 +392,8 @@ class ExcursionService
             }
         }
 
-        if (array_key_exists('location', $filters)) {
-            $value = $filters['location'];
-            if ($value !== null && $value !== '' && (is_string($value) || is_numeric($value))) {
-                $table = $query->getModel()->getTable();
-                $query->where($table.'.location', 'like', '%'.$this->likeEscape((string) $value).'%');
-            }
-        }
-
-        foreach (['country', 'city', 'general_category', 'category', 'excursion_type', 'status', 'language'] as $column) {
+        // Deprecated: textual location filters (location/country/city) were removed after location tree cutover.
+        foreach (['general_category', 'category', 'excursion_type', 'status', 'language'] as $column) {
             if (! array_key_exists($column, $filters)) {
                 continue;
             }
@@ -671,5 +690,60 @@ class ExcursionService
     private function likeEscape(string $value): string
     {
         return addcslashes($value, '%_\\');
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function validateExcursionLocationBusinessRules(array $payload): void
+    {
+        app(LocationBusinessValidator::class)->requireLocationOfTypes(
+            isset($payload['location_id']) ? (int) $payload['location_id'] : null,
+            'location_id',
+            [Location::TYPE_REGION, Location::TYPE_CITY],
+            'Excursion location must be region or city.',
+            'Excursion location must be region or city.'
+        );
+    }
+
+    /**
+     * Legacy columns are kept read-only for rollout safety and are derived from location tree.
+     *
+     * @return array{country: string|null, city: string|null, location: string}
+     */
+    private function deriveDeprecatedExcursionLocationFields(int $locationId): array
+    {
+        $location = Location::query()->find($locationId);
+        if ($location === null) {
+            return $this->onlyExistingLegacyColumns('excursions', [
+                'country' => null,
+                'city' => null,
+                'location' => '',
+            ]);
+        }
+
+        $lineage = $location->ancestors()->push($location)->values();
+
+        return $this->onlyExistingLegacyColumns('excursions', [
+            'country' => optional($lineage->firstWhere('type', Location::TYPE_COUNTRY))->name,
+            'city' => optional($lineage->firstWhere('type', Location::TYPE_CITY))->name,
+            'location' => $location->fullPathName(),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function onlyExistingLegacyColumns(string $table, array $payload): array
+    {
+        $existingKeys = [];
+        foreach (array_keys($payload) as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                $existingKeys[] = $column;
+            }
+        }
+
+        return Arr::only($payload, $existingKeys);
     }
 }

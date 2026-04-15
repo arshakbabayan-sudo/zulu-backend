@@ -3,8 +3,10 @@
 namespace App\Services\Transfers;
 
 use App\Models\Offer;
+use App\Models\Location;
 use App\Models\Transfer;
 use App\Services\Infrastructure\PlatformSettingsService;
+use App\Services\Locations\LocationBusinessValidator;
 use App\Services\Offers\OfferVisibilityService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -13,6 +15,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +31,7 @@ class TransferService
      */
     public const LISTING_FILTER_KEYS = [
         'company_id',
+        'location_id',
         'status',
         'availability_status',
         'transfer_type',
@@ -82,6 +86,11 @@ class TransferService
 
         $rules = $this->transferStoreValidationRules();
         $attrs = $this->runTransferValidator($data, $rules)->validate();
+        $this->validateTransferLocationBusinessRules($attrs);
+        $attrs = array_merge($attrs, $this->deriveDeprecatedTransferLocationFields(
+            (int) $attrs['origin_location_id'],
+            (int) $attrs['destination_location_id']
+        ));
         $attrs['company_id'] = $offer->company_id;
 
         return DB::transaction(function () use ($attrs, $offer) {
@@ -126,6 +135,20 @@ class TransferService
         }
 
         $clean = $this->runTransferValidator($data, $partialRules, $transfer)->validate();
+        $this->validateTransferLocationBusinessRules(array_merge([
+            'origin_location_id' => $transfer->origin_location_id,
+            'destination_location_id' => $transfer->destination_location_id,
+        ], $clean));
+        $resolvedOriginId = isset($clean['origin_location_id'])
+            ? (int) $clean['origin_location_id']
+            : (int) $transfer->origin_location_id;
+        $resolvedDestinationId = isset($clean['destination_location_id'])
+            ? (int) $clean['destination_location_id']
+            : (int) $transfer->destination_location_id;
+        $clean = array_merge($clean, $this->deriveDeprecatedTransferLocationFields(
+            $resolvedOriginId,
+            $resolvedDestinationId
+        ));
 
         $basePriceSubmitted = array_key_exists('base_price', $data);
 
@@ -268,6 +291,11 @@ class TransferService
             $query->where($table.'.company_id', (int) $filters['company_id']);
         }
 
+        $locationId = $this->normalizeListingInt($filters['location_id'] ?? null);
+        if ($locationId !== null) {
+            $query->forLocation($locationId);
+        }
+
         foreach (['status', 'availability_status', 'transfer_type', 'vehicle_category'] as $key) {
             if (! array_key_exists($key, $filters)) {
                 continue;
@@ -310,42 +338,7 @@ class TransferService
             }
         }
 
-        // Step C2 — location-ish filters (partial match; safe ignore on invalid values).
-        $country = $this->normalizeListingString($filters['country'] ?? null);
-        if ($country !== null) {
-            $like = '%'.addcslashes($country, '%_\\').'%';
-            $query->where(function (Builder $q) use ($table, $like): void {
-                $q->where($table.'.pickup_country', 'like', $like)
-                    ->orWhere($table.'.dropoff_country', 'like', $like);
-            });
-        }
-
-        $city = $this->normalizeListingString($filters['city'] ?? null);
-        if ($city !== null) {
-            $like = '%'.addcslashes($city, '%_\\').'%';
-            $query->where(function (Builder $q) use ($table, $like): void {
-                $q->where($table.'.pickup_city', 'like', $like)
-                    ->orWhere($table.'.dropoff_city', 'like', $like);
-            });
-        }
-
-        $origin = $this->normalizeListingString($filters['origin'] ?? null);
-        if ($origin !== null) {
-            $like = '%'.addcslashes($origin, '%_\\').'%';
-            $query->where(function (Builder $q) use ($table, $like): void {
-                $q->where($table.'.pickup_city', 'like', $like)
-                    ->orWhere($table.'.pickup_point_name', 'like', $like);
-            });
-        }
-
-        $destination = $this->normalizeListingString($filters['destination'] ?? null);
-        if ($destination !== null) {
-            $like = '%'.addcslashes($destination, '%_\\').'%';
-            $query->where(function (Builder $q) use ($table, $like): void {
-                $q->where($table.'.dropoff_city', 'like', $like)
-                    ->orWhere($table.'.dropoff_point_name', 'like', $like);
-            });
-        }
+        // Deprecated: textual location filters were removed after location tree cutover.
 
         // Step C2 — trip date (service_date).
         $date = $this->normalizeListingDate($filters['trip_date'] ?? null);
@@ -609,12 +602,15 @@ class TransferService
             'appears_in_zulu_admin' => ['boolean'],
             'transfer_title' => ['required', 'string', 'max:255'],
             'transfer_type' => ['required', 'string', Rule::in(Transfer::TRANSFER_TYPES)],
-            'pickup_country' => ['required', 'string', 'max:120'],
-            'pickup_city' => ['required', 'string', 'max:255'],
+            // Deprecated: legacy text location fields are now derived from origin/destination location IDs.
+            'pickup_country' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'pickup_city' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'origin_location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
             'pickup_point_type' => ['required', 'string', Rule::in(Transfer::POINT_TYPES)],
             'pickup_point_name' => ['required', 'string'],
-            'dropoff_country' => ['required', 'string', 'max:120'],
-            'dropoff_city' => ['required', 'string', 'max:255'],
+            'dropoff_country' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'dropoff_city' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'destination_location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
             'dropoff_point_type' => ['required', 'string', Rule::in(Transfer::POINT_TYPES)],
             'dropoff_point_name' => ['required', 'string'],
             'pickup_latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -650,5 +646,73 @@ class TransferService
             'is_package_eligible' => ['boolean'],
             'status' => ['required', 'string', 'max:32'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function validateTransferLocationBusinessRules(array $payload): void
+    {
+        $origin = app(LocationBusinessValidator::class)->requireLocationOfTypes(
+            isset($payload['origin_location_id']) ? (int) $payload['origin_location_id'] : null,
+            'origin_location_id',
+            [Location::TYPE_REGION, Location::TYPE_CITY],
+            'Transfer origin location is required.',
+            'Transfer origin must be region or city.'
+        );
+
+        $destination = app(LocationBusinessValidator::class)->requireLocationOfTypes(
+            isset($payload['destination_location_id']) ? (int) $payload['destination_location_id'] : null,
+            'destination_location_id',
+            [Location::TYPE_REGION, Location::TYPE_CITY],
+            'Transfer destination location is required.',
+            'Transfer destination must be region or city.'
+        );
+
+        if ((int) $origin->id === (int) $destination->id) {
+            throw ValidationException::withMessages([
+                'destination_location_id' => ['Origin and destination must be different locations.'],
+            ]);
+        }
+
+    }
+
+    /**
+     * Legacy columns are kept read-only for rollout safety and are derived from location tree.
+     *
+     * @return array{pickup_country: string|null, pickup_city: string|null, dropoff_country: string|null, dropoff_city: string|null}
+     */
+    private function deriveDeprecatedTransferLocationFields(int $originLocationId, int $destinationLocationId): array
+    {
+        $origin = Location::query()->find($originLocationId);
+        $destination = Location::query()->find($destinationLocationId);
+
+        $originLineage = $origin?->ancestors()->push($origin)->values();
+        $destinationLineage = $destination?->ancestors()->push($destination)->values();
+
+        return $this->onlyExistingLegacyColumns('transfers', [
+            'pickup_country' => optional($originLineage?->firstWhere('type', Location::TYPE_COUNTRY))->name,
+            'pickup_city' => optional($originLineage?->firstWhere('type', Location::TYPE_CITY))->name
+                ?? optional($originLineage?->firstWhere('type', Location::TYPE_REGION))->name,
+            'dropoff_country' => optional($destinationLineage?->firstWhere('type', Location::TYPE_COUNTRY))->name,
+            'dropoff_city' => optional($destinationLineage?->firstWhere('type', Location::TYPE_CITY))->name
+                ?? optional($destinationLineage?->firstWhere('type', Location::TYPE_REGION))->name,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function onlyExistingLegacyColumns(string $table, array $payload): array
+    {
+        $existingKeys = [];
+        foreach (array_keys($payload) as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                $existingKeys[] = $column;
+            }
+        }
+
+        return Arr::only($payload, $existingKeys);
     }
 }

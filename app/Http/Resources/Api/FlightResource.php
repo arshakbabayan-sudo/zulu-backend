@@ -39,6 +39,7 @@ class FlightResource extends JsonResource
         $merged = array_merge([
             'id' => $this->id,
             'offer_id' => $this->offer_id,
+            'location_id' => $this->location_id,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'pricing' => $pricing,

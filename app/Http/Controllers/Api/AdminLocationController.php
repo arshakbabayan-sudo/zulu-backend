@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\City;
 use App\Models\Country;
+use App\Models\Location;
 use App\Models\Region;
 use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
@@ -98,6 +99,68 @@ class AdminLocationController extends Controller
             'message' => 'Country created',
             'data' => $country,
         ], 201);
+    }
+
+    public function treeChildren(Request $request): JsonResponse
+    {
+        if ($request->user() === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'parent_id' => ['nullable', 'integer', 'exists:locations,id'],
+        ]);
+
+        $parentId = $validated['parent_id'] ?? null;
+        $query = Location::query()->orderBy('name');
+
+        if ($parentId === null) {
+            $query->whereNull('parent_id')->countries();
+        } else {
+            $query->where('parent_id', (int) $parentId);
+        }
+
+        $rows = $query->get(['id', 'name', 'type', 'parent_id', 'path', 'depth']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+        ]);
+    }
+
+    public function treeNode(Request $request, int $id): JsonResponse
+    {
+        if ($request->user() === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        $location = Location::query()->findOrFail($id);
+        $ancestors = $location->ancestors()->values()->map(fn (Location $row) => [
+            'id' => $row->id,
+            'name' => $row->name,
+            'type' => $row->type,
+            'parent_id' => $row->parent_id,
+        ])->all();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $location->id,
+                'name' => $location->name,
+                'type' => $location->type,
+                'parent_id' => $location->parent_id,
+                'path' => $location->path,
+                'depth' => $location->depth,
+                'full_path_name' => $location->fullPathName(),
+                'ancestors' => $ancestors,
+            ],
+        ]);
     }
 
     public function regions(Request $request, ?int $countryId = null): JsonResponse

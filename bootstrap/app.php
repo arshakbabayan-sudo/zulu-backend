@@ -19,6 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withCommands([
+        \App\Console\Commands\BackfillProductLocations::class,
+        \App\Console\Commands\CheckUiTranslationConsistency::class,
         \App\Console\Commands\ExportUiTranslationsCsv::class,
         \App\Console\Commands\ImportUiTranslationsCsv::class,
         \App\Console\Commands\PruneExpiredTokens::class,

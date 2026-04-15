@@ -47,6 +47,7 @@ class HotelWriteApiTest extends TestCase
     {
         return [
             'offer_id' => $offerId,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'hotel_name' => 'API Hotel',
             'property_type' => 'hotel',
             'hotel_type' => 'resort',
@@ -279,9 +280,12 @@ class HotelWriteApiTest extends TestCase
         $hotelId = (int) $this->postJson('/api/hotels', $this->validCreatePayload($offer->id), $headers)
             ->json('data.id');
 
-        $this->patchJson('/api/hotels/'.$hotelId, ['city' => 'Gyumri', 'hotel_name' => 'Renamed'], $headers)
+        $this->patchJson('/api/hotels/'.$hotelId, [
+            'location_id' => $this->locationIds()['gyumri_city'],
+            'hotel_name' => 'Renamed',
+        ], $headers)
             ->assertOk()
-            ->assertJsonPath('data.city', 'Gyumri')
+            ->assertJsonPath('data.location_id', $this->locationIds()['gyumri_city'])
             ->assertJsonPath('data.hotel_name', 'Renamed');
 
         $this->patchJson('/api/hotels/'.$hotelId, ['offer_id' => 999], $headers)
@@ -395,6 +399,7 @@ class HotelWriteApiTest extends TestCase
         $headers = $this->authHeaders($admin);
         $hotelId = (int) $this->postJson('/api/hotels', [
             'offer_id' => $offer->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'hotel_name' => 'Two Room Hotel',
             'property_type' => 'hotel',
             'hotel_type' => 'resort',
@@ -505,6 +510,7 @@ class HotelWriteApiTest extends TestCase
             '/api/hotels',
             [
                 'offer_id' => $this->makeHotelOffer($company)->id,
+                'location_id' => $this->locationIds()['yerevan_city'],
                 'hotel_name' => 'H',
                 'property_type' => 'hotel',
                 'hotel_type' => 'resort',
@@ -714,7 +720,7 @@ class HotelWriteApiTest extends TestCase
         );
         $headers = $this->authHeaders($scoped);
 
-        $this->patchJson('/api/hotels/'.$hotelId, ['city' => 'X'], $headers)
+        $this->patchJson('/api/hotels/'.$hotelId, ['hotel_name' => 'X'], $headers)
             ->assertStatus(404)
             ->assertJsonPath('message', 'Not found');
 

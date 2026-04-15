@@ -5,8 +5,10 @@ namespace App\Services\Hotels;
 use App\Models\Hotel;
 use App\Models\HotelRoom;
 use App\Models\HotelRoomPricing;
+use App\Models\Location;
 use App\Models\Offer;
 use App\Services\Infrastructure\PlatformSettingsService;
+use App\Services\Locations\LocationBusinessValidator;
 use App\Services\Offers\OfferVisibilityService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -30,6 +32,7 @@ class HotelService
      */
     public const LISTING_FILTER_KEYS = [
         'company_id',
+        'location_id',
         'status',
         'availability_status',
         'city',
@@ -84,6 +87,11 @@ class HotelService
         $hotelRules = $this->hotelStoreValidationRules();
         $v = Validator::make($data, $hotelRules);
         $hotelAttrs = $v->validate();
+        $this->validateHotelLocationBusinessRules($hotelAttrs);
+        $hotelAttrs = array_merge(
+            $hotelAttrs,
+            $this->deriveDeprecatedHotelLocationFields((int) $hotelAttrs['location_id'])
+        );
         $hotelAttrs['company_id'] = $offer->company_id;
 
         if ($roomsPayload !== []) {
@@ -91,9 +99,7 @@ class HotelService
         }
 
         return DB::transaction(function () use ($hotelAttrs, $roomsPayload) {
-            $hotel = Hotel::query()->create(
-                Arr::only($hotelAttrs, (new Hotel)->getFillable())
-            );
+            $hotel = Hotel::query()->create($this->persistableHotelAttributes($hotelAttrs));
 
             $this->persistRoomsForHotel($hotel, $roomsPayload);
             $this->syncHotelOfferPriceFromActiveRoomPricings($hotel);
@@ -325,7 +331,17 @@ class HotelService
 
                 $clean = Validator::make($data, $partialRules)->validate();
 
-                $hotel->fill(Arr::only($clean, array_keys($data)));
+                $this->validateHotelLocationBusinessRules(
+                    array_merge([
+                        'location_id' => $hotel->location_id,
+                    ], $clean)
+                );
+                $resolvedLocationId = isset($clean['location_id'])
+                    ? (int) $clean['location_id']
+                    : (int) $hotel->location_id;
+                $clean = array_merge($clean, $this->deriveDeprecatedHotelLocationFields($resolvedLocationId));
+
+                $hotel->fill($this->persistableHotelAttributes(Arr::only($clean, array_keys($data))));
                 $hotel->save();
             }
 
@@ -463,13 +479,7 @@ class HotelService
 
         $table = $query->getModel()->getTable();
 
-        // Mapping-aligned aliases (backward compatible)
-        if (array_key_exists('route', $filters)
-            && ($filters['route'] !== null && $filters['route'] !== '')
-            && (! array_key_exists('city', $filters) || $filters['city'] === null || $filters['city'] === '')
-        ) {
-            $filters['city'] = $filters['route'];
-        }
+        // Deprecated: route/country/city textual location filters were removed after location tree cutover.
 
         if (array_key_exists('min_price', $filters)
             && ($filters['min_price'] !== null && $filters['min_price'] !== '')
@@ -503,6 +513,11 @@ class HotelService
             $query->where($table.'.company_id', (int) $filters['company_id']);
         }
 
+        $locationId = $this->normalizeListingInt($filters['location_id'] ?? null);
+        if ($locationId !== null) {
+            $query->forLocation($locationId);
+        }
+
         // Step C3: apply hotel visibility_rule filtering in admin inventory pages.
         // Discovery/public web is handled separately in DiscoveryService.
         $hotelVisibilityControlsEnabled = app(PlatformSettingsService::class)->get(
@@ -517,7 +532,7 @@ class HotelService
             app(OfferVisibilityService::class)->applyVisibilityFilter($query, $mappedContext);
         }
 
-        foreach (['status', 'availability_status', 'city', 'country'] as $key) {
+        foreach (['status', 'availability_status'] as $key) {
             if (! array_key_exists($key, $filters)) {
                 continue;
             }
@@ -670,6 +685,23 @@ class HotelService
         return null;
     }
 
+    private function normalizeListingInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+        if (is_numeric($value)) {
+            $n = (int) $value;
+
+            return $n > 0 ? $n : null;
+        }
+
+        return null;
+    }
+
     /**
      * Minimum hotel_room_pricings.price among rows with status "active" for this hotel.
      * Drives {@see syncHotelOfferPriceFromActiveRoomPricings}; listing filters use {@code offers.price}.
@@ -810,11 +842,13 @@ class HotelService
             'property_type' => ['required', 'string', 'max:64'],
             'hotel_type' => ['required', 'string', 'max:64'],
             'star_rating' => ['nullable', 'integer', 'min:1', 'max:5'],
-            'country' => ['required', 'string', 'max:120'],
+            // Deprecated: legacy text location fields are now derived from location_id.
+            'country' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
             'region_or_state' => ['nullable', 'string', 'max:255'],
             'visibility_rule' => ['nullable', 'string', Rule::in(['show_all', 'show_accepted_only', 'hide_rejected'])],
             'appears_in_packages' => ['boolean'],
-            'city' => ['required', 'string', 'max:255'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:255'],
             'district_or_area' => ['nullable', 'string', 'max:255'],
             'full_address' => ['nullable', 'string'],
             'latitude' => ['nullable', 'numeric'],
@@ -1012,5 +1046,77 @@ class HotelService
         });
 
         $v->validate();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function validateHotelLocationBusinessRules(array $payload): void
+    {
+        app(LocationBusinessValidator::class)->requireLocationOfTypes(
+            isset($payload['location_id']) ? (int) $payload['location_id'] : null,
+            'location_id',
+            [Location::TYPE_CITY],
+            'Հյուրանոցի համար անհրաժեշտ է ընտրել քաղաք։',
+            'Հյուրանոցի location-ը պետք է լինի city տիպի։'
+        );
+    }
+
+    /**
+     * Legacy columns are kept read-only for rollout safety and are derived from location tree.
+     *
+     * @return array{country: string|null, region_or_state: string|null, city: string|null}
+     */
+    private function deriveDeprecatedHotelLocationFields(int $locationId): array
+    {
+        $location = Location::query()->find($locationId);
+        if ($location === null) {
+            return $this->onlyExistingLegacyColumns('hotels', [
+                'country' => null,
+                'region_or_state' => null,
+                'city' => null,
+            ]);
+        }
+
+        $lineage = $location->ancestors()->push($location)->values();
+
+        return $this->onlyExistingLegacyColumns('hotels', [
+            'country' => optional($lineage->firstWhere('type', Location::TYPE_COUNTRY))->name,
+            'region_or_state' => optional($lineage->firstWhere('type', Location::TYPE_REGION))->name,
+            'city' => optional($lineage->firstWhere('type', Location::TYPE_CITY))->name,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function onlyExistingLegacyColumns(string $table, array $payload): array
+    {
+        $existingKeys = [];
+        foreach (array_keys($payload) as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                $existingKeys[] = $column;
+            }
+        }
+
+        return Arr::only($payload, $existingKeys);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function persistableHotelAttributes(array $payload): array
+    {
+        $fillable = Arr::only($payload, (new Hotel)->getFillable());
+        $existing = [];
+        foreach (array_keys($fillable) as $column) {
+            if (Schema::hasColumn('hotels', $column)) {
+                $existing[] = $column;
+            }
+        }
+
+        return Arr::only($fillable, $existing);
     }
 }

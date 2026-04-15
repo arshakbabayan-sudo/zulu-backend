@@ -11,4 +11,5 @@ Artisan::command('inspire', function () {
 
 Schedule::command('tokens:prune')->daily();
 Schedule::command('offers:prune-orphans')->hourly();
+Schedule::command('localization:check-ui-consistency')->dailyAt('02:15');
 Schedule::job(new ReleaseExpiredHolds)->everyMinute();

@@ -46,6 +46,7 @@ class CarWriteApiTest extends TestCase
         return array_merge([
             'offer_id' => $offerId,
             'company_id' => $companyId,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'pickup_location' => 'EVN',
             'dropoff_location' => 'City',
             'vehicle_class' => 'economy',

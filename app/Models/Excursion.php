@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Traits\HasTranslations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Excursion extends Model
 {
@@ -18,6 +20,7 @@ class Excursion extends Model
         'group_size',
         'country',
         'city',
+        'location_id',
         'general_category',
         'category',
         'excursion_type',
@@ -50,6 +53,7 @@ class Excursion extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'location_id' => 'integer',
             'ticket_max_count' => 'integer',
             'is_available' => 'boolean',
             'is_bookable' => 'boolean',
@@ -65,5 +69,39 @@ class Excursion extends Model
     public function offer(): BelongsTo
     {
         return $this->belongsTo(Offer::class);
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id');
+    }
+
+    public function locations(): BelongsToMany
+    {
+        return $this->belongsToMany(Location::class, 'excursion_location')
+            ->withPivot(['is_primary', 'sort_order'])
+            ->withTimestamps();
+    }
+
+    public function scopeForLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        $table = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $q) use ($table, $ids): void {
+            $q->whereIn($table.'.location_id', $ids)
+                ->orWhereHas('locations', function (Builder $lq) use ($ids): void {
+                    $lq->whereIn('locations.id', $ids);
+                });
+        });
     }
 }

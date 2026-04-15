@@ -101,7 +101,7 @@ class OfferNormalizationServiceTest extends TestCase
         ]);
         Visa::query()->create([
             'offer_id' => $offer->id,
-            'country' => 'EG',
+            'location_id' => $this->locationIds()['ge_country'],
             'visa_type' => 'tourist',
             'processing_days' => 14,
         ]);
@@ -111,7 +111,6 @@ class OfferNormalizationServiceTest extends TestCase
         $this->assertNotNull($n);
         $this->assertSame(OfferNormalizationService::NORMALIZED_KEYS, array_keys($n));
         $this->assertSame('visa', $n['module_type']);
-        $this->assertSame('EG', $n['destination_location']);
         $this->assertSame('tourist', $n['subtitle']);
         $this->assertSame(14, $n['duration']);
         $this->assertNull($n['is_package_eligible']);
@@ -173,6 +172,7 @@ class OfferNormalizationServiceTest extends TestCase
         ]);
         Car::query()->create([
             'offer_id' => $offer->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'pickup_location' => 'EVN Airport',
             'dropoff_location' => 'City center',
             'vehicle_class' => 'economy',
@@ -214,7 +214,7 @@ class OfferNormalizationServiceTest extends TestCase
         ]);
         Excursion::query()->create([
             'offer_id' => $offer->id,
-            'location' => 'Yerevan old town',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'duration' => 'Half day',
             'group_size' => 12,
         ]);
@@ -224,7 +224,6 @@ class OfferNormalizationServiceTest extends TestCase
         $this->assertNotNull($n);
         $this->assertSame(OfferNormalizationService::NORMALIZED_KEYS, array_keys($n));
         $this->assertSame('excursion', $n['module_type']);
-        $this->assertSame('Yerevan old town', $n['destination_location']);
         $this->assertSame('Half day', $n['duration']);
         $this->assertSame(12, $n['max_passengers']);
         $this->assertNull($n['from_location']);
@@ -270,6 +269,7 @@ class OfferNormalizationServiceTest extends TestCase
         Flight::query()->create([
             'offer_id' => $offer->id,
             'company_id' => $company->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'X1',
             'service_type' => 'scheduled',
             'departure_country' => 'AM',
@@ -355,12 +355,11 @@ class OfferNormalizationServiceTest extends TestCase
         Hotel::query()->create([
             'offer_id' => $offer->id,
             'company_id' => $company->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'hotel_name' => 'H',
             'property_type' => 'resort',
             'hotel_type' => 'standard',
             'star_rating' => null,
-            'country' => 'AM',
-            'city' => 'Yerevan',
             'short_description' => null,
             'main_image' => null,
             'meal_type' => 'room_only',
@@ -381,7 +380,7 @@ class OfferNormalizationServiceTest extends TestCase
         $this->assertSame('per_room', $n['price_type']);
         $this->assertSame('room', $n['capacity_type']);
         $this->assertSame('stay', $n['package_role']);
-        $this->assertSame('Yerevan, AM', $n['destination_location']);
+        $this->assertNull($n['destination_location']);
         $this->assertNull($n['subtitle']);
         $this->assertNull($n['stars']);
         $this->assertNull($n['rating']);
@@ -416,12 +415,10 @@ class OfferNormalizationServiceTest extends TestCase
             'company_id' => $company->id,
             'transfer_title' => 'T1',
             'transfer_type' => 'airport_transfer',
-            'pickup_country' => 'AM',
-            'pickup_city' => 'Yerevan',
+            'origin_location_id' => $this->locationIds()['yerevan_city'],
             'pickup_point_type' => 'airport',
             'pickup_point_name' => 'EVN',
-            'dropoff_country' => 'AM',
-            'dropoff_city' => 'Yerevan',
+            'destination_location_id' => $this->locationIds()['gyumri_city'],
             'dropoff_point_type' => 'address',
             'dropoff_point_name' => 'Hotel X',
             'service_date' => '2026-07-10',
@@ -474,6 +471,7 @@ class OfferNormalizationServiceTest extends TestCase
         Flight::query()->create([
             'offer_id' => $offer->id,
             'company_id' => $company->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'Z',
             'service_type' => 'scheduled',
             'departure_country' => 'AM',

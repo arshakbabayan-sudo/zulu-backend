@@ -67,6 +67,7 @@ class HotelListResource extends JsonResource
             'hotel_type' => $this->hotel_type,
             'star_rating' => $this->star_rating,
             'country' => $this->country,
+            'location_id' => $this->location_id,
             'region_or_state' => $this->region_or_state,
             'city' => $this->city,
             'district_or_area' => $this->district_or_area,

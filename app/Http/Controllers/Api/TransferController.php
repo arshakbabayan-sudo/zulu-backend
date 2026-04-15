@@ -70,12 +70,10 @@ class TransferController extends Controller
      * @bodyParam offer_id int required ID of an existing offer with type=transfer. Example: 70
      * @bodyParam transfer_title string required Example: Airport to City Center
      * @bodyParam transfer_type string required One of: airport_transfer, city_transfer, intercity. Example: airport_transfer
-     * @bodyParam pickup_country string required Example: Armenia
-     * @bodyParam pickup_city string required Example: Yerevan
+     * @bodyParam origin_location_id int required Origin location id (region/city) from location tree. Example: 1201
      * @bodyParam pickup_point_type string required Example: airport
      * @bodyParam pickup_point_name string required Example: Zvartnots International Airport
-     * @bodyParam dropoff_country string required Example: Armenia
-     * @bodyParam dropoff_city string required Example: Yerevan
+     * @bodyParam destination_location_id int required Destination location id (region/city) from location tree. Example: 1202
      * @bodyParam dropoff_point_type string required Example: address
      * @bodyParam dropoff_point_name string required Example: 1 Tigranyan St, Yerevan
      * @bodyParam service_date string required Date. Example: 2026-06-01

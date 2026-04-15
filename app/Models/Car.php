@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\HasTranslations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,6 +42,7 @@ class Car extends Model
         'offer_id',
         'pickup_location',
         'dropoff_location',
+        'location_id',
         'vehicle_class',
         'vehicle_type',
         'brand',
@@ -70,6 +72,7 @@ class Car extends Model
     {
         return [
             'year' => 'integer',
+            'location_id' => 'integer',
             'seats' => 'integer',
             'suitcases' => 'integer',
             'small_bag' => 'integer',
@@ -86,5 +89,25 @@ class Car extends Model
     public function offer(): BelongsTo
     {
         return $this->belongsTo(Offer::class);
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id');
+    }
+
+    public function scopeForLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        return $query->whereIn($query->getModel()->getTable().'.location_id', $ids);
     }
 }

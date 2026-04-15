@@ -52,21 +52,29 @@ class TransferListApiTest extends TestCase
      */
     private function transferPayload(int $offerId, array $overrides = []): array
     {
+        $offerPrice = (float) Offer::query()->findOrFail($offerId)->price;
+
         return array_merge([
             'offer_id' => $offerId,
             'transfer_title' => 'Test Transfer',
             'transfer_type' => 'private_transfer',
-            'pickup_country' => 'AM',
-            'pickup_city' => 'Yerevan',
+            'origin_location_id' => $this->locationIds()['yerevan_city'],
+            'destination_location_id' => $this->locationIds()['gyumri_city'],
             'pickup_point_type' => 'airport',
             'pickup_point_name' => 'EVN',
-            'dropoff_country' => 'AM',
-            'dropoff_city' => 'Yerevan',
             'dropoff_point_type' => 'hotel',
             'dropoff_point_name' => 'Downtown',
+            'service_date' => '2026-09-01',
+            'pickup_time' => '10:00:00',
+            'estimated_duration_minutes' => 45,
             'vehicle_category' => 'sedan',
             'passenger_capacity' => 3,
             'luggage_capacity' => 2,
+            'minimum_passengers' => 1,
+            'maximum_passengers' => 3,
+            'pricing_mode' => 'per_vehicle',
+            'base_price' => $offerPrice,
+            'cancellation_policy_type' => 'non_refundable',
             'status' => 'draft',
             'availability_status' => 'available',
             'is_package_eligible' => false,
@@ -103,7 +111,11 @@ class TransferListApiTest extends TestCase
 
     private function createAgentLinkedUser(Company $company): User
     {
-        $agentRole = Role::query()->where('name', 'agent')->firstOrFail();
+        $role = Role::query()->firstOrCreate(['name' => 'tdd_transfer_agent_view_only']);
+        $ids = Permission::query()->whereIn('name', [
+            'transfers.view',
+        ])->pluck('id')->all();
+        $role->permissions()->sync($ids);
 
         $user = User::query()->create([
             'name' => 'Agent transfer',
@@ -115,7 +127,7 @@ class TransferListApiTest extends TestCase
         UserCompany::query()->create([
             'user_id' => $user->id,
             'company_id' => $company->id,
-            'role_id' => $agentRole->id,
+            'role_id' => $role->id,
         ]);
 
         return $user;
@@ -351,52 +363,52 @@ class TransferListApiTest extends TestCase
         $this->assertNotContains($t2->id, $ids);
     }
 
-    public function test_filter_country_partial_matches_pickup_or_dropoff_country(): void
+    public function test_filter_location_id_country_scope(): void
     {
         $this->seed(RbacBootstrapSeeder::class);
         $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
         $company = Company::query()->firstOrFail();
         $service = new TransferService;
         $t1 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'A')->id, [
-            'pickup_country' => 'AM',
-            'dropoff_country' => 'GE',
+            'origin_location_id' => $this->locationIds()['yerevan_city'],
+            'destination_location_id' => $this->locationIds()['tbilisi_city'],
             'transfer_title' => 'AM->GE',
         ]));
         $t2 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'B')->id, [
-            'pickup_country' => 'FR',
-            'dropoff_country' => 'FR',
+            'origin_location_id' => $this->locationIds()['tbilisi_city'],
+            'destination_location_id' => $this->locationIds()['ge_region'],
             'transfer_title' => 'FR',
         ]));
 
-        $res = $this->getJson('/api/transfers?country=AM', $this->authHeaders($user));
+        $res = $this->getJson('/api/transfers?location_id='.$this->locationIds()['am_country'], $this->authHeaders($user));
         $res->assertOk();
         $ids = collect($res->json('data'))->pluck('id')->all();
         $this->assertContains($t1->id, $ids);
         $this->assertNotContains($t2->id, $ids);
     }
 
-    public function test_filter_origin_destination_partial_match_city_or_point_name(): void
+    public function test_filter_location_id_city_scope(): void
     {
         $this->seed(RbacBootstrapSeeder::class);
         $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
         $company = Company::query()->firstOrFail();
         $service = new TransferService;
         $t1 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'A')->id, [
-            'pickup_city' => 'Yerevan',
+            'origin_location_id' => $this->locationIds()['yerevan_city'],
+            'destination_location_id' => $this->locationIds()['tbilisi_city'],
             'pickup_point_name' => 'EVN',
-            'dropoff_city' => 'Tbilisi',
             'dropoff_point_name' => 'Central',
             'transfer_title' => 'YVN to TBS',
         ]));
         $t2 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'B')->id, [
-            'pickup_city' => 'Paris',
+            'origin_location_id' => $this->locationIds()['tbilisi_city'],
+            'destination_location_id' => $this->locationIds()['ge_region'],
             'pickup_point_name' => 'CDG',
-            'dropoff_city' => 'Lyon',
             'dropoff_point_name' => 'Center',
             'transfer_title' => 'FR ride',
         ]));
 
-        $res = $this->getJson('/api/transfers?origin=EVN&destination=Tbil', $this->authHeaders($user));
+        $res = $this->getJson('/api/transfers?location_id='.$this->locationIds()['yerevan_city'], $this->authHeaders($user));
         $res->assertOk();
         $ids = collect($res->json('data'))->pluck('id')->all();
         $this->assertContains($t1->id, $ids);
@@ -418,6 +430,7 @@ class TransferListApiTest extends TestCase
         $t2 = $service->create($this->transferPayload($this->makeTransferOffer($company, 'B')->id, [
             'service_date' => '2026-04-20',
             'passenger_capacity' => 2,
+            'maximum_passengers' => 2,
             'base_price' => 300,
             'transfer_title' => 'No',
         ]));

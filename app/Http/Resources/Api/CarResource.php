@@ -42,6 +42,7 @@ class CarResource extends JsonResource
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
+            'location_id' => $this->location_id,
             'company_id' => $this->whenLoaded('offer', fn () => $this->offer !== null ? (int) $this->offer->company_id : null),
             'pickup_location' => $this->pickup_location,
             'dropoff_location' => $this->dropoff_location,

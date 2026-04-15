@@ -30,6 +30,7 @@ class ExcursionResource extends JsonResource
             'price' => $this->whenLoaded('offer', fn () => $this->offer?->price !== null ? (float) $this->offer->price : null),
             'currency' => $this->whenLoaded('offer', fn () => $this->offer?->currency),
             'location' => $this->location,
+            'location_id' => $this->location_id,
             'country' => $this->country,
             'city' => $this->city,
             'general_category' => $this->general_category,

@@ -39,10 +39,11 @@ class HotelListApiTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function hotelPayload(int $offerId, string $city = 'Yerevan', string $hotelName = 'Test Hotel'): array
+    private function hotelPayload(int $offerId, string $city = 'Yerevan', string $hotelName = 'Test Hotel', ?int $locationId = null): array
     {
         return [
             'offer_id' => $offerId,
+            'location_id' => $locationId ?? $this->locationIds()['yerevan_city'],
             'hotel_name' => $hotelName,
             'property_type' => 'hotel',
             'hotel_type' => 'resort',
@@ -232,17 +233,27 @@ class HotelListApiTest extends TestCase
         $this->assertNotContains($h1->id, $ids);
     }
 
-    public function test_filter_city(): void
+    public function test_filter_location_id_city_scope(): void
     {
         $this->seed(RbacBootstrapSeeder::class);
         $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
         $company = Company::query()->firstOrFail();
         $service = new HotelService;
-        $h1 = $service->create($this->hotelPayload($this->makeHotelOffer($company, 'A')->id, 'Gyumri', 'H1'));
-        $h2 = $service->create($this->hotelPayload($this->makeHotelOffer($company, 'B')->id, 'Vanadzor', 'H2'));
+        $h1 = $service->create($this->hotelPayload(
+            $this->makeHotelOffer($company, 'A')->id,
+            'Gyumri',
+            'H1',
+            $this->locationIds()['gyumri_city']
+        ));
+        $h2 = $service->create($this->hotelPayload(
+            $this->makeHotelOffer($company, 'B')->id,
+            'Tbilisi',
+            'H2',
+            $this->locationIds()['tbilisi_city']
+        ));
 
         $headers = $this->authHeaders($user);
-        $res = $this->getJson('/api/hotels?city=Gyumri', $headers);
+        $res = $this->getJson('/api/hotels?location_id='.$this->locationIds()['gyumri_city'], $headers);
         $res->assertOk();
         $ids = collect($res->json('data'))->pluck('id')->all();
         $this->assertContains($h1->id, $ids);
@@ -270,21 +281,21 @@ class HotelListApiTest extends TestCase
         $this->assertNotContains($h2->id, $ids);
     }
 
-    public function test_filter_country(): void
+    public function test_filter_location_id_country_scope(): void
     {
         $this->seed(RbacBootstrapSeeder::class);
         $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
         $company = Company::query()->firstOrFail();
         $service = new HotelService;
         $p1 = $this->hotelPayload($this->makeHotelOffer($company, 'A')->id, 'X', 'H1');
-        $p1['country'] = 'AM';
+        $p1['location_id'] = $this->locationIds()['yerevan_city'];
         $h1 = $service->create($p1);
         $p2 = $this->hotelPayload($this->makeHotelOffer($company, 'B')->id, 'Y', 'H2');
-        $p2['country'] = 'GE';
+        $p2['location_id'] = $this->locationIds()['tbilisi_city'];
         $h2 = $service->create($p2);
 
         $headers = $this->authHeaders($user);
-        $res = $this->getJson('/api/hotels?country=AM', $headers);
+        $res = $this->getJson('/api/hotels?location_id='.$this->locationIds()['am_country'], $headers);
         $res->assertOk();
         $ids = collect($res->json('data'))->pluck('id')->all();
         $this->assertContains($h1->id, $ids);

@@ -9,11 +9,40 @@ use Stripe\StripeClient;
 
 class PaymentGatewayService
 {
-    private StripeClient $stripe;
+    /** @var list<string> */
+    private const SUPPORTED_DRIVERS = ['stripe'];
+
+    private string $driver;
+
+    private ?StripeClient $stripe = null;
+
+    private ?string $configurationError = null;
 
     public function __construct()
     {
-        $this->stripe = new StripeClient(config('payment.stripe.secret'));
+        $configuredDriver = config('payment.driver');
+        $this->driver = is_string($configuredDriver) ? strtolower(trim($configuredDriver)) : '';
+
+        if ($this->driver === '') {
+            $this->configurationError = 'Payment driver is not configured. Set PAYMENT_DRIVER=stripe.';
+
+            return;
+        }
+
+        if (! in_array($this->driver, self::SUPPORTED_DRIVERS, true)) {
+            $this->configurationError = 'Unsupported payment driver "'.$this->driver.'". Supported drivers: stripe.';
+
+            return;
+        }
+
+        $stripeSecret = trim((string) config('payment.stripe.secret', ''));
+        if ($stripeSecret === '') {
+            $this->configurationError = 'Stripe is selected but STRIPE_SECRET is missing.';
+
+            return;
+        }
+
+        $this->stripe = new StripeClient($stripeSecret);
     }
 
     /**
@@ -23,6 +52,11 @@ class PaymentGatewayService
      */
     public function createPaymentIntent(Payment $payment, array $metadata = []): array
     {
+        $configurationGuard = $this->configurationGuard();
+        if ($configurationGuard !== null) {
+            return $configurationGuard;
+        }
+
         $amount = (int) round((float) $payment->amount * 100);
         $currency = strtolower($payment->currency ?? config('payment.stripe.currency', 'usd'));
 
@@ -72,6 +106,11 @@ class PaymentGatewayService
      */
     public function confirmPaymentIntent(Payment $payment, string $paymentIntentId): array
     {
+        $configurationGuard = $this->configurationGuard();
+        if ($configurationGuard !== null) {
+            return $configurationGuard;
+        }
+
         try {
             $intent = $this->stripe->paymentIntents->retrieve($paymentIntentId);
 
@@ -103,6 +142,11 @@ class PaymentGatewayService
      */
     public function refundPaymentIntent(Payment $payment, ?int $amountCents = null): array
     {
+        $configurationGuard = $this->configurationGuard();
+        if ($configurationGuard !== null) {
+            return $configurationGuard;
+        }
+
         $intentId = $payment->reference_code;
         if (empty($intentId)) {
             return ['success' => false, 'error' => 'No gateway reference found on payment.'];
@@ -141,6 +185,11 @@ class PaymentGatewayService
      */
     public function constructWebhookEvent(string $payload, string $sigHeader): array
     {
+        $configurationGuard = $this->configurationGuard();
+        if ($configurationGuard !== null) {
+            return $configurationGuard;
+        }
+
         try {
             $event = \Stripe\Webhook::constructEvent(
                 $payload,
@@ -154,5 +203,25 @@ class PaymentGatewayService
         } catch (\UnexpectedValueException $e) {
             return ['success' => false, 'error' => 'Invalid payload'];
         }
+    }
+
+    /**
+     * @return array{success: false, error: string}|null
+     */
+    private function configurationGuard(): ?array
+    {
+        if ($this->configurationError === null) {
+            return null;
+        }
+
+        Log::warning('Payment gateway configuration error', [
+            'driver' => $this->driver,
+            'error' => $this->configurationError,
+        ]);
+
+        return [
+            'success' => false,
+            'error' => $this->configurationError,
+        ];
     }
 }

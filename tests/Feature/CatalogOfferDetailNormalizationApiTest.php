@@ -37,6 +37,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Flight::query()->create([
             'offer_id' => $offer->id,
             'company_id' => $company->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'CAT-F1',
             'service_type' => 'scheduled',
             'departure_country' => 'AM',
@@ -101,11 +102,10 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Hotel::query()->create([
             'offer_id' => $offer->id,
             'company_id' => $company->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'hotel_name' => 'ZULU Cat Hotel',
             'property_type' => 'hotel',
             'hotel_type' => 'resort',
-            'country' => 'AM',
-            'city' => 'Yerevan',
             'meal_type' => 'bed_and_breakfast',
             'is_package_eligible' => false,
             'status' => 'draft',
@@ -139,12 +139,10 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
             'company_id' => $company->id,
             'transfer_title' => 'Airport run',
             'transfer_type' => 'private_transfer',
-            'pickup_country' => 'AM',
-            'pickup_city' => 'Yerevan',
+            'origin_location_id' => $this->locationIds()['yerevan_city'],
             'pickup_point_type' => 'airport',
             'pickup_point_name' => 'EVN',
-            'dropoff_country' => 'AM',
-            'dropoff_city' => 'Yerevan',
+            'destination_location_id' => $this->locationIds()['gyumri_city'],
             'dropoff_point_type' => 'hotel',
             'dropoff_point_name' => 'Downtown',
             'vehicle_category' => 'sedan',
@@ -190,6 +188,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
 
         Car::query()->create([
             'offer_id' => $offer->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'pickup_location' => 'Lot A',
             'dropoff_location' => 'Lot B',
             'vehicle_class' => 'economy',
@@ -223,7 +222,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
 
         Excursion::query()->create([
             'offer_id' => $offer->id,
-            'location' => 'Garni',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'duration' => '4 hours',
             'group_size' => 8,
         ]);
@@ -235,7 +234,6 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         $this->assertIsArray($norm);
         $this->assertSame(OfferNormalizationService::NORMALIZED_KEYS, array_keys($norm));
         $this->assertSame('excursion', $norm['module_type']);
-        $this->assertSame('Garni', $norm['destination_location']);
         $this->assertSame(8, $norm['max_passengers']);
     }
 
@@ -290,7 +288,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
 
         Visa::query()->create([
             'offer_id' => $offer->id,
-            'country' => 'AE',
+            'location_id' => $this->locationIds()['ge_country'],
             'visa_type' => 'visit',
             'processing_days' => 5,
         ]);
@@ -302,7 +300,6 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         $this->assertIsArray($norm);
         $this->assertSame(OfferNormalizationService::NORMALIZED_KEYS, array_keys($norm));
         $this->assertSame('visa', $norm['module_type']);
-        $this->assertSame('AE', $norm['destination_location']);
         $this->assertSame('visit', $norm['subtitle']);
         $this->assertSame(5, $norm['duration']);
     }
@@ -324,6 +321,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Flight::query()->create([
             'offer_id' => $flightOffer->id,
             'company_id' => $company->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'LST-F1',
             'service_type' => 'scheduled',
             'departure_country' => 'AM',
@@ -371,6 +369,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         ]);
         Car::query()->create([
             'offer_id' => $carOffer->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'pickup_location' => 'P',
             'dropoff_location' => 'D',
             'vehicle_class' => 'compact',
@@ -386,7 +385,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         ]);
         Excursion::query()->create([
             'offer_id' => $excursionOffer->id,
-            'location' => 'X',
+            'location_id' => $this->locationIds()['yerevan_city'],
             'duration' => '1h',
             'group_size' => 5,
         ]);
@@ -417,7 +416,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         ]);
         Visa::query()->create([
             'offer_id' => $visaOffer->id,
-            'country' => 'JP',
+            'location_id' => $this->locationIds()['ge_country'],
             'visa_type' => 'transit',
             'processing_days' => null,
         ]);
@@ -450,6 +449,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Flight::query()->create([
             'offer_id' => $offer->id,
             'company_id' => $company->id,
+            'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'HIDE-WEB-1',
             'service_type' => 'scheduled',
             'departure_country' => 'AM',
