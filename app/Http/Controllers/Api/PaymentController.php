@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\PaymentRefundFailedException;
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\PaymentResource;
@@ -200,17 +201,18 @@ class PaymentController extends Controller
             return $response;
         }
 
-        $refundResult = $this->paymentGatewayService->refundPaymentIntent($payment);
-        if (! $refundResult['success']) {
+        try {
+            $refreshed = $paymentService->refund($payment);
+        } catch (PaymentRefundFailedException $e) {
             return response()->json([
                 'success' => false,
-                'message' => $refundResult['error'] ?? 'Refund failed',
+                'message' => $e->reason,
             ], 422);
         }
 
         return response()->json([
             'success' => true,
-            'data' => PaymentResource::make($paymentService->refund($payment))->toArray($request),
+            'data' => PaymentResource::make($refreshed)->toArray($request),
         ]);
     }
 

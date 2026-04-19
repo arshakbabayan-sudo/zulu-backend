@@ -23,9 +23,18 @@ return new class extends Migration
                 $table->timestamps();
             });
 
-            $globalForeignKeyNames = collect(DB::select(
-                "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
-            ))->pluck('CONSTRAINT_NAME')->all();
+            $driver = DB::connection()->getDriverName();
+            $globalForeignKeyNames = match ($driver) {
+                'mysql', 'mariadb' => collect(DB::select(
+                    "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+                     WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+                ))->pluck('CONSTRAINT_NAME')->all(),
+                'pgsql' => collect(DB::select(
+                    "SELECT constraint_name FROM information_schema.table_constraints
+                     WHERE table_schema = current_schema() AND constraint_type = 'FOREIGN KEY'"
+                ))->pluck('constraint_name')->all(),
+                default => [],
+            };
 
             $fkName = 'commissions_v2_company_id_foreign';
             if (! in_array($fkName, $globalForeignKeyNames, true)) {

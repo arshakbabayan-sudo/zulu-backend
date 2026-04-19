@@ -3,14 +3,20 @@
 namespace App\Services\Payments;
 
 use App\Events\PaymentReceived;
+use App\Exceptions\PaymentRefundFailedException;
 use App\Models\Invoice;
 use App\Models\Payment;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PaymentService
 {
+    public function __construct(
+        private PaymentGatewayService $paymentGatewayService,
+    ) {}
+
     /**
      * @param  list<int>  $companyIds
      * @return Collection<int, Payment>
@@ -112,10 +118,31 @@ class PaymentService
         return $payment->fresh();
     }
 
+    /**
+     * @throws PaymentRefundFailedException
+     */
     public function refund(Payment $payment): Payment
     {
-        $payment->status = Payment::STATUS_REFUNDED;
-        $payment->save();
+        if ($payment->status === Payment::STATUS_REFUNDED) {
+            return $payment->fresh();
+        }
+
+        if ($payment->status !== Payment::STATUS_PAID) {
+            throw new PaymentRefundFailedException(
+                "Only paid payments can be refunded (current: {$payment->status})",
+                $payment->id
+            );
+        }
+
+        $result = $this->paymentGatewayService->refundPaymentIntent($payment);
+        if (($result['success'] ?? false) !== true) {
+            throw new PaymentRefundFailedException($result['error'] ?? 'Gateway refund failed', $payment->id);
+        }
+
+        DB::transaction(function () use ($payment): void {
+            $payment->status = Payment::STATUS_REFUNDED;
+            $payment->save();
+        });
 
         return $payment->fresh();
     }
