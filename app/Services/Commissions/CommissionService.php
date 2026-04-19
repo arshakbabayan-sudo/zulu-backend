@@ -2,12 +2,11 @@
 
 namespace App\Services\Commissions;
 
+use App\Models\Booking;
 use App\Models\CommissionPolicy;
 use App\Models\CommissionRecord;
 use App\Models\Company;
-use App\Models\CompanySellerPermission;
 use App\Models\PackageOrder;
-use App\Models\Booking;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
@@ -133,7 +132,7 @@ class CommissionService
             $booking->company_id,
             'general', // or specific type if known
             (string) $booking->total_price,
-            'USD', // Default currency if not in booking
+            strtoupper((string) ($booking->currency ?? 'USD')),
             'booking',
             $booking->id
         );
@@ -259,6 +258,7 @@ class CommissionService
     public function updatePolicy(CommissionPolicy $policy, array $data): CommissionPolicy
     {
         $policy->update($data);
+
         return $policy->fresh();
     }
 

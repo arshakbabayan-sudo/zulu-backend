@@ -70,7 +70,7 @@ class BookingService
     }
 
     /**
-     * @param  array{user_id:int,company_id:int,status?:string,total_price?:numeric}  $bookingData
+     * @param  array{user_id:int,company_id:int,status?:string,total_price?:numeric,currency?:string}  $bookingData
      * @param  array<int,array{offer_id:int,price:numeric}>  $itemsData
      * @param  array<int, array<string, mixed>>  $passengersData
      */
@@ -80,6 +80,10 @@ class BookingService
             if (! isset($bookingData['status'])) {
                 $bookingData['status'] = 'pending';
             }
+            if (! isset($bookingData['currency'])) {
+                $bookingData['currency'] = 'USD';
+            }
+            $bookingData['currency'] = strtoupper((string) $bookingData['currency']);
             $bookingData['total_price'] = 0;
             $booking = Booking::query()->create($bookingData);
             foreach ($itemsData as $itemData) {
@@ -113,6 +117,7 @@ class BookingService
             }
 
             $booking->load(['items', 'passengers']);
+
             return $this->recalculateTotal($booking);
         });
     }

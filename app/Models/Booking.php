@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -24,6 +24,7 @@ class Booking extends Model
         'company_id',
         'status',
         'total_price',
+        'currency',
     ];
 
     public function user(): BelongsTo
@@ -45,6 +46,7 @@ class Booking extends Model
     {
         return $this->hasMany(Invoice::class);
     }
+
     /**
      * @return BelongsToMany<Passenger, $this>
      */
