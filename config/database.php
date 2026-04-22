@@ -99,6 +99,23 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Sprint 0 Step 6: PostgreSQL schema dry-run target.
+        // Hard-coded dev-only creds so this works without touching .env (which still points to MySQL).
+        // DO NOT use in production. DO NOT point .env at this. Used only by `--database=pgsql_test`.
+        'pgsql_test' => [
+            'driver' => 'pgsql',
+            'host' => '127.0.0.1',
+            'port' => '5432',
+            'database' => 'zulu_pgtest',
+            'username' => 'postgres',
+            'password' => 'zulu_dev_2026',
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => 'prefer',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
