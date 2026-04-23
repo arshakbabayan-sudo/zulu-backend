@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\City;
-use App\Models\Country;
 use App\Models\Location;
-use App\Models\Region;
 use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class AdminLocationController extends Controller
 {
@@ -24,15 +23,15 @@ class AdminLocationController extends Controller
         }
 
         if ($request->isMethod('get')) {
-            $countries = Country::query()
-                ->withCount(['regions', 'cities'])
+            $countries = Location::query()
+                ->countries()
                 ->orderBy('sort_order')
                 ->orderBy('name')
                 ->get();
 
             return response()->json([
                 'success' => true,
-                'data' => $countries,
+                'data' => $countries->map(fn (Location $country): array => $this->countryRow($country))->values(),
             ]);
         }
 
@@ -40,10 +39,17 @@ class AdminLocationController extends Controller
 
         if ($action === 'delete') {
             $validated = $request->validate([
-                'id' => ['required', 'integer', 'exists:countries,id'],
+                'id' => ['required', 'integer'],
             ]);
 
-            $country = Country::findOrFail($validated['id']);
+            $country = $this->findCountryOrFail((int) $validated['id']);
+            if ($this->hasChildren($country)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete country with child locations',
+                ], 409);
+            }
+
             $country->delete();
 
             return response()->json([
@@ -54,50 +60,76 @@ class AdminLocationController extends Controller
 
         if ($action === 'update') {
             $validated = $request->validate([
-                'id' => ['required', 'integer', 'exists:countries,id'],
+                'id' => ['required', 'integer'],
                 'name' => ['required', 'string', 'max:150'],
-                'code' => ['required', 'string', 'size:2'],
+                'code' => [
+                    'required',
+                    'string',
+                    'size:2',
+                    Rule::unique('locations', 'code')
+                        ->where(fn ($query) => $query->where('type', Location::TYPE_COUNTRY))
+                        ->ignore((int) $request->input('id')),
+                ],
                 'flag_emoji' => ['nullable', 'string', 'max:16'],
                 'is_active' => ['nullable', 'boolean'],
                 'sort_order' => ['nullable', 'integer', 'min:0'],
             ]);
 
-            $country = Country::findOrFail($validated['id']);
-            $country->update([
-                'name' => $validated['name'],
-                'code' => strtoupper($validated['code']),
-                'flag_emoji' => $validated['flag_emoji'] ?? null,
-                'is_active' => $validated['is_active'] ?? true,
-                'sort_order' => $validated['sort_order'] ?? 0,
-            ]);
+            $country = $this->findCountryOrFail((int) $validated['id']);
+            $country->name = $validated['name'];
+            $country->code = strtoupper($validated['code']);
+            $country->country_code = strtoupper($validated['code']);
+            $country->flag_emoji = $validated['flag_emoji'] ?? null;
+            $country->is_active = $validated['is_active'] ?? true;
+            $country->sort_order = $validated['sort_order'] ?? 0;
+            $country->save();
+            $this->refreshDescendantCountryCodes($country);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Country updated',
-                'data' => $country->fresh(),
+                'data' => $this->countryRow($country->fresh()),
             ]);
         }
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
-            'code' => ['required', 'string', 'size:2', 'unique:countries,code'],
+            'code' => [
+                'required',
+                'string',
+                'size:2',
+                Rule::unique('locations', 'code')
+                    ->where(fn ($query) => $query->where('type', Location::TYPE_COUNTRY)),
+            ],
             'flag_emoji' => ['nullable', 'string', 'max:16'],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $country = Country::create([
-            'name' => $validated['name'],
-            'code' => strtoupper($validated['code']),
-            'flag_emoji' => $validated['flag_emoji'] ?? null,
-            'is_active' => $validated['is_active'] ?? true,
-            'sort_order' => $validated['sort_order'] ?? 0,
-        ]);
+        $country = DB::transaction(function () use ($validated): Location {
+            $country = new Location;
+            $country->name = $validated['name'];
+            $country->type = Location::TYPE_COUNTRY;
+            $country->slug = $this->makeSlug($validated['name']);
+            $country->code = strtoupper($validated['code']);
+            $country->country_code = strtoupper($validated['code']);
+            $country->flag_emoji = $validated['flag_emoji'] ?? null;
+            $country->is_active = $validated['is_active'] ?? true;
+            $country->sort_order = $validated['sort_order'] ?? 0;
+            $country->parent_id = null;
+            $country->depth = 0;
+            $country->path = '';
+            $country->save();
+
+            $this->recomputeNodePath($country);
+
+            return $country->fresh();
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Country created',
-            'data' => $country,
+            'data' => $this->countryRow($country),
         ], 201);
     }
 
@@ -170,16 +202,20 @@ class AdminLocationController extends Controller
         }
 
         if ($request->isMethod('get')) {
-            $regions = Region::query()
-                ->where('country_id', $countryId)
-                ->withCount('cities')
+            $resolvedCountryId = $countryId ?? $request->integer('country_id');
+            abort_if($resolvedCountryId === null, 422, 'country_id is required');
+
+            $country = $this->findCountryOrFail((int) $resolvedCountryId);
+            $regions = Location::query()
+                ->regions()
+                ->where('parent_id', $country->id)
                 ->orderBy('sort_order')
                 ->orderBy('name')
                 ->get();
 
             return response()->json([
                 'success' => true,
-                'data' => $regions,
+                'data' => $regions->map(fn (Location $region): array => $this->regionRow($region))->values(),
             ]);
         }
 
@@ -187,10 +223,17 @@ class AdminLocationController extends Controller
 
         if ($action === 'delete') {
             $validated = $request->validate([
-                'id' => ['required', 'integer', 'exists:regions,id'],
+                'id' => ['required', 'integer'],
             ]);
 
-            $region = Region::findOrFail($validated['id']);
+            $region = $this->findRegionOrFail((int) $validated['id']);
+            if ($this->hasChildren($region)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete region with child locations',
+                ], 409);
+            }
+
             $region->delete();
 
             return response()->json([
@@ -201,48 +244,73 @@ class AdminLocationController extends Controller
 
         if ($action === 'update') {
             $validated = $request->validate([
-                'id' => ['required', 'integer', 'exists:regions,id'],
+                'id' => ['required', 'integer'],
+                'country_id' => ['nullable', 'integer'],
                 'name' => ['required', 'string', 'max:150'],
                 'code' => ['nullable', 'string', 'max:32'],
                 'is_active' => ['nullable', 'boolean'],
                 'sort_order' => ['nullable', 'integer', 'min:0'],
             ]);
 
-            $region = Region::findOrFail($validated['id']);
-            $region->update([
-                'name' => $validated['name'],
-                'code' => $validated['code'] ?? null,
-                'is_active' => $validated['is_active'] ?? true,
-                'sort_order' => $validated['sort_order'] ?? 0,
-            ]);
+            $region = DB::transaction(function () use ($validated): Location {
+                $region = $this->findRegionOrFail((int) $validated['id']);
+                $parentCountryId = (int) ($validated['country_id'] ?? $region->parent_id);
+                $country = $this->findCountryOrFail($parentCountryId);
+
+                $region->name = $validated['name'];
+                $region->slug = $this->makeSlug($validated['name']);
+                $region->code = $validated['code'] ?? null;
+                $region->is_active = $validated['is_active'] ?? true;
+                $region->sort_order = $validated['sort_order'] ?? 0;
+                $region->parent_id = $country->id;
+                $region->country_code = $country->country_code ?? $country->code;
+                $region->save();
+
+                $this->recomputeSubtree($region);
+                $this->refreshDescendantCountryCodes($region);
+
+                return $region->fresh();
+            });
 
             return response()->json([
                 'success' => true,
                 'message' => 'Region updated',
-                'data' => $region->fresh(),
+                'data' => $this->regionRow($region),
             ]);
         }
 
         $validated = $request->validate([
-            'country_id' => ['required', 'integer', 'exists:countries,id'],
+            'country_id' => ['required', 'integer'],
             'name' => ['required', 'string', 'max:150'],
             'code' => ['nullable', 'string', 'max:32'],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $region = Region::create([
-            'country_id' => $validated['country_id'],
-            'name' => $validated['name'],
-            'code' => $validated['code'] ?? null,
-            'is_active' => $validated['is_active'] ?? true,
-            'sort_order' => $validated['sort_order'] ?? 0,
-        ]);
+        $region = DB::transaction(function () use ($validated): Location {
+            $country = $this->findCountryOrFail((int) $validated['country_id']);
+            $region = new Location;
+            $region->name = $validated['name'];
+            $region->type = Location::TYPE_REGION;
+            $region->slug = $this->makeSlug($validated['name']);
+            $region->code = $validated['code'] ?? null;
+            $region->is_active = $validated['is_active'] ?? true;
+            $region->sort_order = $validated['sort_order'] ?? 0;
+            $region->country_code = $country->country_code ?? $country->code;
+            $region->parent_id = $country->id;
+            $region->depth = 0;
+            $region->path = '';
+            $region->save();
+
+            $this->recomputeNodePath($region);
+
+            return $region->fresh();
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Region created',
-            'data' => $region,
+            'data' => $this->regionRow($region),
         ], 201);
     }
 
@@ -253,15 +321,20 @@ class AdminLocationController extends Controller
         }
 
         if ($request->isMethod('get')) {
-            $cities = City::query()
-                ->where('region_id', $regionId)
+            $resolvedRegionId = $regionId ?? $request->integer('region_id');
+            abort_if($resolvedRegionId === null, 422, 'region_id is required');
+
+            $region = $this->findRegionOrFail((int) $resolvedRegionId);
+            $cities = Location::query()
+                ->cities()
+                ->where('parent_id', $region->id)
                 ->orderBy('sort_order')
                 ->orderBy('name')
                 ->get();
 
             return response()->json([
                 'success' => true,
-                'data' => $cities,
+                'data' => $cities->map(fn (Location $city): array => $this->cityRow($city))->values(),
             ]);
         }
 
@@ -269,10 +342,17 @@ class AdminLocationController extends Controller
 
         if ($action === 'delete') {
             $validated = $request->validate([
-                'id' => ['required', 'integer', 'exists:cities,id'],
+                'id' => ['required', 'integer'],
             ]);
 
-            $city = City::findOrFail($validated['id']);
+            $city = $this->findCityOrFail((int) $validated['id']);
+            if ($this->hasChildren($city)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete city with child locations',
+                ], 409);
+            }
+
             $city->delete();
 
             return response()->json([
@@ -283,7 +363,9 @@ class AdminLocationController extends Controller
 
         if ($action === 'update') {
             $validated = $request->validate([
-                'id' => ['required', 'integer', 'exists:cities,id'],
+                'id' => ['required', 'integer'],
+                'region_id' => ['nullable', 'integer'],
+                'country_id' => ['nullable', 'integer'],
                 'name' => ['required', 'string', 'max:150'],
                 'is_active' => ['nullable', 'boolean'],
                 'sort_order' => ['nullable', 'integer', 'min:0'],
@@ -291,25 +373,42 @@ class AdminLocationController extends Controller
                 'longitude' => ['nullable', 'numeric'],
             ]);
 
-            $city = City::findOrFail($validated['id']);
-            $city->update([
-                'name' => $validated['name'],
-                'is_active' => $validated['is_active'] ?? true,
-                'sort_order' => $validated['sort_order'] ?? 0,
-                'latitude' => $validated['latitude'] ?? null,
-                'longitude' => $validated['longitude'] ?? null,
-            ]);
+            $city = DB::transaction(function () use ($validated): Location {
+                $city = $this->findCityOrFail((int) $validated['id']);
+                $targetRegionId = (int) ($validated['region_id'] ?? $city->parent_id);
+                $region = $this->findRegionOrFail($targetRegionId);
+                $country = $this->findCountryOrFail((int) $region->parent_id);
+
+                if (isset($validated['country_id']) && (int) $validated['country_id'] !== $country->id) {
+                    abort(422, 'country_id does not match the selected region');
+                }
+
+                $city->name = $validated['name'];
+                $city->slug = $this->makeSlug($validated['name']);
+                $city->is_active = $validated['is_active'] ?? true;
+                $city->sort_order = $validated['sort_order'] ?? 0;
+                $city->latitude = $validated['latitude'] ?? null;
+                $city->longitude = $validated['longitude'] ?? null;
+                $city->parent_id = $region->id;
+                $city->country_code = $country->country_code ?? $country->code;
+                $city->save();
+
+                $this->recomputeSubtree($city);
+                $this->refreshDescendantCountryCodes($city);
+
+                return $city->fresh();
+            });
 
             return response()->json([
                 'success' => true,
                 'message' => 'City updated',
-                'data' => $city->fresh(),
+                'data' => $this->cityRow($city),
             ]);
         }
 
         $validated = $request->validate([
-            'region_id' => ['required', 'integer', 'exists:regions,id'],
-            'country_id' => ['nullable', 'integer', 'exists:countries,id'],
+            'region_id' => ['required', 'integer'],
+            'country_id' => ['nullable', 'integer'],
             'name' => ['required', 'string', 'max:150'],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
@@ -317,23 +416,195 @@ class AdminLocationController extends Controller
             'longitude' => ['nullable', 'numeric'],
         ]);
 
-        $region = Region::findOrFail($validated['region_id']);
+        $city = DB::transaction(function () use ($validated): Location {
+            $region = $this->findRegionOrFail((int) $validated['region_id']);
+            $country = $this->findCountryOrFail((int) $region->parent_id);
+            if (isset($validated['country_id']) && (int) $validated['country_id'] !== $country->id) {
+                abort(422, 'country_id does not match the selected region');
+            }
 
-        $city = City::create([
-            'region_id' => $region->id,
-            'country_id' => $validated['country_id'] ?? $region->country_id,
-            'name' => $validated['name'],
-            'is_active' => $validated['is_active'] ?? true,
-            'sort_order' => $validated['sort_order'] ?? 0,
-            'latitude' => $validated['latitude'] ?? null,
-            'longitude' => $validated['longitude'] ?? null,
-        ]);
+            $city = new Location;
+            $city->name = $validated['name'];
+            $city->type = Location::TYPE_CITY;
+            $city->slug = $this->makeSlug($validated['name']);
+            $city->is_active = $validated['is_active'] ?? true;
+            $city->sort_order = $validated['sort_order'] ?? 0;
+            $city->latitude = $validated['latitude'] ?? null;
+            $city->longitude = $validated['longitude'] ?? null;
+            $city->country_code = $country->country_code ?? $country->code;
+            $city->parent_id = $region->id;
+            $city->depth = 0;
+            $city->path = '';
+            $city->save();
+
+            $this->recomputeNodePath($city);
+
+            return $city->fresh();
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'City created',
-            'data' => $city,
+            'data' => $this->cityRow($city),
         ], 201);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function countryRow(Location $country): array
+    {
+        $regionsCount = Location::query()
+            ->regions()
+            ->where('parent_id', $country->id)
+            ->count();
+        $citiesCount = Location::query()
+            ->cities()
+            ->whereIn(
+                'parent_id',
+                Location::query()
+                    ->regions()
+                    ->where('parent_id', $country->id)
+                    ->select('id')
+            )
+            ->count();
+
+        return [
+            'id' => (int) $country->id,
+            'name' => $country->name,
+            'code' => $country->code,
+            'flag_emoji' => $country->flag_emoji,
+            'is_active' => (bool) ($country->is_active ?? true),
+            'sort_order' => (int) ($country->sort_order ?? 0),
+            'regions_count' => $regionsCount,
+            'cities_count' => $citiesCount,
+            'created_at' => $country->created_at,
+            'updated_at' => $country->updated_at,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function regionRow(Location $region): array
+    {
+        return [
+            'id' => (int) $region->id,
+            'country_id' => (int) $region->parent_id,
+            'name' => $region->name,
+            'code' => $region->code,
+            'is_active' => (bool) ($region->is_active ?? true),
+            'sort_order' => (int) ($region->sort_order ?? 0),
+            'cities_count' => Location::query()
+                ->cities()
+                ->where('parent_id', $region->id)
+                ->count(),
+            'created_at' => $region->created_at,
+            'updated_at' => $region->updated_at,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cityRow(Location $city): array
+    {
+        $region = Location::query()
+            ->regions()
+            ->whereKey($city->parent_id)
+            ->first();
+
+        return [
+            'id' => (int) $city->id,
+            'region_id' => (int) $city->parent_id,
+            'country_id' => $region !== null ? (int) $region->parent_id : null,
+            'name' => $city->name,
+            'is_active' => (bool) ($city->is_active ?? true),
+            'sort_order' => (int) ($city->sort_order ?? 0),
+            'latitude' => $city->latitude,
+            'longitude' => $city->longitude,
+            'created_at' => $city->created_at,
+            'updated_at' => $city->updated_at,
+        ];
+    }
+
+    private function findCountryOrFail(int $id): Location
+    {
+        return Location::query()->countries()->findOrFail($id);
+    }
+
+    private function findRegionOrFail(int $id): Location
+    {
+        return Location::query()->regions()->findOrFail($id);
+    }
+
+    private function findCityOrFail(int $id): Location
+    {
+        return Location::query()->cities()->findOrFail($id);
+    }
+
+    private function hasChildren(Location $node): bool
+    {
+        return Location::query()->where('parent_id', $node->id)->exists();
+    }
+
+    private function makeSlug(string $name): string
+    {
+        $base = trim((string) str($name)->slug('-'));
+
+        return $base !== '' ? $base : 'location';
+    }
+
+    private function recomputeSubtree(Location $root): void
+    {
+        $this->recomputeNodePath($root);
+
+        $children = Location::query()
+            ->where('parent_id', $root->id)
+            ->orderBy('id')
+            ->get();
+
+        foreach ($children as $child) {
+            $this->recomputeSubtree($child);
+        }
+    }
+
+    private function recomputeNodePath(Location $node): void
+    {
+        $node->refresh();
+        $parent = $node->parent_id !== null ? Location::query()->find($node->parent_id) : null;
+        $node->depth = $parent !== null ? ((int) $parent->depth) + 1 : 0;
+
+        if ($parent !== null) {
+            $parentPath = trim((string) ($parent->path ?: $parent->id), '/');
+            $node->path = $parentPath.'/'.$node->id;
+        } else {
+            $node->path = (string) $node->id;
+        }
+
+        $node->save();
+    }
+
+    private function refreshDescendantCountryCodes(Location $node): void
+    {
+        $countryCode = null;
+        if ($node->type === Location::TYPE_COUNTRY) {
+            $countryCode = strtoupper((string) ($node->country_code ?: $node->code ?: ''));
+        } elseif ($node->type === Location::TYPE_REGION) {
+            $country = Location::query()->countries()->find($node->parent_id);
+            $countryCode = strtoupper((string) ($country?->country_code ?: $country?->code ?: ''));
+        } elseif ($node->type === Location::TYPE_CITY) {
+            $region = Location::query()->regions()->find($node->parent_id);
+            $country = $region !== null ? Location::query()->countries()->find($region->parent_id) : null;
+            $countryCode = strtoupper((string) ($country?->country_code ?: $country?->code ?: ''));
+        }
+
+        if ($countryCode !== null && $countryCode !== '') {
+            Location::query()
+                ->where('id', $node->id)
+                ->orWhere('path', 'like', $node->path.'/%')
+                ->update(['country_code' => $countryCode]);
+        }
     }
 
     private function denyUnlessSuperAdmin(Request $request): ?JsonResponse
