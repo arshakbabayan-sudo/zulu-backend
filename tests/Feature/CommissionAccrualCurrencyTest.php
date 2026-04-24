@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
-use App\Models\CommissionPolicy;
+use App\Models\CommissionRule;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Commissions\CommissionService;
@@ -18,22 +18,25 @@ class CommissionAccrualCurrencyTest extends TestCase
     {
         $booking = $this->createBookingForCurrencyCase('EUR');
 
-        $record = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForBooking($booking);
 
-        $this->assertNotNull($record);
-        $this->assertSame('EUR', $record->currency);
-        $this->assertEqualsWithDelta(10.00, (float) $record->commission_amount_snapshot, 0.0001);
+        $this->assertNotNull($transaction);
+        $this->assertSame('EUR', $transaction->commission_currency);
+        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
+        $this->assertIsArray($transaction->snapshot);
+        $this->assertSame('percentage', $transaction->snapshot['type'] ?? null);
+        $this->assertEqualsWithDelta(10.0, (float) ($transaction->snapshot['percentage_value'] ?? 0), 0.0001);
     }
 
     public function test_accrue_for_booking_uses_booking_currency_amd(): void
     {
         $booking = $this->createBookingForCurrencyCase('AMD');
 
-        $record = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForBooking($booking);
 
-        $this->assertNotNull($record);
-        $this->assertSame('AMD', $record->currency);
-        $this->assertEqualsWithDelta(10.00, (float) $record->commission_amount_snapshot, 0.0001);
+        $this->assertNotNull($transaction);
+        $this->assertSame('AMD', $transaction->commission_currency);
+        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
     }
 
     public function test_accrue_for_booking_defaults_to_usd_when_missing(): void
@@ -43,22 +46,22 @@ class CommissionAccrualCurrencyTest extends TestCase
         unset($attributes['currency']);
         $booking->setRawAttributes($attributes, true);
 
-        $record = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForBooking($booking);
 
-        $this->assertNotNull($record);
-        $this->assertSame('USD', $record->currency);
-        $this->assertEqualsWithDelta(10.00, (float) $record->commission_amount_snapshot, 0.0001);
+        $this->assertNotNull($transaction);
+        $this->assertSame('USD', $transaction->commission_currency);
+        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
     }
 
     public function test_accrue_for_booking_normalizes_lowercase_currency_to_upper(): void
     {
         $booking = $this->createBookingForCurrencyCase('amd');
 
-        $record = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForBooking($booking);
 
-        $this->assertNotNull($record);
-        $this->assertSame('AMD', $record->currency);
-        $this->assertEqualsWithDelta(10.00, (float) $record->commission_amount_snapshot, 0.0001);
+        $this->assertNotNull($transaction);
+        $this->assertSame('AMD', $transaction->commission_currency);
+        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
     }
 
     private function createBookingForCurrencyCase(string $currency): Booking
@@ -69,12 +72,17 @@ class CommissionAccrualCurrencyTest extends TestCase
             'status' => 'active',
         ]);
 
-        CommissionPolicy::query()->create([
-            'company_id' => $company->id,
+        CommissionRule::query()->create([
+            'type' => 'percentage',
+            'level' => 'seller',
+            'scope_id' => $company->id,
             'service_type' => 'general',
-            'commission_mode' => 'percent',
-            'percent' => 10,
+            'percentage_value' => 10,
+            'direction' => 'zulu_from_seller',
+            'priority' => 0,
+            'effective_from' => now()->subMinute(),
             'status' => 'active',
+            'active' => true,
         ]);
 
         $user = User::query()->create([
