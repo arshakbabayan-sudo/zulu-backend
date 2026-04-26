@@ -71,11 +71,6 @@ class Company extends Model
         return $this->hasMany(Booking::class);
     }
 
-    public function commissions(): HasMany
-    {
-        return $this->hasMany(CommissionPolicy::class);
-    }
-
     public function flights(): HasMany
     {
         return $this->hasMany(Flight::class);

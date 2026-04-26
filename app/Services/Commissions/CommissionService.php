@@ -3,117 +3,19 @@
 namespace App\Services\Commissions;
 
 use App\Models\Booking;
-use App\Models\CommissionPolicy;
-use App\Models\CommissionRecord;
 use App\Models\CommissionResolutionLog;
 use App\Models\CommissionRule;
 use App\Models\CommissionTransaction;
-use App\Models\Company;
 use App\Models\PackageOrder;
 use App\Services\Commissions\DTOs\CommissionResolutionContext;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 class CommissionService
 {
     public function __construct(
         private CommissionRuleResolver $resolver,
     ) {}
-
-    /**
-     * @param  list<int>  $companyIds
-     * @return Collection<int, CommissionPolicy>
-     */
-    public function listForCompanies(array $companyIds): Collection
-    {
-        if ($companyIds === []) {
-            return new Collection;
-        }
-
-        return CommissionPolicy::query()
-            ->whereIn('company_id', $companyIds)
-            ->orderBy('id')
-            ->get();
-    }
-
-    /**
-     * @param  list<int>  $companyIds
-     */
-    public function paginateForCompanies(array $companyIds, int $perPage = 20): LengthAwarePaginator
-    {
-        $query = CommissionPolicy::query()->orderBy('id');
-
-        if ($companyIds === []) {
-            return $query->whereRaw('0 = 1')->paginate($perPage);
-        }
-
-        return $query
-            ->whereIn('company_id', $companyIds)
-            ->paginate($perPage);
-    }
-
-    /**
-     * @param  list<int>  $companyIds
-     * @return Collection<int, CommissionRecord>
-     */
-    public function listRecordsForCompanies(array $companyIds): Collection
-    {
-        if ($companyIds === []) {
-            return new Collection;
-        }
-
-        return CommissionRecord::query()
-            ->whereIn('company_id', $companyIds)
-            ->orderByDesc('id')
-            ->get();
-    }
-
-    /**
-     * @param  list<int>  $companyIds
-     */
-    public function paginateRecordsForCompanies(array $companyIds, int $perPage = 20): LengthAwarePaginator
-    {
-        $query = CommissionRecord::query()->orderByDesc('id');
-
-        if ($companyIds === []) {
-            return $query->whereRaw('0 = 1')->paginate($perPage);
-        }
-
-        return $query->whereIn('company_id', $companyIds)->paginate($perPage);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    public function createRecord(array $data): CommissionRecord
-    {
-        $validator = Validator::make($data, [
-            'subject_type' => ['required', 'string', Rule::in(CommissionRecord::SUBJECT_TYPES)],
-            'subject_id' => ['required', 'integer', 'min:1'],
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'service_type' => ['required', 'string'],
-            'commission_mode' => ['required', 'string', Rule::in(CommissionPolicy::COMMISSION_MODES)],
-            'commission_value' => ['required', 'numeric', 'min:0'],
-            'commission_amount_snapshot' => ['required', 'numeric', 'min:0'],
-            'currency' => ['required', 'string', 'size:3'],
-            'commission_policy_id' => ['nullable', 'integer', 'exists:commission_policies,id'],
-            'status' => ['sometimes', 'string', Rule::in(CommissionRecord::STATUSES)],
-        ]);
-
-        if ($validator->fails()) {
-            throw ValidationException::withMessages($validator->errors()->toArray());
-        }
-
-        $clean = $validator->validated();
-        $clean['status'] = $clean['status'] ?? CommissionRecord::STATUSES[0];
-
-        return CommissionRecord::query()->create($clean);
-    }
 
     /**
      * Accrue commission for a Package Order.
@@ -248,63 +150,5 @@ class CommissionService
 
             return null;
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    public function createPolicy(Company $company, array $data): CommissionPolicy
-    {
-        $validator = Validator::make($data, [
-            'service_type' => ['required', 'string'],
-            'percent' => ['required', 'numeric', 'min:0'],
-            'commission_mode' => ['required', 'string', Rule::in(CommissionPolicy::COMMISSION_MODES)],
-            'min_amount' => ['nullable', 'numeric', 'min:0'],
-            'max_amount' => ['nullable', 'numeric', 'min:0'],
-            'effective_from' => ['nullable', 'date'],
-            'effective_to' => ['nullable', 'date'],
-        ]);
-
-        if ($validator->fails()) {
-            throw ValidationException::withMessages($validator->errors()->toArray());
-        }
-
-        $clean = $validator->validated();
-
-        CommissionPolicy::query()
-            ->where('company_id', $company->id)
-            ->where('service_type', $clean['service_type'])
-            ->where('status', 'active')
-            ->update(['status' => 'inactive']);
-
-        return CommissionPolicy::query()->create([
-            'company_id' => $company->id,
-            'service_type' => $clean['service_type'],
-            'percent' => $clean['percent'],
-            'commission_mode' => $clean['commission_mode'],
-            'min_amount' => $clean['min_amount'] ?? null,
-            'max_amount' => $clean['max_amount'] ?? null,
-            'effective_from' => $clean['effective_from'] ?? null,
-            'effective_to' => $clean['effective_to'] ?? null,
-            'status' => 'active',
-        ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    public function updatePolicy(CommissionPolicy $policy, array $data): CommissionPolicy
-    {
-        $policy->update($data);
-
-        return $policy->fresh();
-    }
-
-    public function deactivatePolicy(CommissionPolicy $policy): CommissionPolicy
-    {
-        $policy->status = 'inactive';
-        $policy->save();
-
-        return $policy->fresh();
     }
 }
