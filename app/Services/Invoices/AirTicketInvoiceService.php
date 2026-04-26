@@ -4,7 +4,6 @@ namespace App\Services\Invoices;
 
 use App\Models\Booking;
 use App\Models\Invoice;
-use App\Models\Commission;
 use App\Services\Finance\CommissionManagementService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -28,7 +27,7 @@ class AirTicketInvoiceService
         $commissionPricing = $this->commissionManagementService->applyCommission(
             $netPrice,
             (int) $booking->company_id,
-            Commission::SERVICE_AIR_TICKET
+            'flight'
         );
         $commissionTotal = (float) ($options['commission_total'] ?? $commissionPricing['commission_amount']);
         $additionalServicesPrice = (float) ($options['additional_services_price'] ?? 0);

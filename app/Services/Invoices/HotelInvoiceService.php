@@ -3,7 +3,6 @@
 namespace App\Services\Invoices;
 
 use App\Models\Booking;
-use App\Models\Commission;
 use App\Models\Invoice;
 use App\Services\Finance\CommissionManagementService;
 use Carbon\Carbon;
@@ -44,7 +43,7 @@ class HotelInvoiceService
         $commissionPricing = $this->commissionManagementService->applyCommission(
             $netPrice,
             (int) $booking->company_id,
-            Commission::SERVICE_HOTEL
+            'hotel'
         );
         $commissionTotal = (float) ($options['commission_total'] ?? $commissionPricing['commission_amount']);
         $additionalServicesPrice = (float) ($options['additional_services_price'] ?? 0);
