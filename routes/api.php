@@ -16,10 +16,10 @@
  */
 
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\Admin\PageController;
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
-use App\Http\Controllers\Api\Admin\PageController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BookingController;
@@ -208,9 +208,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     Route::get('commissions', [CommissionController::class, 'index']);
     Route::post('commissions', [CommissionController::class, 'createPolicy']);
-    Route::get('commissions/{commission}', [CommissionController::class, 'show'])->whereNumber('commission');
-    Route::patch('commissions/{commission}', [CommissionController::class, 'updatePolicy'])->whereNumber('commission');
-    Route::post('commissions/{commission}/deactivate', [CommissionController::class, 'deactivatePolicy'])->whereNumber('commission');
+    Route::get('commissions/{ruleId}', [CommissionController::class, 'show'])->whereUuid('ruleId');
+    Route::patch('commissions/{ruleId}', [CommissionController::class, 'updatePolicy'])->whereUuid('ruleId');
+    Route::post('commissions/{ruleId}/deactivate', [CommissionController::class, 'deactivatePolicy'])->whereUuid('ruleId');
     Route::get('commission-records', [CommissionController::class, 'indexRecords']);
 
     Route::prefix('finance')->group(function () {
