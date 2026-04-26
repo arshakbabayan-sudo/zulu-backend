@@ -3,12 +3,13 @@
 namespace App\Services\Finance;
 
 use App\Models\Booking;
-use App\Models\CommissionPolicy;
 use App\Models\Company;
 use App\Models\PackageOrder;
 use App\Models\Settlement;
 use App\Models\SupplierEntitlement;
 use App\Models\User;
+use App\Services\Commissions\CommissionRuleResolver;
+use App\Services\Commissions\DTOs\CommissionResolutionContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,10 @@ use Illuminate\Validation\ValidationException;
 
 class FinanceService
 {
+    public function __construct(
+        private CommissionRuleResolver $resolver,
+    ) {}
+
     /**
      * @return list<SupplierEntitlement>
      */
@@ -38,17 +43,42 @@ class FinanceService
 
                 foreach ($order->items as $item) {
                     $gross = bcadd((string) $item->price_snapshot, '0', 2);
-
-                    $policy = CommissionPolicy::query()
-                        ->where('company_id', $item->company_id)
-                        ->where('service_type', $item->module_type)
-                        ->where('status', 'active')
-                        ->orderByDesc('id')
-                        ->first();
+                    // Keep parity with CommissionService::accrue() by resolving at current runtime.
+                    $ctx = CommissionResolutionContext::make(
+                        sellerId: (int) $item->company_id,
+                        serviceType: (string) $item->module_type,
+                        opts: [
+                            'atTime' => now(),
+                            'categoryId' => null,
+                            'partnerAgreementId' => null,
+                        ]
+                    );
+                    $rule = $this->resolver->resolve($ctx)->chosenRule;
 
                     $commission = '0';
-                    if ($policy !== null) {
-                        $commission = $this->commissionAmountForGross($policy, $gross);
+                    if ($rule !== null) {
+                        $baseCurrency = (string) $item->currency_snapshot;
+
+                        if ($rule->type === 'percentage') {
+                            $commission = bcdiv(bcmul($gross, (string) $rule->percentage_value, 8), '100', 4);
+                        } elseif ($rule->type === 'fixed') {
+                            if ($rule->fixed_currency !== null && strtoupper((string) $rule->fixed_currency) !== strtoupper($baseCurrency)) {
+                                Log::warning('Commission fixed currency mismatch during entitlement accrual', [
+                                    'seller_id' => (int) $item->company_id,
+                                    'rule_id' => $rule->id,
+                                    'fixed_currency' => $rule->fixed_currency,
+                                    'base_currency' => $baseCurrency,
+                                ]);
+                            }
+
+                            $commission = bcadd((string) $rule->fixed_value, '0', 4);
+                        } else {
+                            $commission = bcadd(
+                                bcdiv(bcmul($gross, (string) $rule->percentage_value, 8), '100', 4),
+                                (string) $rule->fixed_value,
+                                4
+                            );
+                        }
                     }
 
                     $net = bcsub($gross, $commission, 2);
@@ -101,17 +131,42 @@ class FinanceService
                 foreach ($booking->items as $item) {
                     $gross = bcadd((string) $item->price, '0', 2);
                     $offerType = $item->offer?->type ?? 'unknown';
-
-                    $policy = CommissionPolicy::query()
-                        ->where('company_id', $booking->company_id)
-                        ->where('service_type', $offerType)
-                        ->where('status', 'active')
-                        ->orderByDesc('id')
-                        ->first();
+                    // Keep parity with CommissionService::accrue() by resolving at current runtime.
+                    $ctx = CommissionResolutionContext::make(
+                        sellerId: (int) $booking->company_id,
+                        serviceType: (string) $offerType,
+                        opts: [
+                            'atTime' => now(),
+                            'categoryId' => null,
+                            'partnerAgreementId' => null,
+                        ]
+                    );
+                    $rule = $this->resolver->resolve($ctx)->chosenRule;
 
                     $commission = '0';
-                    if ($policy !== null) {
-                        $commission = $this->commissionAmountForGross($policy, $gross);
+                    if ($rule !== null) {
+                        $baseCurrency = (string) ($booking->currency ?? 'usd');
+
+                        if ($rule->type === 'percentage') {
+                            $commission = bcdiv(bcmul($gross, (string) $rule->percentage_value, 8), '100', 4);
+                        } elseif ($rule->type === 'fixed') {
+                            if ($rule->fixed_currency !== null && strtoupper((string) $rule->fixed_currency) !== strtoupper($baseCurrency)) {
+                                Log::warning('Commission fixed currency mismatch during entitlement accrual', [
+                                    'seller_id' => (int) $booking->company_id,
+                                    'rule_id' => $rule->id,
+                                    'fixed_currency' => $rule->fixed_currency,
+                                    'base_currency' => $baseCurrency,
+                                ]);
+                            }
+
+                            $commission = bcadd((string) $rule->fixed_value, '0', 4);
+                        } else {
+                            $commission = bcadd(
+                                bcdiv(bcmul($gross, (string) $rule->percentage_value, 8), '100', 4),
+                                (string) $rule->fixed_value,
+                                4
+                            );
+                        }
                     }
 
                     $net = bcsub($gross, $commission, 2);
@@ -348,32 +403,5 @@ class FinanceService
         $settlement->save();
 
         return $settlement->fresh();
-    }
-
-    private function commissionAmountForGross(CommissionPolicy $policy, string $gross): string
-    {
-        $mode = $policy->commission_mode ?? 'percent';
-
-        if ($mode === 'fixed_amount') {
-            return bcadd((string) $policy->percent, '0', 2);
-        }
-
-        $pct = (string) $policy->percent;
-        $amount = bcmul(bcdiv(bcmul($gross, $pct, 6), '100', 6), '1', 2);
-
-        if ($policy->min_amount !== null) {
-            $min = bcadd((string) $policy->min_amount, '0', 2);
-            if (bccomp($amount, $min, 2) < 0) {
-                $amount = $min;
-            }
-        }
-        if ($policy->max_amount !== null) {
-            $max = bcadd((string) $policy->max_amount, '0', 2);
-            if (bccomp($amount, $max, 2) > 0) {
-                $amount = $max;
-            }
-        }
-
-        return $amount;
     }
 }
