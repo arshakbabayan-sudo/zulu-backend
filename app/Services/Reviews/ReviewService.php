@@ -2,8 +2,7 @@
 
 namespace App\Services\Reviews;
 
-use App\Models\Booking;
-use App\Models\PackageOrder;
+use App\Models\Order;
 use App\Models\Review;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -27,8 +26,11 @@ class ReviewService
         ])->validate();
 
         if (! empty($validated['package_order_id'])) {
-            $order = PackageOrder::query()->find((int) $validated['package_order_id']);
-            if ($order === null || (int) $order->user_id !== (int) $user->id || $order->status !== 'completed') {
+            $order = Order::query()
+                ->where('metadata->legacy_origin', 'package_order')
+                ->where('metadata->legacy_package_order_id', (int) $validated['package_order_id'])
+                ->first();
+            if ($order === null || (int) $order->user_id !== (int) $user->id || $order->status !== 'paid') {
                 throw ValidationException::withMessages([
                     'package_order_id' => ['Invalid package order for review.'],
                 ]);
@@ -36,8 +38,11 @@ class ReviewService
         }
 
         if (! empty($validated['booking_id'])) {
-            $booking = Booking::query()->find((int) $validated['booking_id']);
-            if ($booking === null || (int) $booking->user_id !== (int) $user->id || $booking->status !== Booking::STATUS_CONFIRMED) {
+            $order = Order::query()
+                ->where('metadata->legacy_origin', 'booking')
+                ->where('metadata->legacy_booking_id', (int) $validated['booking_id'])
+                ->first();
+            if ($order === null || (int) $order->user_id !== (int) $user->id || $order->status !== 'confirmed') {
                 throw ValidationException::withMessages([
                     'booking_id' => ['Invalid booking for review.'],
                 ]);
