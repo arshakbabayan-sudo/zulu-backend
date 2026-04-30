@@ -12,7 +12,6 @@ class InvoiceService
 {
     /**
      * @param  list<int>  $companyIds
-     * @param  ?int  $bookingId
      * @return Collection<int, Invoice>
      */
     public function listForCompanies(array $companyIds, ?int $bookingId = null): Collection
@@ -22,18 +21,19 @@ class InvoiceService
         }
 
         return Invoice::query()
-            ->where(function ($q) use ($companyIds): void {
-                $q->whereHas('booking', fn ($q2) => $q2->whereIn('company_id', $companyIds))
-                    ->orWhereHas('packageOrder', fn ($q2) => $q2->whereIn('company_id', $companyIds));
-            })
-            ->when($bookingId !== null, fn ($q) => $q->where('booking_id', $bookingId))
+            ->whereHas('order', fn ($q2) => $q2->whereIn('company_id', $companyIds))
+            ->when(
+                $bookingId !== null,
+                fn ($q) => $q->whereHas('order', fn ($q2) => $q2
+                    ->where('metadata->legacy_origin', 'booking')
+                    ->where('metadata->legacy_booking_id', $bookingId))
+            )
             ->orderBy('id')
             ->get();
     }
 
     /**
      * @param  list<int>  $companyIds
-     * @param  ?int  $bookingId
      */
     public function paginateForCompanies(array $companyIds, int $perPage = 20, ?int $bookingId = null): LengthAwarePaginator
     {
@@ -42,11 +42,13 @@ class InvoiceService
         }
 
         return Invoice::query()
-            ->where(function ($q) use ($companyIds): void {
-                $q->whereHas('booking', fn ($q2) => $q2->whereIn('company_id', $companyIds))
-                    ->orWhereHas('packageOrder', fn ($q2) => $q2->whereIn('company_id', $companyIds));
-            })
-            ->when($bookingId !== null, fn ($q) => $q->where('booking_id', $bookingId))
+            ->whereHas('order', fn ($q2) => $q2->whereIn('company_id', $companyIds))
+            ->when(
+                $bookingId !== null,
+                fn ($q) => $q->whereHas('order', fn ($q2) => $q2
+                    ->where('metadata->legacy_origin', 'booking')
+                    ->where('metadata->legacy_booking_id', $bookingId))
+            )
             ->orderBy('id')
             ->paginate($perPage);
     }
@@ -57,6 +59,7 @@ class InvoiceService
     public function createForBooking(Booking $booking, array $data = []): Invoice
     {
         return $booking->invoices()->create([
+            'order_id' => $booking->mirror_order_id,
             'total_amount' => $data['total_amount'] ?? $booking->total_price,
             'status' => $data['status'] ?? 'pending',
         ]);
@@ -70,6 +73,7 @@ class InvoiceService
         return Invoice::query()->create([
             'booking_id' => null,
             'package_order_id' => $packageOrder->id,
+            'order_id' => $packageOrder->mirror_order_id,
             'total_amount' => $data['total_amount'] ?? $packageOrder->final_total_snapshot,
             'currency' => $data['currency'] ?? $packageOrder->currency,
             'unique_booking_reference' => $data['unique_booking_reference']

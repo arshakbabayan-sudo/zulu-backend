@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -23,6 +23,7 @@ class Invoice extends Model
     protected $fillable = [
         'booking_id',
         'package_order_id',
+        'order_id',
         'unique_booking_reference',
         'total_amount',
         'currency',
@@ -90,6 +91,11 @@ class Invoice extends Model
     public function packageOrder(): BelongsTo
     {
         return $this->belongsTo(PackageOrder::class);
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class, 'order_id', 'id');
     }
 
     public function payments(): HasMany
