@@ -3,6 +3,7 @@
 namespace App\Services\Packages;
 
 use App\Models\Offer;
+use App\Models\Order;
 use App\Models\Package;
 use App\Models\PackageOrder;
 use App\Models\PackageOrderItem;
@@ -223,6 +224,16 @@ class PackageOrderService
             $order->payment_status = 'paid';
             $order->save();
 
+            try {
+                $this->syncMirrorOrderStatus($order, 'paid');
+            } catch (\Throwable $e) {
+                Log::warning('Package order mirror status sync failed during markPaid', [
+                    'package_order_id' => $order->id,
+                    'mirror_order_id' => $order->mirror_order_id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
             $invoice = $this->invoiceService->createForPackageOrder($order);
             $payment = $this->paymentService->createForPackageOrderInvoice($invoice);
             $this->paymentService->markPaid($payment);
@@ -315,6 +326,16 @@ class PackageOrderService
 
             $order->status = 'cancelled';
             $order->save();
+
+            try {
+                $this->syncMirrorOrderStatus($order, 'cancelled', 'cancelled');
+            } catch (\Throwable $e) {
+                Log::warning('Package order mirror status sync failed during cancelOrder', [
+                    'package_order_id' => $order->id,
+                    'mirror_order_id' => $order->mirror_order_id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
 
             return $order->fresh(['items.offer', 'items.company', 'package', 'user']);
         });
@@ -443,5 +464,29 @@ class PackageOrderService
         }
 
         return null;
+    }
+
+    protected function syncMirrorOrderStatus(PackageOrder $packageOrder, string $orderStatus, ?string $itemStatus = null): void
+    {
+        if ($packageOrder->mirror_order_id === null) {
+            return;
+        }
+
+        $order = Order::query()->find($packageOrder->mirror_order_id);
+        if ($order === null) {
+            return;
+        }
+
+        $order->status = $orderStatus;
+        $order->save();
+
+        if ($itemStatus === null) {
+            return;
+        }
+
+        foreach ($order->items()->get() as $item) {
+            $item->status = $itemStatus;
+            $item->save();
+        }
     }
 }

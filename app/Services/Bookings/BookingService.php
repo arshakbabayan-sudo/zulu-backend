@@ -5,6 +5,7 @@ namespace App\Services\Bookings;
 use App\Models\Booking;
 use App\Models\Flight;
 use App\Models\Offer;
+use App\Models\Order;
 use App\Models\Passenger;
 use App\Services\Finance\FinanceService;
 use App\Services\Orders\OrderService;
@@ -193,6 +194,17 @@ class BookingService
     {
         $booking->status = Booking::STATUS_CONFIRMED;
         $booking->save();
+
+        try {
+            $this->syncMirrorOrderStatus($booking, 'confirmed', 'confirmed');
+        } catch (\Throwable $e) {
+            Log::warning('Booking mirror order status sync failed during confirm', [
+                'booking_id' => $booking->id,
+                'mirror_order_id' => $booking->mirror_order_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         try {
             DB::transaction(function () use ($booking): void {
                 foreach ($booking->items()->with('offer.flight.cabins')->get() as $item) {
@@ -244,6 +256,16 @@ class BookingService
         $booking->save();
 
         try {
+            $this->syncMirrorOrderStatus($booking, 'cancelled', 'cancelled');
+        } catch (\Throwable $e) {
+            Log::warning('Booking mirror order status sync failed during cancel', [
+                'booking_id' => $booking->id,
+                'mirror_order_id' => $booking->mirror_order_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
             foreach ($booking->items()->with('offer.flight')->get() as $item) {
                 $flight = $item->offer?->flight ?? null;
                 if ($flight === null) {
@@ -269,5 +291,29 @@ class BookingService
     public function getWithDetails(int $id): ?Booking
     {
         return Booking::with(['user', 'company', 'passengers', 'items', 'invoices'])->find($id);
+    }
+
+    protected function syncMirrorOrderStatus(Booking $booking, string $orderStatus, ?string $itemStatus = null): void
+    {
+        if ($booking->mirror_order_id === null) {
+            return;
+        }
+
+        $order = Order::query()->find($booking->mirror_order_id);
+        if ($order === null) {
+            return;
+        }
+
+        $order->status = $orderStatus;
+        $order->save();
+
+        if ($itemStatus === null) {
+            return;
+        }
+
+        foreach ($order->items()->get() as $item) {
+            $item->status = $itemStatus;
+            $item->save();
+        }
     }
 }
