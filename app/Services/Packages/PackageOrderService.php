@@ -11,6 +11,7 @@ use App\Services\Commissions\CommissionService;
 use App\Services\Finance\FinanceService;
 use App\Services\Invoices\InvoiceService;
 use App\Services\Notifications\NotificationService;
+use App\Services\Orders\OrderService;
 use App\Services\Payments\PaymentService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,8 @@ class PackageOrderService
         private PaymentService $paymentService,
         private CommissionService $commissionService,
         private NotificationService $notificationService,
-        private FinanceService $financeService
+        private FinanceService $financeService,
+        private OrderService $orderService
     ) {}
 
     public function createOrder(Package $package, User $user, array $input): PackageOrder
@@ -135,12 +137,13 @@ class PackageOrderService
                 'notes' => $notes,
             ]);
 
+            $legacyItems = [];
             foreach ($components as $component) {
                 $offer = $component->offer;
                 $linePrice = $component->price_override ?? $offer->price;
                 $itemCurrency = $package->currency ?? $offer->currency ?? $currency;
 
-                PackageOrderItem::query()->create([
+                $legacyItem = PackageOrderItem::query()->create([
                     'package_order_id' => $packageOrder->id,
                     'package_component_id' => $component->id,
                     'offer_id' => $component->offer_id,
@@ -153,7 +156,59 @@ class PackageOrderService
                     'status' => 'pending',
                     'sort_order' => $component->sort_order,
                 ]);
+
+                $legacyItems[] = [
+                    'item' => $legacyItem,
+                    'component' => $component,
+                    'offer' => $offer,
+                ];
             }
+
+            $statusMap = [
+                'draft' => 'cart',
+                'pending_payment' => 'pending_payment',
+            ];
+
+            $order = $this->orderService->create(
+                [
+                    'user_id' => $packageOrder->user_id,
+                    'company_id' => $packageOrder->company_id,
+                    'currency' => $packageOrder->currency,
+                    'order_number' => $packageOrder->order_number,
+                    'buyer_type' => 'client',
+                    'status' => $statusMap[$packageOrder->status] ?? 'pending_payment',
+                    'metadata' => [
+                        'legacy_origin' => 'package_order',
+                        'legacy_package_order_id' => $packageOrder->id,
+                    ],
+                ],
+                collect($legacyItems)->map(function (array $legacyData) use ($package): array {
+                    /** @var PackageOrderItem $item */
+                    $item = $legacyData['item'];
+                    $component = $legacyData['component'];
+                    /** @var Offer $offer */
+                    $offer = $legacyData['offer'];
+
+                    return [
+                        'item_type' => $component->module_type,
+                        'item_id' => $this->resolveOfferItemId($offer, $component->module_type),
+                        'package_id' => $package->id,
+                        'unit_price' => $item->price_snapshot,
+                        'currency' => $item->currency_snapshot,
+                        'service_snapshot' => [
+                            'legacy_offer_id' => $offer->id,
+                            'legacy_component_id' => $component->id,
+                            'legacy_package_order_item_id' => $item->id,
+                            'package_role' => $component->package_role,
+                            'sort_order' => $component->sort_order,
+                            'is_required' => $component->is_required,
+                        ],
+                    ];
+                })->values()->all()
+            );
+
+            $packageOrder->mirror_order_id = $order->id;
+            $packageOrder->save();
 
             return $packageOrder->load(['items.offer', 'items.company', 'package']);
         });
@@ -356,5 +411,37 @@ class PackageOrderService
             $order->status = $newStatus;
             $order->save();
         }
+    }
+
+    private function resolveOfferItemId(Offer $offer, string $itemType): ?int
+    {
+        $relation = match ($itemType) {
+            'flight' => 'flight',
+            'hotel' => 'hotel',
+            'transfer' => 'transfer',
+            'car' => 'car',
+            'excursion' => 'excursion',
+            'visa' => 'visa',
+            'package' => 'package',
+            default => null,
+        };
+
+        if ($relation !== null) {
+            $column = $relation.'_id';
+            $directId = $offer->{$column} ?? null;
+            if (is_numeric($directId)) {
+                return (int) $directId;
+            }
+
+            if (method_exists($offer, $relation)) {
+                $offer->loadMissing($relation);
+                $relatedModel = $offer->getRelation($relation);
+                if ($relatedModel !== null && isset($relatedModel->id)) {
+                    return (int) $relatedModel->id;
+                }
+            }
+        }
+
+        return null;
     }
 }

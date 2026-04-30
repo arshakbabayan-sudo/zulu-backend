@@ -7,6 +7,7 @@ use App\Models\Flight;
 use App\Models\Offer;
 use App\Models\Passenger;
 use App\Services\Finance\FinanceService;
+use App\Services\Orders\OrderService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,10 @@ use Illuminate\Validation\ValidationException;
 
 class BookingService
 {
+    public function __construct(
+        private OrderService $orderService
+    ) {}
+
     /**
      * @param  array<int,array{offer_id:int,price:numeric}>  $itemsData
      */
@@ -86,9 +91,60 @@ class BookingService
             $bookingData['currency'] = strtoupper((string) $bookingData['currency']);
             $bookingData['total_price'] = 0;
             $booking = Booking::query()->create($bookingData);
+            $createdBookingItems = [];
             foreach ($itemsData as $itemData) {
-                $booking->items()->create($itemData);
+                $createdBookingItems[] = $booking->items()->create($itemData);
             }
+
+            $offers = Offer::query()
+                ->with('flight')
+                ->whereIn('id', collect($createdBookingItems)->pluck('offer_id')->unique()->values()->all())
+                ->get()
+                ->keyBy('id');
+
+            $statusMap = [
+                'pending' => 'pending_payment',
+                'confirmed' => 'confirmed',
+                'cancelled' => 'cancelled',
+            ];
+
+            $order = $this->orderService->create(
+                [
+                    'user_id' => $bookingData['user_id'] ?? null,
+                    'company_id' => $bookingData['company_id'] ?? null,
+                    'currency' => $bookingData['currency'],
+                    'buyer_type' => 'client',
+                    'status' => $statusMap[$bookingData['status']] ?? 'pending_payment',
+                    'metadata' => [
+                        'legacy_origin' => 'booking',
+                        'legacy_booking_id' => $booking->id,
+                    ],
+                ],
+                collect($createdBookingItems)->map(function ($bookingItem) use ($offers, $bookingData): array {
+                    $offer = $offers->get($bookingItem->offer_id);
+                    $flightId = null;
+
+                    if ($offer !== null && $offer->type === 'flight') {
+                        $flightId = $offer->flight_id ?? $offer->flight?->id;
+                    }
+
+                    return [
+                        'item_type' => 'flight',
+                        'item_id' => $flightId,
+                        'currency' => $bookingData['currency'],
+                        'unit_price' => $bookingItem->price,
+                        'quantity' => 1,
+                        'service_snapshot' => [
+                            'legacy_offer_id' => $bookingItem->offer_id,
+                            'legacy_booking_item_id' => $bookingItem->id,
+                        ],
+                    ];
+                })->values()->all()
+            );
+
+            $booking->mirror_order_id = $order->id;
+            $booking->save();
+
             foreach ($passengersData as $pData) {
                 $passenger = null;
                 if (isset($pData['id'])) {
