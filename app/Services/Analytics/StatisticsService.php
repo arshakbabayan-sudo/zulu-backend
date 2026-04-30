@@ -2,9 +2,9 @@
 
 namespace App\Services\Analytics;
 
-use App\Models\Booking;
 use App\Models\Invoice;
 use App\Models\Offer;
+use App\Models\Order;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -57,19 +57,19 @@ class StatisticsService
                 $query->where('company_id', $companyId);
             });
 
-        $bookings = Booking::query()
+        $orders = Order::query()
             ->where('company_id', $companyId)
-            ->whereIn('status', ['sold', 'reserved', 'Sold', 'Reserved']);
+            ->whereIn('status', ['paid', 'confirmed']);
 
         $this->applyDateFilters($paidInvoices, $filters);
-        $this->applyDateFilters($bookings, $filters);
+        $this->applyDateFilters($orders, $filters);
 
         if (! empty($filters['service_type']) && is_string($filters['service_type'])) {
             $serviceType = $filters['service_type'];
 
             $paidInvoices->where('invoice_type', $serviceType);
-            $bookings->whereHas('items.offer', function (Builder $query) use ($serviceType): void {
-                $query->where('type', $serviceType);
+            $orders->whereHas('items', function (Builder $query) use ($serviceType): void {
+                $query->where('item_type', $serviceType);
             });
         }
 
@@ -81,7 +81,7 @@ class StatisticsService
 
         return [
             'total_revenue' => (float) (clone $paidInvoices)->sum('client_price'),
-            'total_bookings' => (int) $bookings->count(),
+            'total_bookings' => (int) $orders->count(),
             'commission_earned' => (float) (clone $paidInvoices)->sum('commission_total'),
             'bookings_by_type' => $bookingsByType,
         ];
@@ -110,7 +110,7 @@ class StatisticsService
             ->where('created_at', '>=', $from)
             ->selectRaw(
                 $isWeekly
-                    ? "YEARWEEK(created_at, 1) as grp_key, SUM(client_price) as revenue"
+                    ? 'YEARWEEK(created_at, 1) as grp_key, SUM(client_price) as revenue'
                     : "DATE_FORMAT(created_at, '%Y-%m') as grp_key, SUM(client_price) as revenue"
             )
             ->groupBy('grp_key')
@@ -140,7 +140,7 @@ class StatisticsService
     }
 
     /**
-     * @param  Builder<Booking>|Builder<Invoice>  $query
+     * @param  Builder<Order>|Builder<Invoice>  $query
      * @param  array<string, mixed>  $filters
      */
     private function applyDateFilters(Builder $query, array $filters): void
