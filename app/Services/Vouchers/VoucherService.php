@@ -7,9 +7,14 @@ use App\Models\OrderItem;
 use App\Models\Voucher;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class VoucherService
 {
+    public function __construct(
+        private ?VoucherPdfService $pdfService = null
+    ) {}
+
     /**
      * Issue vouchers for every top-level (non-child) OrderItem in the given Order.
      *
@@ -74,7 +79,27 @@ class VoucherService
             }
 
             return $issued;
+        })->each(function (Voucher $voucher): void {
+            $this->renderPdfSafely($voucher);
         });
+    }
+
+    private function renderPdfSafely(Voucher $voucher): void
+    {
+        if ($voucher->pdf_url !== null) {
+            return; // already rendered
+        }
+
+        $service = $this->pdfService ?? app(VoucherPdfService::class);
+
+        try {
+            $service->render($voucher);
+        } catch (\Throwable $e) {
+            Log::warning('Voucher PDF render failed', [
+                'voucher_id' => $voucher->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

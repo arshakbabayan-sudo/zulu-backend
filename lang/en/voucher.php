@@ -1,0 +1,35 @@
+<?php
+
+return [
+    'title' => 'Voucher',
+    'voucher_number' => 'Voucher Number',
+    'issued_at' => 'Issued At',
+    'holder' => 'Holder',
+    'passport' => 'Passport',
+    'passengers' => 'Passengers',
+    'service_type' => [
+        'hotel' => 'Hotel',
+        'flight' => 'Flight',
+        'transfer' => 'Transfer',
+        'car' => 'Car Rental',
+        'excursion' => 'Excursion',
+        'visa' => 'Visa',
+        'insurance' => 'Insurance',
+        'package' => 'Travel Package',
+    ],
+    'status' => [
+        'issued' => 'Valid',
+        'used' => 'Used',
+        'void' => 'Cancelled',
+        'reissued' => 'Reissued',
+        'expired' => 'Expired',
+    ],
+    'valid_from' => 'Valid From',
+    'valid_to' => 'Valid To',
+    'service_details' => 'Service Details',
+    'verify' => 'Verify',
+    'verify_instructions' => 'Scan the QR code or visit the verification URL to confirm authenticity.',
+    'issuer' => 'Issued By',
+    'footer' => 'This document confirms your booking. Present it to the service provider on arrival.',
+    'language_label' => 'EN',
+];
