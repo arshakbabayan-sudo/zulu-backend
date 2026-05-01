@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TransferController;
@@ -140,6 +141,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('localization/ui-translations', [LocalizationController::class, 'setUiTranslations']);
 
     Route::get('account/me', [AccountController::class, 'me']);
+
+    // Seller contracts (PART 05)
+    Route::get('seller/contracts', [SellerContractController::class, 'index']);
+    Route::get('seller/contracts/{contract}', [SellerContractController::class, 'show'])
+        ->where('contract', '[0-9a-f-]{36}');
+    Route::post('seller/contracts/{contract}/sign', [SellerContractController::class, 'sign'])
+        ->where('contract', '[0-9a-f-]{36}');
 
     // Customer notification preferences (PART 23)
     Route::get('customer/notification-preferences', [NotificationPreferenceController::class, 'index']);
