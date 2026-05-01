@@ -343,10 +343,11 @@ class PackageOrderService
 
     public function listForUser(User $user, int $perPage = 15): LengthAwarePaginator
     {
-        return PackageOrder::query()
+        return Order::query()
+            ->where('metadata->legacy_origin', 'package_order')
             ->where('user_id', $user->id)
-            ->with(['package', 'items'])
-            ->orderByDesc('id')
+            ->with(['items'])
+            ->orderByDesc('created_at')
             ->paginate($perPage);
     }
 
@@ -355,31 +356,34 @@ class PackageOrderService
      */
     public function listForCompanies(array $companyIds, int $perPage = 20): LengthAwarePaginator
     {
-        return PackageOrder::query()
+        return Order::query()
+            ->where('metadata->legacy_origin', 'package_order')
             ->whereIn('company_id', $companyIds)
-            ->with(['package', 'user', 'items'])
-            ->orderByDesc('id')
+            ->with(['user', 'items'])
+            ->orderByDesc('created_at')
             ->paginate($perPage);
     }
 
-    public function findForUser(int $orderId, User $user): ?PackageOrder
+    public function findForUser(int $orderId, User $user): ?Order
     {
-        return PackageOrder::query()
+        return Order::query()
+            ->where('metadata->legacy_origin', 'package_order')
+            ->where('metadata->legacy_package_order_id', $orderId)
             ->where('user_id', $user->id)
-            ->whereKey($orderId)
-            ->with(['package', 'items.offer', 'items.company'])
+            ->with(['items'])
             ->first();
     }
 
     /**
      * @param  list<int>  $companyIds
      */
-    public function findForCompanyScope(int $orderId, array $companyIds): ?PackageOrder
+    public function findForCompanyScope(int $orderId, array $companyIds): ?Order
     {
-        return PackageOrder::query()
+        return Order::query()
+            ->where('metadata->legacy_origin', 'package_order')
+            ->where('metadata->legacy_package_order_id', $orderId)
             ->whereIn('company_id', $companyIds)
-            ->whereKey($orderId)
-            ->with(['package', 'user', 'items.offer', 'items.company'])
+            ->with(['user', 'items'])
             ->first();
     }
 

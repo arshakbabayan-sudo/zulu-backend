@@ -47,27 +47,32 @@ class BookingService
         }
     }
 
+    /**
+     * @return Collection<int, Order>
+     */
     public function listForCompanies(array $companyIds): Collection
     {
         if ($companyIds === []) {
             return new Collection;
         }
 
-        return Booking::query()
-            ->with(['items', 'passengers', 'user'])
+        return Order::query()
+            ->where('metadata->legacy_origin', 'booking')
             ->whereIn('company_id', $companyIds)
-            ->orderBy('id')
+            ->with(['items', 'user'])
+            ->orderBy('created_at')
             ->get();
     }
 
     public function paginateForCompanies(array $companyIds, int $perPage = 20): LengthAwarePaginator
     {
-        $query = Booking::query()
-            ->with(['items', 'passengers', 'user'])
-            ->orderBy('id');
+        $query = Order::query()
+            ->where('metadata->legacy_origin', 'booking')
+            ->with(['items', 'user'])
+            ->orderBy('created_at');
 
         if ($companyIds === []) {
-            return $query->whereRaw('0 = 1')->paginate($perPage);
+            return Order::query()->whereRaw('0 = 1')->paginate($perPage);
         }
 
         return $query
@@ -288,9 +293,13 @@ class BookingService
         return $booking;
     }
 
-    public function getWithDetails(int $id): ?Booking
+    public function getWithDetails(int $id): ?Order
     {
-        return Booking::with(['user', 'company', 'passengers', 'items', 'invoices'])->find($id);
+        return Order::query()
+            ->where('metadata->legacy_origin', 'booking')
+            ->where('metadata->legacy_booking_id', $id)
+            ->with(['user', 'company', 'items', 'invoices'])
+            ->first();
     }
 
     protected function syncMirrorOrderStatus(Booking $booking, string $orderStatus, ?string $itemStatus = null): void
