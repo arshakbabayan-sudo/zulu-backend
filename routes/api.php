@@ -22,7 +22,6 @@ use App\Http\Controllers\Api\AdminLocationController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
-use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CarController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommissionController;
@@ -179,15 +178,6 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('offers', [OfferController::class, 'store'])->middleware('throttle:inventory-write');
     Route::post('offers/{offer}/publish', [OfferController::class, 'publish'])->middleware('throttle:inventory-write');
     Route::post('offers/{offer}/archive', [OfferController::class, 'archive'])->middleware('throttle:inventory-write');
-
-    Route::get('bookings', [BookingController::class, 'index']);
-    Route::get('bookings/{booking}', [BookingController::class, 'show']);
-    Route::post('bookings', [BookingController::class, 'store']);
-    Route::post('bookings/{booking}/confirm', [BookingController::class, 'confirm']);
-    Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel']);
-    Route::post('bookings/{booking}/passengers', [BookingController::class, 'addPassengers'])->whereNumber('booking');
-    Route::get('bookings/{booking}/passengers', [BookingController::class, 'getPassengers'])->whereNumber('booking');
-    Route::get('bookings/{booking}/voucher', [BookingController::class, 'downloadVoucher'])->whereNumber('booking');
 
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show']);

@@ -11,12 +11,13 @@ class Bonus extends Model
     use HasFactory;
 
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_AVAILABLE = 'available';
+
     public const STATUS_REDEEMED = 'redeemed';
 
     protected $fillable = [
         'company_id',
-        'booking_id',
         'invoice_id',
         'amount',
         'status',
@@ -33,11 +34,6 @@ class Bonus extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
-    }
-
-    public function booking(): BelongsTo
-    {
-        return $this->belongsTo(Booking::class);
     }
 
     public function invoice(): BelongsTo

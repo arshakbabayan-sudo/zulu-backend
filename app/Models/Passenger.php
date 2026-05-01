@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Passenger extends Model
 {
@@ -38,15 +37,5 @@ class Passenger extends Model
     public function getFullNameAttribute(): string
     {
         return "{$this->first_name} {$this->last_name}";
-    }
-
-    /**
-     * @return BelongsToMany<Booking, $this>
-     */
-    public function bookings(): BelongsToMany
-    {
-        return $this->belongsToMany(Booking::class, 'booking_passengers')
-            ->withPivot('seat_number', 'special_requests')
-            ->withTimestamps();
     }
 }

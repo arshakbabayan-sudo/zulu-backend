@@ -66,11 +66,6 @@ class Company extends Model
         return $this->hasMany(Offer::class);
     }
 
-    public function bookings(): HasMany
-    {
-        return $this->hasMany(Booking::class);
-    }
-
     public function flights(): HasMany
     {
         return $this->hasMany(Flight::class);
