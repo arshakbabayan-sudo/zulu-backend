@@ -6,6 +6,7 @@ use App\Events\PaymentReceived;
 use App\Exceptions\PaymentRefundFailedException;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,7 @@ class PaymentService
 {
     public function __construct(
         private PaymentGatewayService $paymentGatewayService,
+        private ?NotificationService $notificationService = null,
     ) {}
 
     /**
@@ -109,7 +111,34 @@ class PaymentService
         $payment->status = Payment::STATUS_FAILED;
         $payment->save();
 
-        return $payment->fresh();
+        $fresh = $payment->fresh(['invoice.order']);
+        $userId = $fresh?->invoice?->order?->user_id;
+
+        if ($userId !== null) {
+            $service = $this->notificationService ?? app(NotificationService::class);
+            try {
+                $orderNumber = (string) ($fresh->invoice->order->order_number ?? '');
+                $service->createForEventWithEmail([
+                    'user_id' => (int) $userId,
+                    'event_type' => 'payment.failed',
+                    'title' => 'Payment Failed',
+                    'message' => 'Your payment for order '.$orderNumber.' could not be processed. Please try again or contact support.',
+                    'subject_type' => 'payment',
+                    'subject_id' => null,
+                    'priority' => 'critical',
+                    'variables' => [
+                        'order_number' => $orderNumber,
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('payment.failed notification failed', [
+                    'payment_id' => $payment->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $fresh;
     }
 
     /**

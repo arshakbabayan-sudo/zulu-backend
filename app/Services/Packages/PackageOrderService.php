@@ -273,6 +273,28 @@ class PackageOrderService
             $order->status = 'cancelled';
             $order->save();
 
+            if ($order->user_id !== null) {
+                try {
+                    $this->notificationService->createForEventWithEmail([
+                        'user_id' => (int) $order->user_id,
+                        'event_type' => 'order.cancelled',
+                        'title' => 'Order Cancelled',
+                        'message' => 'Your order '.$order->order_number.' has been cancelled.',
+                        'subject_type' => 'order',
+                        'subject_id' => null,
+                        'priority' => 'high',
+                        'variables' => [
+                            'order_number' => (string) ($order->order_number ?? ''),
+                        ],
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning('order.cancelled notification failed', [
+                        'order_id' => $order->id,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             return $order->fresh(['items', 'user']);
         });
     }
@@ -393,8 +415,32 @@ class PackageOrderService
         }
 
         if ($newStatus !== $order->status) {
+            $previousStatus = $order->status;
             $order->status = $newStatus;
             $order->save();
+
+            if ($newStatus === 'confirmed' && $order->user_id !== null) {
+                try {
+                    $this->notificationService->createForEventWithEmail([
+                        'user_id' => (int) $order->user_id,
+                        'event_type' => 'order.confirmed',
+                        'title' => 'Order Confirmed',
+                        'message' => 'Your order '.$order->order_number.' has been fully confirmed.',
+                        'subject_type' => 'order',
+                        'subject_id' => null,
+                        'priority' => 'high',
+                        'variables' => [
+                            'order_number' => (string) ($order->order_number ?? ''),
+                        ],
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning('order.confirmed notification failed', [
+                        'order_id' => $order->id,
+                        'previous_status' => $previousStatus,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
+            }
         }
     }
 
