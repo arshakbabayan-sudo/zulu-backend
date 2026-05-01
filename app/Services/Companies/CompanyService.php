@@ -144,7 +144,10 @@ class CompanyService
             ->where('status', 'active')
             ->count();
 
-        $bookingsCount = (int) DB::table('bookings')->where('company_id', $companyId)->count();
+        $bookingsCount = (int) DB::table('orders')
+            ->where('company_id', $companyId)
+            ->where('metadata->legacy_origin', 'booking')
+            ->count();
 
         $packageOrdersCount = (int) DB::table('orders')
             ->where('company_id', $companyId)
@@ -177,12 +180,13 @@ class CompanyService
                 'created_at',
             ]);
 
-        $recentBookingRows = DB::table('bookings')
+        $recentBookingRows = DB::table('orders')
             ->where('company_id', $companyId)
+            ->where('metadata->legacy_origin', 'booking')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(5)
-            ->get(['id', 'status', 'total_price', 'created_at']);
+            ->get(['id', 'status', DB::raw('total as total_price'), 'created_at']);
 
         $sellerPermissionTypes = DB::table('company_seller_permissions')
             ->where('company_id', $companyId)
