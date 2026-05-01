@@ -172,7 +172,7 @@ class VisaService
             'description' => ['sometimes', 'nullable', 'string'],
             'required_documents' => self::updateRequiredDocumentsRules(),
             'price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
-            'country_id' => ['sometimes', 'nullable', 'integer', Rule::exists('countries', 'id')],
+            'country_id' => ['sometimes', 'nullable', 'integer'],
             'location_id' => ['sometimes', 'nullable', 'integer', Rule::exists('locations', 'id')],
         ]);
 

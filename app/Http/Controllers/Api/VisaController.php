@@ -73,7 +73,7 @@ class VisaController extends Controller
             'description' => ['nullable', 'string'],
             'required_documents' => VisaService::storeRequiredDocumentsRules(),
             'price' => ['nullable', 'numeric', 'min:0'],
-            'country_id' => ['nullable', 'integer', Rule::exists('countries', 'id')],
+            'country_id' => ['nullable', 'integer'],
             'location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
         ]);
 

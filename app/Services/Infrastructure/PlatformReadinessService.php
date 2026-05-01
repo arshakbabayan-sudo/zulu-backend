@@ -29,7 +29,7 @@ class PlatformReadinessService
             'flights' => $this->safeTableModule('flights', $status),
             'hotels' => $this->safeTableModule('hotels', $status),
             'packages' => $this->safeTableModule('packages', $status),
-            'package_orders' => $this->safeTableModule('package_orders', $status),
+            'orders' => $this->safeTableModule('orders', $status),
             'supported_languages' => $this->safeSupportedLanguagesModule($status),
         ];
 

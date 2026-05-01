@@ -5,7 +5,6 @@ namespace App\Services\Finance;
 use App\Models\Bonus;
 use App\Models\Company;
 use App\Models\Invoice;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class BonusService
@@ -78,51 +77,6 @@ class BonusService
                 ->where('status', Bonus::STATUS_REDEEMED)
                 ->sum('amount') ?? 0),
         ];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public function getCompanySalesRows(int $companyId, int $limit = 100): array
-    {
-        $rows = DB::table('bonuses')
-            ->leftJoin('bookings', 'bookings.id', '=', 'bonuses.booking_id')
-            ->leftJoin('booking_items', 'booking_items.booking_id', '=', 'bookings.id')
-            ->leftJoin('offers', 'offers.id', '=', 'booking_items.offer_id')
-            ->select([
-                'bonuses.id',
-                'bonuses.status',
-                'bonuses.amount as bonus_amount',
-                'bonuses.created_at',
-                'bonuses.booking_id',
-                'offers.type as service_type',
-                'bookings.total_price as sale_amount',
-            ])
-            ->where('bonuses.company_id', $companyId)
-            ->groupBy(
-                'bonuses.id',
-                'bonuses.status',
-                'bonuses.amount',
-                'bonuses.created_at',
-                'bonuses.booking_id',
-                'offers.type',
-                'bookings.total_price'
-            )
-            ->orderByDesc('bonuses.id')
-            ->limit(max(1, min($limit, 500)))
-            ->get();
-
-        return $rows->map(function (object $row): array {
-            return [
-                'id' => (int) $row->id,
-                'date' => $row->created_at,
-                'booking_id' => $row->booking_id !== null ? (int) $row->booking_id : null,
-                'service_type' => (string) ($row->service_type ?? 'unknown'),
-                'sale_amount' => (float) ($row->sale_amount ?? 0),
-                'bonus_earned' => (float) ($row->bonus_amount ?? 0),
-                'status' => (string) $row->status,
-            ];
-        })->all();
     }
 
     private function resolveCompanyBonusPercent(?Company $company): float
