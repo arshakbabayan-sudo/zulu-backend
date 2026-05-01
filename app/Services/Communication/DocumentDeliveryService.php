@@ -7,7 +7,6 @@ use App\Models\Invoice;
 use App\Services\Invoices\AirTicketInvoiceService;
 use App\Services\Invoices\HotelInvoiceService;
 use App\Services\Pdf\InvoicePdfService;
-use App\Services\Pdf\VoucherPdfService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -18,13 +17,12 @@ class DocumentDeliveryService
     public function __construct(
         private AirTicketInvoiceService $airTicketInvoiceService,
         private HotelInvoiceService $hotelInvoiceService,
-        private InvoicePdfService $invoicePdfService,
-        private VoucherPdfService $voucherPdfService
+        private InvoicePdfService $invoicePdfService
     ) {}
 
     public function sendPaidDocuments(Invoice $invoice): bool
     {
-        $invoice->loadMissing(['booking.user', 'packageOrder.user']);
+        $invoice->loadMissing(['order.user']);
 
         $email = $this->resolveClientEmail($invoice);
         if ($email === null) {
@@ -61,9 +59,7 @@ class DocumentDeliveryService
     private function resolveClientEmail(Invoice $invoice): ?string
     {
         $email = data_get($invoice, 'user.email')
-            ?? data_get($invoice, 'booking.user.email')
-            ?? data_get($invoice, 'packageOrder.user.email')
-            ?? data_get($invoice, 'booking.customer_email');
+            ?? data_get($invoice, 'order.user.email');
 
         if (! is_string($email)) {
             return null;
@@ -136,34 +132,10 @@ class DocumentDeliveryService
 
     private function generateVoucherPdfPath(Invoice $invoice): ?string
     {
-        $booking = $invoice->booking;
-        if ($booking === null) {
-            Log::warning('Document delivery skipped: booking missing for voucher generation.', [
-                'invoice_id' => (int) $invoice->id,
-            ]);
+        Log::info('Voucher PDF generation skipped: workflow will be rebuilt in Sprint 3 (PART 09 voucher system).', [
+            'invoice_id' => (int) $invoice->id,
+        ]);
 
-            return null;
-        }
-
-        try {
-            $response = $this->voucherPdfService->generate($booking);
-            $content = $response->getContent();
-            if (! is_string($content) || $content === '') {
-                return null;
-            }
-
-            $path = 'documents/vouchers/voucher-'.$invoice->id.'-'.time().'.pdf';
-            Storage::disk('public')->put($path, $content);
-
-            return $path;
-        } catch (Throwable $e) {
-            Log::warning('PDF generation engine not yet configured, skipping attachment.', [
-                'invoice_id' => (int) $invoice->id,
-                'document_type' => 'voucher',
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
+        return null;
     }
 }
