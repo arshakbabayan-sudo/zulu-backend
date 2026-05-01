@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\CommissionController;
 use App\Http\Controllers\Api\CompanyApplicationController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\ConnectionController;
+use App\Http\Controllers\Api\CustomerVoucherController;
 use App\Http\Controllers\Api\DiscoveryController;
 use App\Http\Controllers\Api\EmailVerificationController;
 use App\Http\Controllers\Api\ExcursionController;
@@ -135,6 +136,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('localization/ui-translations', [LocalizationController::class, 'setUiTranslations']);
 
     Route::get('account/me', [AccountController::class, 'me']);
+
+    // Customer vouchers (PART 09)
+    Route::get('customer/vouchers', [CustomerVoucherController::class, 'index']);
+    Route::get('customer/vouchers/{voucher}/download', [CustomerVoucherController::class, 'download'])
+        ->where('voucher', '[0-9a-f-]{36}');
+    Route::post('customer/vouchers/{voucher}/resend', [CustomerVoucherController::class, 'resend'])
+        ->where('voucher', '[0-9a-f-]{36}')
+        ->middleware('throttle:6,1');
     Route::post('rollout/admin-next/screen-view', [AdminRolloutTelemetryController::class, 'screenView']);
     Route::patch('account/profile', [AccountController::class, 'updateProfile']);
     Route::get('account/trips', [AccountController::class, 'tripHistory']);
