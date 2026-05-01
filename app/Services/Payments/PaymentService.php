@@ -6,6 +6,7 @@ use App\Events\PaymentReceived;
 use App\Exceptions\PaymentRefundFailedException;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\Audit\AuditService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -17,7 +18,13 @@ class PaymentService
     public function __construct(
         private PaymentGatewayService $paymentGatewayService,
         private ?NotificationService $notificationService = null,
+        private ?AuditService $auditService = null,
     ) {}
+
+    private function audit(): AuditService
+    {
+        return $this->auditService ?? app(AuditService::class);
+    }
 
     /**
      * @param  list<int>  $companyIds
@@ -94,6 +101,18 @@ class PaymentService
 
         $fresh = $payment->fresh(['invoice']);
 
+        $this->audit()->log([
+            'category' => 'financial',
+            'subject_type' => 'Payment',
+            'subject_id' => (string) $payment->id,
+            'action' => 'paid',
+            'context' => [
+                'invoice_id' => $fresh?->invoice_id,
+                'amount' => $fresh?->amount,
+                'currency' => $fresh?->currency,
+            ],
+        ]);
+
         try {
             $invoice = $fresh?->invoice;
             if ($invoice !== null) {
@@ -113,6 +132,18 @@ class PaymentService
 
         $fresh = $payment->fresh(['invoice.order']);
         $userId = $fresh?->invoice?->order?->user_id;
+
+        $this->audit()->log([
+            'category' => 'financial',
+            'subject_type' => 'Payment',
+            'subject_id' => (string) $payment->id,
+            'action' => 'failed',
+            'context' => [
+                'invoice_id' => $fresh?->invoice_id,
+                'amount' => $fresh?->amount,
+                'currency' => $fresh?->currency,
+            ],
+        ]);
 
         if ($userId !== null) {
             $service = $this->notificationService ?? app(NotificationService::class);

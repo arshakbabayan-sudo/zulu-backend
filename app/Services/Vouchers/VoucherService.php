@@ -6,6 +6,7 @@ use App\Mail\VoucherIssuedMail;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Voucher;
+use App\Services\Audit\AuditService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,8 +17,14 @@ class VoucherService
 {
     public function __construct(
         private ?VoucherPdfService $pdfService = null,
-        private ?NotificationService $notificationService = null
+        private ?NotificationService $notificationService = null,
+        private ?AuditService $auditService = null,
     ) {}
+
+    private function audit(): AuditService
+    {
+        return $this->auditService ?? app(AuditService::class);
+    }
 
     /**
      * Issue vouchers for every top-level (non-child) OrderItem in the given Order.
@@ -80,6 +87,18 @@ class VoucherService
 
                 $issued->push($voucher);
                 $seq++;
+
+                $this->audit()->log([
+                    'category' => 'data_change',
+                    'subject_type' => 'Voucher',
+                    'subject_id' => (string) $voucher->id,
+                    'action' => 'issued',
+                    'context' => [
+                        'voucher_number' => $voucher->voucher_number,
+                        'order_id' => $voucher->order_id,
+                        'service_type' => $voucher->service_type,
+                    ],
+                ]);
             }
 
             return $issued;
@@ -190,7 +209,21 @@ class VoucherService
             $base['status'] = 'issued';
             $base['reissued_from_id'] = $original->id;
 
-            return Voucher::query()->create(array_merge($base, $overrides));
+            $reissued = Voucher::query()->create(array_merge($base, $overrides));
+
+            $this->audit()->log([
+                'category' => 'data_change',
+                'subject_type' => 'Voucher',
+                'subject_id' => (string) $reissued->id,
+                'action' => 'reissued',
+                'context' => [
+                    'voucher_number' => $reissued->voucher_number,
+                    'reissued_from_id' => $original->id,
+                    'reissued_from_number' => $original->voucher_number,
+                ],
+            ]);
+
+            return $reissued;
         });
     }
 
@@ -199,8 +232,18 @@ class VoucherService
      */
     public function void(Voucher $voucher): Voucher
     {
+        $previousStatus = $voucher->status;
         $voucher->status = 'void';
         $voucher->save();
+
+        $this->audit()->log([
+            'category' => 'data_change',
+            'subject_type' => 'Voucher',
+            'subject_id' => (string) $voucher->id,
+            'action' => 'voided',
+            'changes' => ['status' => ['from' => $previousStatus, 'to' => 'void']],
+            'context' => ['voucher_number' => $voucher->voucher_number],
+        ]);
 
         return $voucher;
     }

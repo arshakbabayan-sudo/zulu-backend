@@ -7,12 +7,22 @@ use App\Models\Contract;
 use App\Models\ContractTemplate;
 use App\Models\ContractVersion;
 use App\Models\User;
+use App\Services\Audit\AuditService;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
 
 class ContractService
 {
+    public function __construct(
+        private ?AuditService $auditService = null,
+    ) {}
+
+    private function audit(): AuditService
+    {
+        return $this->auditService ?? app(AuditService::class);
+    }
+
     /**
      * Generate a new Contract from a template, substituting variables and
      * snapshotting v1 of the document.
@@ -99,10 +109,21 @@ class ContractService
     {
         $this->assertTransition($contract->status, 'sent');
 
+        $previousStatus = $contract->status;
         $contract->status = 'sent';
         $contract->save();
 
         $this->snapshotVersion($contract, $sender);
+
+        $this->audit()->log([
+            'category' => 'contract',
+            'actor' => $sender,
+            'subject_type' => 'Contract',
+            'subject_id' => (string) $contract->id,
+            'action' => 'sent',
+            'changes' => ['status' => ['from' => $previousStatus, 'to' => 'sent']],
+            'context' => ['contract_number' => $contract->contract_number],
+        ]);
 
         return $contract->fresh();
     }
@@ -134,12 +155,23 @@ class ContractService
             throw new RuntimeException("Contract is already {$contract->status}.");
         }
 
+        $previousStatus = $contract->status;
         $contract->status = 'terminated';
         $contract->termination_reason = $reason;
         $contract->terminated_at = now();
         $contract->save();
 
         $this->snapshotVersion($contract, $actor);
+
+        $this->audit()->log([
+            'category' => 'contract',
+            'actor' => $actor,
+            'subject_type' => 'Contract',
+            'subject_id' => (string) $contract->id,
+            'action' => 'terminated',
+            'changes' => ['status' => ['from' => $previousStatus, 'to' => 'terminated']],
+            'context' => ['contract_number' => $contract->contract_number, 'reason' => $reason],
+        ]);
 
         return $contract->fresh();
     }
@@ -195,9 +227,24 @@ class ContractService
             $contract->status = $party === 'a' ? 'signed_by_a' : 'signed_by_b';
         }
 
+        $previousStatus = $contract->getOriginal('status');
         $contract->save();
 
         $this->snapshotVersion($contract, $signer);
+
+        $this->audit()->log([
+            'category' => 'contract',
+            'actor' => $signer,
+            'subject_type' => 'Contract',
+            'subject_id' => (string) $contract->id,
+            'action' => 'signed',
+            'changes' => ['status' => ['from' => $previousStatus, 'to' => $contract->status]],
+            'context' => [
+                'contract_number' => $contract->contract_number,
+                'party' => $party,
+                'signature_count' => count($signatures),
+            ],
+        ]);
 
         return $contract->fresh();
     }
