@@ -5,6 +5,7 @@ namespace App\Services\Notifications;
 use App\Mail\GenericNotificationMail;
 use App\Models\Notification;
 use App\Models\User;
+use App\Models\UserNotificationPreference;
 use App\Services\Localization\LocalizationService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -147,18 +148,27 @@ class NotificationService
     }
 
     /**
-     * Hook point for Step 3 (user preferences). For now: always true unless
-     * the event is one that has its own dedicated Mailable handling email
-     * elsewhere — those event types skip the generic mail to avoid duplicates.
+     * Two gates:
+     *  (1) the event has no dedicated Mailable already covering email
+     *      (avoids double-emails for voucher.issued etc.);
+     *  (2) the user hasn't opted out of the email channel for this event
+     *      via UserNotificationPreference.
      */
     private function shouldDispatchEmail(Notification $notification): bool
     {
         $eventsWithDedicatedMail = [
             'voucher.issued', // VoucherIssuedMail
-            // future: account.password_reset, account.welcome, etc.
         ];
 
-        return ! in_array((string) $notification->event_type, $eventsWithDedicatedMail, true);
+        if (in_array((string) $notification->event_type, $eventsWithDedicatedMail, true)) {
+            return false;
+        }
+
+        return UserNotificationPreference::isEnabled(
+            (int) $notification->user_id,
+            (string) $notification->event_type,
+            'email'
+        );
     }
 
     public function markAllReadForUser(int $userId): int

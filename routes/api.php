@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LocalizationController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\OfferController;
 use App\Http\Controllers\Api\OperatorStatisticsController;
 use App\Http\Controllers\Api\PackageController;
@@ -137,6 +138,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('localization/ui-translations', [LocalizationController::class, 'setUiTranslations']);
 
     Route::get('account/me', [AccountController::class, 'me']);
+
+    // Customer notification preferences (PART 23)
+    Route::get('customer/notification-preferences', [NotificationPreferenceController::class, 'index']);
+    Route::patch('customer/notification-preferences', [NotificationPreferenceController::class, 'update']);
 
     // Customer vouchers (PART 09)
     Route::get('customer/vouchers', [CustomerVoucherController::class, 'index']);
