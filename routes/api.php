@@ -17,6 +17,7 @@
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\Admin\PageController;
+use App\Http\Controllers\Api\AdminContractTemplateController;
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
@@ -330,6 +331,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('banners', [PlatformAdminBannerController::class, 'store']);
         Route::patch('banners/{banner}', [PlatformAdminBannerController::class, 'update'])->whereNumber('banner');
         Route::delete('banners/{banner}', [PlatformAdminBannerController::class, 'destroy'])->whereNumber('banner');
+
+        // Contract templates (PART 05)
+        Route::get('contract-templates', [AdminContractTemplateController::class, 'index']);
+        Route::get('contract-templates/{template}', [AdminContractTemplateController::class, 'show'])
+            ->where('template', '[0-9a-f-]{36}');
+        Route::post('contract-templates', [AdminContractTemplateController::class, 'store']);
+        Route::patch('contract-templates/{template}', [AdminContractTemplateController::class, 'update'])
+            ->where('template', '[0-9a-f-]{36}');
 
         // Vouchers (PART 09)
         Route::get('vouchers', [AdminVoucherController::class, 'index']);
