@@ -146,18 +146,24 @@ class CompanyService
 
         $bookingsCount = (int) DB::table('bookings')->where('company_id', $companyId)->count();
 
-        $packageOrdersCount = (int) DB::table('package_orders')->where('company_id', $companyId)->count();
-        $paidPackageOrdersCount = (int) DB::table('package_orders')
+        $packageOrdersCount = (int) DB::table('orders')
             ->where('company_id', $companyId)
-            ->where('payment_status', 'paid')
+            ->where('metadata->legacy_origin', 'package_order')
             ->count();
-        $pendingPackageOrdersCount = (int) DB::table('package_orders')
+        $paidPackageOrdersCount = (int) DB::table('orders')
             ->where('company_id', $companyId)
+            ->where('metadata->legacy_origin', 'package_order')
+            ->where('status', 'paid')
+            ->count();
+        $pendingPackageOrdersCount = (int) DB::table('orders')
+            ->where('company_id', $companyId)
+            ->where('metadata->legacy_origin', 'package_order')
             ->where('status', 'pending_payment')
             ->count();
 
-        $recentPackageOrderRows = DB::table('package_orders')
+        $recentPackageOrderRows = DB::table('orders')
             ->where('company_id', $companyId)
+            ->where('metadata->legacy_origin', 'package_order')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(5)
@@ -165,8 +171,8 @@ class CompanyService
                 'id',
                 'order_number',
                 'status',
-                'payment_status',
-                'final_total_snapshot',
+                DB::raw('status as payment_status'),
+                DB::raw('total as final_total_snapshot'),
                 'currency',
                 'created_at',
             ]);
@@ -198,7 +204,7 @@ class CompanyService
             'pending_package_orders_count' => $pendingPackageOrdersCount,
             'recent_package_orders' => $recentPackageOrderRows->map(function ($row): array {
                 return [
-                    'id' => (int) $row->id,
+                    'id' => (string) $row->id,
                     'order_number' => $row->order_number,
                     'status' => $row->status,
                     'payment_status' => $row->payment_status,

@@ -16,9 +16,9 @@ class BonusService
             return null;
         }
 
-        $invoice->loadMissing(['booking.items.offer', 'booking.company']);
+        $invoice->loadMissing(['order.company']);
 
-        $companyId = (int) ($invoice->booking?->company_id ?? 0);
+        $companyId = (int) ($invoice->order?->company_id ?? 0);
         if ($companyId <= 0) {
             return null;
         }
@@ -28,7 +28,7 @@ class BonusService
             return $existing;
         }
 
-        $percent = $this->resolveCompanyBonusPercent($invoice->booking?->company);
+        $percent = $this->resolveCompanyBonusPercent($invoice->order?->company);
         if ($percent <= 0) {
             return null;
         }
@@ -39,7 +39,7 @@ class BonusService
             return null;
         }
 
-        $bookingId = (int) ($invoice->booking_id ?? 0);
+        $bookingId = (int) ($invoice->order?->metadata['legacy_booking_id'] ?? 0);
         $reference = (string) ($invoice->unique_booking_reference ?? ('#'.$bookingId));
 
         return Bonus::query()->create([
@@ -48,7 +48,7 @@ class BonusService
             'invoice_id' => (int) $invoice->id,
             'amount' => $bonusAmount,
             'status' => Bonus::STATUS_PENDING,
-            'description' => 'Bonus for Booking '.$reference,
+            'description' => 'Bonus for Order '.$reference,
         ]);
     }
 

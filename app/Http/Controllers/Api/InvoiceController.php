@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\InvoiceResource;
-use App\Models\Booking;
 use App\Models\Invoice;
+use App\Models\Order;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Invoices\InvoiceService;
 use App\Services\Pdf\InvoicePdfService;
@@ -95,17 +95,17 @@ class InvoiceController extends Controller
     public function store(Request $request, InvoiceService $invoiceService): JsonResponse
     {
         $validated = $request->validate([
-            'booking_id' => ['required', 'integer', 'exists:bookings,id'],
+            'order_id' => ['required', 'uuid', 'exists:orders,id'],
         ]);
 
-        $booking = Booking::query()->findOrFail((int) $validated['booking_id']);
-        $companyId = (int) $booking->company_id;
+        $order = Order::query()->findOrFail((string) $validated['order_id']);
+        $companyId = (int) $order->company_id;
 
         if ($response = $this->ensureCommerceAccess($request, $companyId, 'invoices.create')) {
             return $response;
         }
 
-        $invoice = $invoiceService->createForBooking($booking, []);
+        $invoice = $invoiceService->createForOrder($order, []);
 
         return response()->json([
             'success' => true,
@@ -186,18 +186,14 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Booking-backed invoices use booking.company_id; package invoices use package_order.company_id.
+     * Booking-backed invoices use booking.company_id; order-backed invoices use order.company_id.
      */
     private function resolveInvoiceCommerceCompanyId(Invoice $invoice): ?int
     {
-        $invoice->loadMissing(['booking', 'packageOrder']);
-        $fromBooking = $invoice->booking?->company_id;
-        if ($fromBooking !== null) {
-            return (int) $fromBooking;
-        }
+        $invoice->loadMissing('order');
 
-        $fromPackageOrder = $invoice->packageOrder?->company_id;
+        $fromOrder = $invoice->order?->company_id;
 
-        return $fromPackageOrder !== null ? (int) $fromPackageOrder : null;
+        return $fromOrder !== null ? (int) $fromOrder : null;
     }
 }

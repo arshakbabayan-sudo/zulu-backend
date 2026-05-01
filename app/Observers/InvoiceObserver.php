@@ -68,7 +68,7 @@ class InvoiceObserver
      */
     private function resolveRecipients(Invoice $invoice): Collection
     {
-        $companyId = (int) ($invoice->booking?->company_id ?? $invoice->packageOrder?->company_id ?? 0);
+        $companyId = (int) ($invoice->order?->company_id ?? 0);
         $operators = $companyId > 0
             ? User::query()
                 ->whereHas('memberships', function ($query) use ($companyId): void {
@@ -77,7 +77,7 @@ class InvoiceObserver
                 ->get()
             : collect();
 
-        $client = $invoice->booking?->user ?? $invoice->packageOrder?->user;
+        $client = $invoice->order?->user;
         if ($client !== null) {
             $operators->push($client);
         }
@@ -98,7 +98,7 @@ class InvoiceObserver
         string $message,
         Invoice $invoice
     ): void {
-        $companyId = (int) ($invoice->booking?->company_id ?? $invoice->packageOrder?->company_id ?? 0);
+        $companyId = (int) ($invoice->order?->company_id ?? 0);
 
         foreach ($users as $user) {
             AppNotification::query()->create([

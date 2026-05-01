@@ -43,8 +43,8 @@ class PaymentController extends Controller
 
     public function show(Request $request, Payment $payment): JsonResponse
     {
-        $payment->loadMissing('invoice.booking');
-        $companyId = $payment->invoice?->booking?->company_id;
+        $payment->loadMissing('invoice.order');
+        $companyId = $payment->invoice?->order?->company_id;
         if ($companyId === null) {
             return response()->json([
                 'success' => false,
@@ -68,8 +68,8 @@ class PaymentController extends Controller
             'invoice_id' => ['required', 'integer', 'exists:invoices,id'],
         ]);
 
-        $invoice = Invoice::query()->with('booking')->findOrFail((int) $validated['invoice_id']);
-        $companyId = $invoice->booking?->company_id;
+        $invoice = Invoice::query()->with('order')->findOrFail((int) $validated['invoice_id']);
+        $companyId = $invoice->order?->company_id;
         if ($companyId === null) {
             return response()->json([
                 'success' => false,
@@ -101,8 +101,8 @@ class PaymentController extends Controller
 
     public function pay(Request $request, PaymentService $paymentService, Payment $payment): JsonResponse
     {
-        $payment->loadMissing('invoice.booking');
-        $companyId = $payment->invoice?->booking?->company_id;
+        $payment->loadMissing('invoice.order');
+        $companyId = $payment->invoice?->order?->company_id;
         if ($companyId === null) {
             return response()->json([
                 'success' => false,
@@ -134,8 +134,8 @@ class PaymentController extends Controller
 
     public function capture(Request $request, PaymentService $paymentService, Payment $payment): JsonResponse
     {
-        $payment->loadMissing('invoice.booking');
-        $companyId = $payment->invoice?->booking?->company_id;
+        $payment->loadMissing('invoice.order');
+        $companyId = $payment->invoice?->order?->company_id;
         if ($companyId === null) {
             return response()->json([
                 'success' => false,
@@ -167,8 +167,8 @@ class PaymentController extends Controller
 
     public function fail(Request $request, PaymentService $paymentService, Payment $payment): JsonResponse
     {
-        $payment->loadMissing('invoice.booking');
-        $companyId = $payment->invoice?->booking?->company_id;
+        $payment->loadMissing('invoice.order');
+        $companyId = $payment->invoice?->order?->company_id;
         if ($companyId === null) {
             return response()->json([
                 'success' => false,
@@ -188,8 +188,8 @@ class PaymentController extends Controller
 
     public function refund(Request $request, PaymentService $paymentService, Payment $payment): JsonResponse
     {
-        $payment->loadMissing('invoice.booking');
-        $companyId = $payment->invoice?->booking?->company_id;
+        $payment->loadMissing('invoice.order');
+        $companyId = $payment->invoice?->order?->company_id;
         if ($companyId === null) {
             return response()->json([
                 'success' => false,

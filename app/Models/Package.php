@@ -94,11 +94,6 @@ class Package extends Model
         return $this->hasMany(PackageComponent::class)->orderBy('sort_order');
     }
 
-    public function orders(): HasMany
-    {
-        return $this->hasMany(PackageOrder::class);
-    }
-
     public function getTranslatableEntityType(): string
     {
         return 'package';

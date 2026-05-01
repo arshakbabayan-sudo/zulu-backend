@@ -83,16 +83,6 @@ class Invoice extends Model
         ];
     }
 
-    public function booking(): BelongsTo
-    {
-        return $this->belongsTo(Booking::class);
-    }
-
-    public function packageOrder(): BelongsTo
-    {
-        return $this->belongsTo(PackageOrder::class);
-    }
-
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class, 'order_id', 'id');
@@ -101,19 +91,6 @@ class Invoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
-    }
-
-    public function scopeByLocation(Builder $query, mixed $cityId): Builder
-    {
-        if ($cityId === null || $cityId === '') {
-            return $query;
-        }
-
-        $city = (string) $cityId;
-
-        return $query->whereHas('booking.items.offer.hotel', function (Builder $hotelQuery) use ($city): void {
-            $hotelQuery->where('city', 'like', '%'.addcslashes($city, '%_\\').'%');
-        });
     }
 
     public function scopeByDateRange(Builder $query, mixed $from, mixed $to): Builder

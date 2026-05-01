@@ -16,8 +16,8 @@ class SendPaymentReceivedEmail implements ShouldQueue
     public function handle(PaymentReceived $event): void
     {
         try {
-            $invoice = $event->invoice->loadMissing('booking.user', 'packageOrder.user');
-            $user = $invoice->booking?->user ?? $invoice->packageOrder?->user;
+            $invoice = $event->invoice->loadMissing('order.user');
+            $user = $invoice->order?->user;
             if ($user === null) {
                 return;
             }

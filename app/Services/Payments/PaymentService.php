@@ -29,12 +29,9 @@ class PaymentService
 
         return Payment::query()
             ->where(function ($q) use ($companyIds): void {
-                $q->whereHas('invoice.booking', function ($query) use ($companyIds): void {
+                $q->whereHas('invoice.order', function ($query) use ($companyIds): void {
                     $query->whereIn('company_id', $companyIds);
-                })
-                    ->orWhereHas('invoice.packageOrder', function ($query) use ($companyIds): void {
-                        $query->whereIn('company_id', $companyIds);
-                    });
+                });
             })
             ->orderBy('id')
             ->get();
@@ -51,12 +48,9 @@ class PaymentService
 
         return Payment::query()
             ->where(function ($q) use ($companyIds): void {
-                $q->whereHas('invoice.booking', function ($query) use ($companyIds): void {
+                $q->whereHas('invoice.order', function ($query) use ($companyIds): void {
                     $query->whereIn('company_id', $companyIds);
-                })
-                    ->orWhereHas('invoice.packageOrder', function ($query) use ($companyIds): void {
-                        $query->whereIn('company_id', $companyIds);
-                    });
+                });
             })
             ->orderBy('id')
             ->paginate($perPage);

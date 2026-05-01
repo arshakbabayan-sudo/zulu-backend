@@ -26,11 +26,11 @@ class SupplierEntitlementResource extends JsonResource
             'settlement_id' => $this->settlement_id,
             'notes' => $this->notes,
             'created_at' => $this->created_at,
-            'package_order' => $this->whenLoaded('packageOrder', function () {
+            'order' => $this->whenLoaded('order', function () {
                 return [
-                    'id' => $this->packageOrder->id,
-                    'order_number' => $this->packageOrder->order_number,
-                    'status' => $this->packageOrder->status,
+                    'id' => $this->order->id,
+                    'order_number' => $this->order->order_number,
+                    'status' => $this->order->status,
                 ];
             }),
         ];

@@ -40,24 +40,14 @@ class SupplierEntitlement extends Model
         ];
     }
 
-    public function packageOrder(): BelongsTo
+    public function order(): BelongsTo
     {
-        return $this->belongsTo(PackageOrder::class);
+        return $this->belongsTo(Order::class, 'order_id');
     }
 
-    public function packageOrderItem(): BelongsTo
+    public function orderItem(): BelongsTo
     {
-        return $this->belongsTo(PackageOrderItem::class);
-    }
-
-    public function booking(): BelongsTo
-    {
-        return $this->belongsTo(Booking::class);
-    }
-
-    public function bookingItem(): BelongsTo
-    {
-        return $this->belongsTo(BookingItem::class);
+        return $this->belongsTo(OrderItem::class, 'order_item_id');
     }
 
     public function company(): BelongsTo

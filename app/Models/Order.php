@@ -20,6 +20,9 @@ class Order extends Model
 
     public const BUYER_TYPES = ['client', 'seller_b2b', 'guest'];
 
+    /** @var list<string> */
+    public const BOOKING_CHANNELS = ['public_b2c', 'b2b_company', 'internal_admin'];
+
     public const STATUSES = [
         'cart',
         'pending_payment',

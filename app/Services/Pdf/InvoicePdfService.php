@@ -10,7 +10,7 @@ class InvoicePdfService
 {
     public function generate(Invoice $invoice): Response
     {
-        $invoice->loadMissing(['booking.items.offer', 'booking.company', 'booking.user']);
+        $invoice->loadMissing(['order.items', 'order.company', 'order.user']);
 
         $dueDate = $invoice->created_at?->copy()->addDays(30);
 

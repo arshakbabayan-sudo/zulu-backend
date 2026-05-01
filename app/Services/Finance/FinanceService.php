@@ -266,7 +266,7 @@ class FinanceService
 
         $query = SupplierEntitlement::query()
             ->where('company_id', $company->id)
-            ->with(['packageOrder', 'packageOrderItem'])
+            ->with(['order', 'orderItem'])
             ->orderByDesc('id');
 
         if (isset($filters['status']) && $filters['status'] !== '') {

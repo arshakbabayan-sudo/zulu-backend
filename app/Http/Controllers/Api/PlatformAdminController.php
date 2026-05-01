@@ -6,7 +6,7 @@ use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\ApprovalResource;
 use App\Http\Resources\Api\CompanyResource;
-use App\Http\Resources\Api\PackageOrderResource;
+use App\Http\Resources\Api\OrderResource;
 use App\Http\Resources\Api\PackageResource;
 use App\Models\Approval;
 use App\Models\Company;
@@ -232,7 +232,7 @@ class PlatformAdminController extends Controller
         $perPage = $this->commerceListPerPage($request);
         $paginator = $service->listAllPackageOrders($filters, $perPage);
 
-        return $this->paginatedCommerceResourceResponse($request, $paginator, PackageOrderResource::class);
+        return $this->paginatedCommerceResourceResponse($request, $paginator, OrderResource::class);
     }
 
     public function payments(Request $request, PlatformAdminService $service): JsonResponse

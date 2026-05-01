@@ -2,12 +2,11 @@
 
 namespace App\Models;
 
-use App\Traits\HasTranslations;
 use App\Services\Pricing\PriceCalculatorService;
+use App\Traits\HasTranslations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Offer extends Model
@@ -30,9 +29,13 @@ class Offer extends Model
     ];
 
     public const STATUS_DRAFT = 'draft';
+
     public const STATUS_ACTIVE = 'active';
+
     public const STATUS_INACTIVE = 'inactive';
+
     public const STATUS_PUBLISHED = 'published';
+
     public const STATUS_ARCHIVED = 'archived';
 
     protected $fillable = [
@@ -49,11 +52,6 @@ class Offer extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
-    }
-
-    public function bookingItems(): HasMany
-    {
-        return $this->hasMany(BookingItem::class);
     }
 
     public function flight(): HasOne

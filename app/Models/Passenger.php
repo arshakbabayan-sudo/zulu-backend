@@ -49,14 +49,4 @@ class Passenger extends Model
             ->withPivot('seat_number', 'special_requests')
             ->withTimestamps();
     }
-
-    /**
-     * @return BelongsToMany<BookingItem, $this>
-     */
-    public function bookingItems(): BelongsToMany
-    {
-        return $this->belongsToMany(BookingItem::class, 'booking_passengers')
-            ->withPivot('seat_number', 'special_requests')
-            ->withTimestamps();
-    }
 }

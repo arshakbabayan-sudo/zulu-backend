@@ -6,7 +6,6 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Package;
-use App\Models\PackageOrder;
 use App\Models\User;
 use App\Services\Commissions\CommissionService;
 use App\Services\Finance\FinanceService;
@@ -38,7 +37,7 @@ class PackageOrderService
         $bookingChannel = (string) ($input['booking_channel'] ?? 'public_b2c');
         $notes = isset($input['notes']) ? (string) $input['notes'] : null;
 
-        if (! in_array($bookingChannel, PackageOrder::BOOKING_CHANNELS, true)) {
+        if (! in_array($bookingChannel, Order::BOOKING_CHANNELS, true)) {
             throw ValidationException::withMessages([
                 'booking_channel' => ['Invalid booking channel.'],
             ]);
@@ -300,6 +299,16 @@ class PackageOrderService
             ->first();
     }
 
+    public function findForUserUuid(string $orderId, User $user): ?Order
+    {
+        return Order::query()
+            ->where('metadata->legacy_origin', 'package_order')
+            ->whereKey($orderId)
+            ->where('user_id', $user->id)
+            ->with(['items'])
+            ->first();
+    }
+
     /**
      * @param  list<int>  $companyIds
      */
@@ -308,6 +317,19 @@ class PackageOrderService
         return Order::query()
             ->where('metadata->legacy_origin', 'package_order')
             ->where('metadata->legacy_package_order_id', $orderId)
+            ->whereIn('company_id', $companyIds)
+            ->with(['user', 'items'])
+            ->first();
+    }
+
+    /**
+     * @param  list<int>  $companyIds
+     */
+    public function findForCompanyScopeUuid(string $orderId, array $companyIds): ?Order
+    {
+        return Order::query()
+            ->where('metadata->legacy_origin', 'package_order')
+            ->whereKey($orderId)
             ->whereIn('company_id', $companyIds)
             ->with(['user', 'items'])
             ->first();

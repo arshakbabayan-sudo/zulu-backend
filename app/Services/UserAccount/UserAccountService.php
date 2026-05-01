@@ -2,9 +2,8 @@
 
 namespace App\Services\UserAccount;
 
-use App\Models\Booking;
 use App\Models\Offer;
-use App\Models\PackageOrder;
+use App\Models\Order;
 use App\Models\SavedItem;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -53,47 +52,43 @@ class UserAccountService
     {
         $perPage = max(1, $perPage);
 
-        $packageOrders = PackageOrder::query()
+        $orders = Order::query()
             ->where('user_id', $user->id)
-            ->with(['package'])
-            ->orderByDesc('id')
-            ->get();
-
-        $bookings = Booking::query()
-            ->where('user_id', $user->id)
-            ->with(['items.offer'])
-            ->orderByDesc('id')
+            ->whereIn('metadata->legacy_origin', ['booking', 'package_order'])
+            ->orderByDesc('created_at')
             ->get();
 
         $rows = collect();
 
-        foreach ($packageOrders as $order) {
-            $package = $order->package;
+        foreach ($orders as $order) {
+            $origin = (string) ($order->metadata['legacy_origin'] ?? '');
+            if ($origin === 'package_order') {
+                $rows->push([
+                    'type' => 'package',
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'status' => $order->status,
+                    'payment_status' => $order->status,
+                    'final_total_snapshot' => (float) $order->total,
+                    'currency' => $order->currency,
+                    'destination' => null,
+                    'duration_days' => null,
+                    'created_at' => $order->created_at?->toIso8601String(),
+                ]);
+
+                continue;
+            }
+
             $rows->push([
-                'type' => 'package',
+                'type' => 'booking',
                 'id' => $order->id,
-                'order_number' => $order->order_number,
                 'status' => $order->status,
-                'payment_status' => $order->payment_status,
-                'final_total_snapshot' => (float) $order->final_total_snapshot,
-                'currency' => $order->currency,
-                'destination' => $package?->destination_city ?? $package?->destination_country,
-                'duration_days' => $package?->duration_days,
+                'total_price' => (float) $order->total,
                 'created_at' => $order->created_at?->toIso8601String(),
             ]);
         }
 
-        foreach ($bookings as $booking) {
-            $rows->push([
-                'type' => 'booking',
-                'id' => $booking->id,
-                'status' => $booking->status,
-                'total_price' => (float) $booking->total_price,
-                'created_at' => $booking->created_at?->toIso8601String(),
-            ]);
-        }
-
-        $sorted = $rows->sortByDesc('id')->values();
+        $sorted = $rows->sortByDesc('created_at')->values();
         $total = $sorted->count();
         $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
         $currentPage = min(max(1, $page), $lastPage);

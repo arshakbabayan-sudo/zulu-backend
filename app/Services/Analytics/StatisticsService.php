@@ -53,7 +53,7 @@ class StatisticsService
     {
         $paidInvoices = Invoice::query()
             ->where('status', Invoice::STATUS_PAID)
-            ->whereHas('booking', function (Builder $query) use ($companyId): void {
+            ->whereHas('order', function (Builder $query) use ($companyId): void {
                 $query->where('company_id', $companyId);
             });
 
@@ -104,7 +104,7 @@ class StatisticsService
 
         $rawRows = Invoice::query()
             ->where('status', Invoice::STATUS_PAID)
-            ->whereHas('booking', function (Builder $query) use ($companyId): void {
+            ->whereHas('order', function (Builder $query) use ($companyId): void {
                 $query->where('company_id', $companyId);
             })
             ->where('created_at', '>=', $from)

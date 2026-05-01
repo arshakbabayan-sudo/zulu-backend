@@ -31,12 +31,12 @@
 </head>
 <body>
     @php
-        $booking = $invoice->booking;
-        $company = $booking?->company;
-        $items = $booking?->items ?? collect();
-        $subtotal = $items->sum(fn ($i) => (float) $i->price);
+        $order = $invoice->order;
+        $company = $order?->company;
+        $items = $order?->items ?? collect();
+        $subtotal = $items->sum(fn ($i) => (float) $i->total);
         $currency = $invoice->currency ?? '';
-        $ref = $invoice->unique_booking_reference ?? ($booking ? (string) $booking->id : '—');
+        $ref = $invoice->unique_booking_reference ?? ($order ? (string) $order->id : '—');
         $status = $invoice->status;
         if ($status === \App\Models\Invoice::STATUS_PAID) {
             $badgeClass = 'badge-paid';
@@ -97,12 +97,12 @@
         </thead>
         <tbody>
             @forelse($items as $item)
-                @php $price = (float) $item->price; @endphp
+                @php $price = (float) ($item->unit_price ?? 0); @endphp
                 <tr>
-                    <td>Travel Service — Offer #{{ $item->offer_id }}</td>
-                    <td class="num">1</td>
+                    <td>Travel Service — {{ strtoupper((string) $item->item_type) }}</td>
+                    <td class="num">{{ (int) ($item->quantity ?? 1) }}</td>
                     <td class="num">{{ number_format($price, 2) }}@if($currency) {{ $currency }}@endif</td>
-                    <td class="num">{{ number_format($price, 2) }}@if($currency) {{ $currency }}@endif</td>
+                    <td class="num">{{ number_format((float) ($item->total ?? $price), 2) }}@if($currency) {{ $currency }}@endif</td>
                 </tr>
             @empty
                 <tr>
