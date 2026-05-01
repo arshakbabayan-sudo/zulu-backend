@@ -69,3 +69,49 @@ jobs:
           done
           echo "Smoke test failed: api.zulu.am did not return 200"
           exit 1
+
+      - name: Notify Telegram on success
+        if: success()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          AUTHOR: ${{ github.event.head_commit.author.name }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          FIRST_LINE="$(printf '%s' "$COMMIT_MSG" | head -n 1)"
+          MESSAGE=$(printf '✅ <b>ZULU backend deployed</b>\n<b>Repo:</b> %s\n<b>Commit:</b> <code>%s</code> — %s\n<b>Author:</b> %s\n<a href="%s">View run</a>' \
+            "$REPO" "$SHORT_SHA" "$FIRST_LINE" "$AUTHOR" "$RUN_URL")
+          PAYLOAD=$(jq -nc \
+            --arg chat "$TG_CHAT_ID" \
+            --arg text "$MESSAGE" \
+            '{chat_id: $chat, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')
+          curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            --data "$PAYLOAD" > /dev/null
+
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          AUTHOR: ${{ github.event.head_commit.author.name }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          FIRST_LINE="$(printf '%s' "$COMMIT_MSG" | head -n 1)"
+          MESSAGE=$(printf '🚨 <b>ZULU backend deploy FAILED</b>\n<b>Repo:</b> %s\n<b>Commit:</b> <code>%s</code> — %s\n<b>Author:</b> %s\n<a href="%s">View logs</a>' \
+            "$REPO" "$SHORT_SHA" "$FIRST_LINE" "$AUTHOR" "$RUN_URL")
+          PAYLOAD=$(jq -nc \
+            --arg chat "$TG_CHAT_ID" \
+            --arg text "$MESSAGE" \
+            '{chat_id: $chat, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')
+          curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            --data "$PAYLOAD" > /dev/null
