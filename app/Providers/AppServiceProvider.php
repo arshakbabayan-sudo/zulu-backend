@@ -19,8 +19,6 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // TODO Sprint 1 Step 7e: replace with OrderObserver.
-        // Booking::observe(BookingObserver::class);
         Invoice::observe(InvoiceObserver::class);
 
         // API general

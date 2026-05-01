@@ -2,14 +2,12 @@
 
 namespace App\Providers;
 
-use App\Events\BookingConfirmed;
 use App\Events\CompanyApplicationApproved;
 use App\Events\CompanyApplicationRejected;
 use App\Events\CompanyApplicationSubmitted;
 use App\Events\PaymentReceived;
 use App\Events\SellerApplicationApproved;
 use App\Events\SellerApplicationRejected;
-use App\Listeners\SendBookingConfirmedEmail;
 use App\Listeners\SendCompanyApplicationApprovedEmail;
 use App\Listeners\SendCompanyApplicationReceivedEmail;
 use App\Listeners\SendCompanyApplicationRejectedEmail;
@@ -38,9 +36,6 @@ class EventServiceProvider extends ServiceProvider
         ],
         SellerApplicationRejected::class => [
             SendSellerApplicationRejectedEmail::class,
-        ],
-        BookingConfirmed::class => [
-            SendBookingConfirmedEmail::class,
         ],
         PaymentReceived::class => [
             SendPaymentReceivedEmail::class,

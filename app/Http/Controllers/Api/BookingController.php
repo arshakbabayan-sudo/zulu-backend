@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\BookingConfirmed;
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\BookingResource;
@@ -100,15 +99,6 @@ class BookingController extends Controller
         }
 
         $confirmed = $bookingService->confirm($booking);
-
-        try {
-            $confirmed->loadMissing('user');
-            if ($confirmed->user) {
-                event(new BookingConfirmed($confirmed, $confirmed->user));
-            }
-        } catch (\Throwable $e) {
-            Log::warning('Failed to dispatch booking confirmed event', ['error' => $e->getMessage()]);
-        }
 
         return response()->json([
             'success' => true,
