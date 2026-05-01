@@ -17,6 +17,7 @@
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\Admin\PageController;
+use App\Http\Controllers\Api\AdminContractController;
 use App\Http\Controllers\Api\AdminContractTemplateController;
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
@@ -331,6 +332,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('banners', [PlatformAdminBannerController::class, 'store']);
         Route::patch('banners/{banner}', [PlatformAdminBannerController::class, 'update'])->whereNumber('banner');
         Route::delete('banners/{banner}', [PlatformAdminBannerController::class, 'destroy'])->whereNumber('banner');
+
+        // Contracts (PART 05)
+        Route::get('contracts', [AdminContractController::class, 'index']);
+        Route::get('contracts/{contract}', [AdminContractController::class, 'show'])
+            ->where('contract', '[0-9a-f-]{36}');
+        Route::post('contracts', [AdminContractController::class, 'store']);
+        Route::post('contracts/{contract}/send', [AdminContractController::class, 'send'])
+            ->where('contract', '[0-9a-f-]{36}');
+        Route::post('contracts/{contract}/countersign', [AdminContractController::class, 'countersign'])
+            ->where('contract', '[0-9a-f-]{36}');
+        Route::post('contracts/{contract}/terminate', [AdminContractController::class, 'terminate'])
+            ->where('contract', '[0-9a-f-]{36}');
 
         // Contract templates (PART 05)
         Route::get('contract-templates', [AdminContractTemplateController::class, 'index']);
