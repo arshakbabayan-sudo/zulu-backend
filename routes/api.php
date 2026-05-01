@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\Admin\PageController;
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
+use App\Http\Controllers\Api\AdminVoucherController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\CarController;
@@ -324,6 +325,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('banners', [PlatformAdminBannerController::class, 'store']);
         Route::patch('banners/{banner}', [PlatformAdminBannerController::class, 'update'])->whereNumber('banner');
         Route::delete('banners/{banner}', [PlatformAdminBannerController::class, 'destroy'])->whereNumber('banner');
+
+        // Vouchers (PART 09)
+        Route::get('vouchers', [AdminVoucherController::class, 'index']);
+        Route::get('vouchers/{voucher}', [AdminVoucherController::class, 'show'])
+            ->where('voucher', '[0-9a-f-]{36}');
+        Route::post('vouchers/{voucher}/void', [AdminVoucherController::class, 'void'])
+            ->where('voucher', '[0-9a-f-]{36}');
+        Route::post('vouchers/{voucher}/reissue', [AdminVoucherController::class, 'reissue'])
+            ->where('voucher', '[0-9a-f-]{36}');
     });
 
     Route::prefix('admin/pages')->group(function () {
