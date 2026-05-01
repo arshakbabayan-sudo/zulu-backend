@@ -37,8 +37,8 @@ class PlatformAdminService
                 'package_orders_pending_payment' => (int) DB::table('orders')->where('metadata->legacy_origin', 'package_order')->where('status', 'pending_payment')->count(),
                 'bookings_total' => (int) DB::table('orders')->where('metadata->legacy_origin', 'booking')->count(),
                 'users_total' => (int) DB::table('users')->count(),
-                'commission_records_total' => (int) DB::table('commission_records')->count(),
-                'commission_records_accrued' => (int) DB::table('commission_records')->where('status', 'accrued')->count(),
+                'commission_records_total' => (int) DB::table('commission_transactions')->count(),
+                'commission_records_accrued' => 0,
             ];
         });
     }
@@ -216,15 +216,14 @@ class PlatformAdminService
     {
         return Cache::remember('platform_finance_summary', 300, function () {
             $paidSum = DB::table('payments')->where('status', Payment::STATUS_PAID)->sum('amount');
-            $accruedSum = DB::table('commission_records')->where('status', 'accrued')->sum('commission_amount_snapshot');
-            $pendingSum = DB::table('commission_records')->where('status', 'pending')->sum('commission_amount_snapshot');
+            $commissionTotalSum = DB::table('commission_transactions')->sum('commission_amount');
 
             return [
                 'total_payments_paid' => (float) ($paidSum ?? 0),
-                'total_commission_accrued' => (float) ($accruedSum ?? 0),
-                'total_commission_pending' => (float) ($pendingSum ?? 0),
+                'total_commission_accrued' => (float) ($commissionTotalSum ?? 0),
+                'total_commission_pending' => 0.0,
                 'payments_count_paid' => (int) DB::table('payments')->where('status', Payment::STATUS_PAID)->count(),
-                'commission_records_count' => (int) DB::table('commission_records')->count(),
+                'commission_records_count' => (int) DB::table('commission_transactions')->count(),
             ];
         });
     }
