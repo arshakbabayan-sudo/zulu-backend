@@ -1,11 +1,18 @@
 <?php
 
+use App\Console\Commands\CheckUiTranslationConsistency;
+use App\Console\Commands\ExportUiTranslationsCsv;
+use App\Console\Commands\ImportUiTranslationsCsv;
+use App\Console\Commands\PruneExpiredTokens;
+use App\Console\Commands\PruneOrphanOffers;
+use App\Http\Middleware\ResolveLanguage;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -19,16 +26,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withCommands([
-        \App\Console\Commands\BackfillProductLocations::class,
-        \App\Console\Commands\CheckUiTranslationConsistency::class,
-        \App\Console\Commands\ExportUiTranslationsCsv::class,
-        \App\Console\Commands\ImportUiTranslationsCsv::class,
-        \App\Console\Commands\PruneExpiredTokens::class,
-        \App\Console\Commands\PruneOrphanOffers::class,
+        CheckUiTranslationConsistency::class,
+        ExportUiTranslationsCsv::class,
+        ImportUiTranslationsCsv::class,
+        PruneExpiredTokens::class,
+        PruneOrphanOffers::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'resolve.language' => \App\Http\Middleware\ResolveLanguage::class,
+            'resolve.language' => ResolveLanguage::class,
         ]);
         $middleware->redirectGuestsTo(function ($request) {
             if ($request->is('api/*') || $request->expectsJson()) {
@@ -38,10 +44,10 @@ return Application::configure(basePath: dirname(__DIR__))
             return '/login';
         });
         $middleware->web(append: [
-            \App\Http\Middleware\ResolveLanguage::class,
+            ResolveLanguage::class,
         ]);
         $middleware->api(append: [
-            \App\Http\Middleware\ResolveLanguage::class,
+            ResolveLanguage::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -91,12 +97,12 @@ return Application::configure(basePath: dirname(__DIR__))
             }
         });
 
-        $exceptions->render(function (\Throwable $e, $request) {
+        $exceptions->render(function (Throwable $e, $request) {
             if (! $request->expectsJson() && ! $request->is('api/*')) {
                 return null;
             }
 
-            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+            if ($e instanceof HttpExceptionInterface) {
                 return null;
             }
 

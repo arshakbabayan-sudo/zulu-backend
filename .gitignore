@@ -25,7 +25,7 @@ Thumbs.db
 
 # Scrap / draft route fragments — never load these; real API is routes/api.php
 /routes/*.tmp
-rr
+rr.exe
 .rr.yaml
 
 # Sprint 0 cutover artifacts — local-only rollback insurance
