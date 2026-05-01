@@ -2,11 +2,14 @@
 
 namespace App\Services\Notifications;
 
+use App\Mail\GenericNotificationMail;
 use App\Models\Notification;
 use App\Models\User;
 use App\Services\Localization\LocalizationService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -98,6 +101,64 @@ class NotificationService
             'related_company_id' => isset($validated['related_company_id']) ? (int) $validated['related_company_id'] : null,
             'priority' => $priority,
         ]);
+    }
+
+    /**
+     * Same as createForEvent + dispatches GenericNotificationMail to the user's
+     * email address. Used by callers (Order/Payment services) that want both
+     * in-app + email for the same event without writing a dedicated Mailable.
+     *
+     * Events that have a richer dedicated Mailable (e.g., voucher.issued →
+     * VoucherIssuedMail) should call createForEvent() and dispatch their own
+     * mail separately to avoid double-emailing.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function createForEventWithEmail(array $data): Notification
+    {
+        $notification = $this->createForEvent($data);
+
+        $this->dispatchEmailFor($notification);
+
+        return $notification;
+    }
+
+    public function dispatchEmailFor(Notification $notification): void
+    {
+        if (! $this->shouldDispatchEmail($notification)) {
+            return;
+        }
+
+        $user = User::query()->find($notification->user_id);
+        $email = $user?->email;
+        if (! is_string($email) || $email === '') {
+            return;
+        }
+
+        try {
+            Mail::to($email)->send(new GenericNotificationMail($notification));
+        } catch (\Throwable $e) {
+            Log::warning('Generic notification email failed', [
+                'notification_id' => $notification->id,
+                'event_type' => $notification->event_type,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Hook point for Step 3 (user preferences). For now: always true unless
+     * the event is one that has its own dedicated Mailable handling email
+     * elsewhere — those event types skip the generic mail to avoid duplicates.
+     */
+    private function shouldDispatchEmail(Notification $notification): bool
+    {
+        $eventsWithDedicatedMail = [
+            'voucher.issued', // VoucherIssuedMail
+            // future: account.password_reset, account.welcome, etc.
+        ];
+
+        return ! in_array((string) $notification->event_type, $eventsWithDedicatedMail, true);
     }
 
     public function markAllReadForUser(int $userId): int

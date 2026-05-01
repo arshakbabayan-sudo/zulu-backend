@@ -186,7 +186,7 @@ class PackageOrderService
 
             try {
                 if ($order->user_id !== null) {
-                    $this->notificationService->createForEvent([
+                    $this->notificationService->createForEventWithEmail([
                         'user_id' => (int) $order->user_id,
                         'event_type' => 'order.paid',
                         'title' => 'Payment Successful',
