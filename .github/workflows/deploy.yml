@@ -1,0 +1,71 @@
+name: Deploy backend to Hetzner
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hetzner-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy via SSH
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" 'bash -se' <<'REMOTE_EOF'
+            set -euo pipefail
+            cd /var/www/zulu-backend
+
+            echo "=== Pull latest from origin/main ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Composer install (production) ==="
+            COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
+
+            echo "=== Database migrations ==="
+            php artisan migrate --force
+
+            echo "=== Caches ==="
+            php artisan optimize:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "=== Reload services ==="
+            systemctl reload php8.3-fpm
+            systemctl reload nginx
+
+            echo "=== Deploy SHA ==="
+            git rev-parse --short HEAD
+          REMOTE_EOF
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' https://api.zulu.am/ || echo 000)
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then exit 0; fi
+            sleep 5
+          done
+          echo "Smoke test failed: api.zulu.am did not return 200"
+          exit 1
