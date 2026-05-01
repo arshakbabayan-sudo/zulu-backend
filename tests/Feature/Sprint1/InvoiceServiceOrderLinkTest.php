@@ -199,7 +199,8 @@ class InvoiceServiceOrderLinkTest extends TestCase
             app(CommissionService::class),
             app(NotificationService::class),
             app(FinanceService::class),
-            app(OrderService::class)
+            app(OrderService::class),
+            app(\App\Services\Vouchers\VoucherService::class)
         );
     }
 

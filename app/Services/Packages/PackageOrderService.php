@@ -13,6 +13,7 @@ use App\Services\Invoices\InvoiceService;
 use App\Services\Notifications\NotificationService;
 use App\Services\Orders\OrderService;
 use App\Services\Payments\PaymentService;
+use App\Services\Vouchers\VoucherService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,7 +27,8 @@ class PackageOrderService
         private CommissionService $commissionService,
         private NotificationService $notificationService,
         private FinanceService $financeService,
-        private OrderService $orderService
+        private OrderService $orderService,
+        private VoucherService $voucherService
     ) {}
 
     public function createOrder(Package $package, User $user, array $input): Order
@@ -205,6 +207,15 @@ class PackageOrderService
                 $this->financeService->createEntitlementsForOrder($order->fresh(['items']));
             } catch (\Throwable $e) {
                 Log::warning('Entitlement creation failed for order', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $this->voucherService->issueForOrder($order->fresh(['items', 'user']));
+            } catch (\Throwable $e) {
+                Log::warning('Voucher issuance failed for order', [
                     'order_id' => $order->id,
                     'message' => $e->getMessage(),
                 ]);
