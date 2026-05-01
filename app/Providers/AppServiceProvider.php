@@ -2,9 +2,7 @@
 
 namespace App\Providers;
 
-use App\Models\Booking;
 use App\Models\Invoice;
-use App\Observers\BookingObserver;
 use App\Observers\InvoiceObserver;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -21,7 +19,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        Booking::observe(BookingObserver::class);
+        // TODO Sprint 1 Step 7e: replace with OrderObserver.
+        // Booking::observe(BookingObserver::class);
         Invoice::observe(InvoiceObserver::class);
 
         // API general

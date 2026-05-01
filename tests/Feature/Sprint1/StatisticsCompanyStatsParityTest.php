@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Sprint1;
 
-use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Offer;
 use App\Models\Order;
@@ -34,12 +33,12 @@ class StatisticsCompanyStatsParityTest extends TestCase
         $bookingService = app(BookingService::class);
 
         for ($i = 0; $i < 3; $i++) {
-            $booking = $this->createBookingFlow($bookingService, $company, $user, $offer, 125.00);
-            $bookingService->confirm($booking->fresh());
+            $order = $this->createBookingFlow($bookingService, $company, $user, $offer, 125.00);
+            $bookingService->confirm($order->fresh());
         }
 
-        $cancelled = $this->createBookingFlow($bookingService, $company, $user, $offer, 125.00);
-        $bookingService->cancel($cancelled->fresh());
+        $cancelledOrder = $this->createBookingFlow($bookingService, $company, $user, $offer, 125.00);
+        $bookingService->cancel($cancelledOrder->fresh());
 
         $stats = app(StatisticsService::class)->getCompanyStats($company->id, []);
 
@@ -84,12 +83,12 @@ class StatisticsCompanyStatsParityTest extends TestCase
 
         $offsets = [-1, -2, 0, -15, -20];
         foreach ($offsets as $offset) {
-            $booking = $this->createBookingFlow($bookingService, $company, $user, $offer, 140.00);
-            $bookingService->confirm($booking->fresh());
+            $order = $this->createBookingFlow($bookingService, $company, $user, $offer, 140.00);
+            $bookingService->confirm($order->fresh());
 
             $timestamp = $now->copy()->addDays($offset);
             Order::query()
-                ->whereKey($booking->mirror_order_id)
+                ->whereKey($order->id)
                 ->update([
                     'created_at' => $timestamp,
                     'updated_at' => $timestamp,
@@ -111,8 +110,8 @@ class StatisticsCompanyStatsParityTest extends TestCase
 
         $bookingOffer = $this->createOffer($company, 'flight', 100.00);
         $bookingService = app(BookingService::class);
-        $booking = $this->createBookingFlow($bookingService, $company, $user, $bookingOffer, 100.00);
-        $bookingService->confirm($booking->fresh());
+        $order = $this->createBookingFlow($bookingService, $company, $user, $bookingOffer, 100.00);
+        $bookingService->confirm($order->fresh());
 
         $packageService = $this->makePackageOrderService();
         $package = $this->createPackageWithComponents($company, ['flight', 'hotel'], 'Origin Check');
@@ -142,12 +141,12 @@ class StatisticsCompanyStatsParityTest extends TestCase
         User $user,
         Offer $offer,
         float $price
-    ): Booking {
+    ): Order {
         return $bookingService->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $company->id,
-                'status' => Booking::STATUS_PENDING,
+                'status' => 'pending_payment',
                 'currency' => 'USD',
             ],
             [

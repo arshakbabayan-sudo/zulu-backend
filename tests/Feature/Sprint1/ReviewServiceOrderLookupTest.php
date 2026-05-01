@@ -5,8 +5,10 @@ namespace Tests\Feature\Sprint1;
 use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Offer;
+use App\Models\Order;
 use App\Models\Package;
 use App\Models\PackageComponent;
+use App\Models\PackageOrder;
 use App\Models\Review;
 use App\Models\User;
 use App\Services\Bookings\BookingService;
@@ -32,23 +34,24 @@ class ReviewServiceOrderLookupTest extends TestCase
         $user = $this->createUser();
         $offer = $this->createOffer($company, 'flight', 125.00);
         $bookingService = app(BookingService::class);
-        $booking = $this->createBookingFlow($bookingService, $company, $user, $offer, 125.00);
-        $bookingService->confirm($booking->fresh());
+        $order = $this->createBookingFlow($bookingService, $company, $user, $offer, 125.00);
+        $bookingService->confirm($order->fresh());
+        $legacyBookingId = (int) ($order->metadata['legacy_booking_id'] ?? 0);
 
         $review = app(ReviewService::class)->createReview($user, [
             'target_entity_type' => 'flight',
             'target_entity_id' => 101,
             'rating' => 8,
             'review_text' => 'Great trip',
-            'booking_id' => $booking->id,
+            'booking_id' => $legacyBookingId,
         ]);
 
         $this->assertInstanceOf(Review::class, $review);
-        $this->assertSame($booking->id, $review->booking_id);
+        $this->assertSame($legacyBookingId, $review->booking_id);
         $this->assertNull($review->package_order_id);
         $this->assertDatabaseHas('reviews', [
             'id' => $review->id,
-            'booking_id' => $booking->id,
+            'booking_id' => $legacyBookingId,
             'package_order_id' => null,
             'user_id' => $user->id,
         ]);
@@ -60,26 +63,29 @@ class ReviewServiceOrderLookupTest extends TestCase
         $user = $this->createUser();
         $packageService = $this->makePackageOrderService();
         $package = $this->createPackageWithComponents($company, ['flight', 'hotel'], 'Review Package');
-        $packageOrder = $packageService->createOrder($package, $user, [
+        $order = $packageService->createOrder($package, $user, [
             'booking_channel' => 'public_b2c',
             'adults_count' => 1,
         ]);
-        $packageService->markPaid($packageOrder->fresh());
+        $packageService->markPaid($order->fresh());
+        $legacyPackageOrder = $this->createLegacyPackageOrder($package, $user, $company, 5001);
+        $order->metadata = array_merge($order->metadata ?? [], ['legacy_package_order_id' => $legacyPackageOrder->id]);
+        $order->save();
 
         $review = app(ReviewService::class)->createReview($user, [
             'target_entity_type' => 'package',
             'target_entity_id' => 202,
             'rating' => 9,
             'review_text' => 'Worth it',
-            'package_order_id' => $packageOrder->id,
+            'package_order_id' => $legacyPackageOrder->id,
         ]);
 
         $this->assertInstanceOf(Review::class, $review);
-        $this->assertSame($packageOrder->id, $review->package_order_id);
+        $this->assertSame($legacyPackageOrder->id, $review->package_order_id);
         $this->assertNull($review->booking_id);
         $this->assertDatabaseHas('reviews', [
             'id' => $review->id,
-            'package_order_id' => $packageOrder->id,
+            'package_order_id' => $legacyPackageOrder->id,
             'booking_id' => null,
             'user_id' => $user->id,
         ]);
@@ -92,8 +98,8 @@ class ReviewServiceOrderLookupTest extends TestCase
         $otherUser = $this->createUser();
         $offer = $this->createOffer($company, 'flight', 99.00);
         $bookingService = app(BookingService::class);
-        $booking = $this->createBookingFlow($bookingService, $company, $owner, $offer, 99.00);
-        $bookingService->confirm($booking->fresh());
+        $order = $this->createBookingFlow($bookingService, $company, $owner, $offer, 99.00);
+        $bookingService->confirm($order->fresh());
 
         $this->assertReviewValidationError(
             $otherUser,
@@ -101,7 +107,7 @@ class ReviewServiceOrderLookupTest extends TestCase
                 'target_entity_type' => 'flight',
                 'target_entity_id' => 303,
                 'rating' => 7,
-                'booking_id' => $booking->id,
+                'booking_id' => (int) ($order->metadata['legacy_booking_id'] ?? 0),
             ],
             'booking_id'
         );
@@ -113,7 +119,7 @@ class ReviewServiceOrderLookupTest extends TestCase
         $user = $this->createUser();
         $offer = $this->createOffer($company, 'flight', 110.00);
         $bookingService = app(BookingService::class);
-        $booking = $this->createBookingFlow($bookingService, $company, $user, $offer, 110.00);
+        $order = $this->createBookingFlow($bookingService, $company, $user, $offer, 110.00);
 
         $this->assertReviewValidationError(
             $user,
@@ -121,7 +127,7 @@ class ReviewServiceOrderLookupTest extends TestCase
                 'target_entity_type' => 'flight',
                 'target_entity_id' => 404,
                 'rating' => 6,
-                'booking_id' => $booking->id,
+                'booking_id' => (int) ($order->metadata['legacy_booking_id'] ?? 0),
             ],
             'booking_id'
         );
@@ -133,10 +139,13 @@ class ReviewServiceOrderLookupTest extends TestCase
         $user = $this->createUser();
         $packageService = $this->makePackageOrderService();
         $package = $this->createPackageWithComponents($company, ['hotel'], 'Pending Package');
-        $packageOrder = $packageService->createOrder($package, $user, [
+        $order = $packageService->createOrder($package, $user, [
             'booking_channel' => 'public_b2c',
             'adults_count' => 1,
         ]);
+        $legacyPackageOrder = $this->createLegacyPackageOrder($package, $user, $company, 5002);
+        $order->metadata = array_merge($order->metadata ?? [], ['legacy_package_order_id' => $legacyPackageOrder->id]);
+        $order->save();
 
         $this->assertReviewValidationError(
             $user,
@@ -144,7 +153,7 @@ class ReviewServiceOrderLookupTest extends TestCase
                 'target_entity_type' => 'package',
                 'target_entity_id' => 505,
                 'rating' => 5,
-                'package_order_id' => $packageOrder->id,
+                'package_order_id' => $legacyPackageOrder->id,
             ],
             'package_order_id'
         );
@@ -169,12 +178,12 @@ class ReviewServiceOrderLookupTest extends TestCase
         User $user,
         Offer $offer,
         float $price
-    ): Booking {
-        return $bookingService->create(
+    ): Order {
+        $order = $bookingService->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $company->id,
-                'status' => Booking::STATUS_PENDING,
+                'status' => 'pending_payment',
                 'currency' => 'USD',
             ],
             [
@@ -182,6 +191,21 @@ class ReviewServiceOrderLookupTest extends TestCase
             ],
             []
         );
+
+        $legacyBooking = Booking::query()->create([
+            'user_id' => $user->id,
+            'company_id' => $company->id,
+            'status' => Booking::STATUS_PENDING,
+            'total_price' => $price,
+            'currency' => 'USD',
+        ]);
+
+        $metadata = $order->metadata ?? [];
+        $metadata['legacy_booking_id'] = $legacyBooking->id;
+        $order->metadata = $metadata;
+        $order->save();
+
+        return $order->fresh();
     }
 
     private function makePackageOrderService(): PackageOrderService
@@ -257,6 +281,29 @@ class ReviewServiceOrderLookupTest extends TestCase
             'price' => $price,
             'currency' => 'USD',
             'status' => Offer::STATUS_PUBLISHED,
+        ]);
+    }
+
+    private function createLegacyPackageOrder(Package $package, User $user, Company $company, int $seedId): PackageOrder
+    {
+        return PackageOrder::query()->create([
+            'package_id' => $package->id,
+            'user_id' => $user->id,
+            'company_id' => $company->id,
+            'order_number' => 'PKG-LEGACY-'.$seedId,
+            'booking_channel' => 'public_b2c',
+            'status' => 'paid',
+            'payment_status' => 'paid',
+            'adults_count' => 1,
+            'children_count' => 0,
+            'infants_count' => 0,
+            'currency' => 'USD',
+            'base_component_total_snapshot' => 100.00,
+            'discount_snapshot' => 0,
+            'markup_snapshot' => 0,
+            'addon_total_snapshot' => 0,
+            'final_total_snapshot' => 100.00,
+            'display_price_mode_snapshot' => 'total',
         ]);
     }
 }

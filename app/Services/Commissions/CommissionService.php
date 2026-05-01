@@ -2,11 +2,10 @@
 
 namespace App\Services\Commissions;
 
-use App\Models\Booking;
 use App\Models\CommissionResolutionLog;
 use App\Models\CommissionRule;
 use App\Models\CommissionTransaction;
-use App\Models\PackageOrder;
+use App\Models\Order;
 use App\Services\Commissions\DTOs\CommissionResolutionContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,33 +16,25 @@ class CommissionService
         private CommissionRuleResolver $resolver,
     ) {}
 
-    /**
-     * Accrue commission for a Package Order.
-     */
-    public function accrueForPackageOrder(PackageOrder $packageOrder): ?CommissionTransaction
+    public function accrueForOrder(Order $order): ?CommissionTransaction
     {
-        return $this->accrue(
-            $packageOrder->company_id,
-            'package',
-            (string) $packageOrder->final_total_snapshot,
-            $packageOrder->currency,
-            null,
-            null
-        );
-    }
+        $order->loadMissing('items');
+        $firstItem = $order->items->first();
+        $legacyOrigin = $order->metadata['legacy_origin'] ?? null;
+        $serviceType = $legacyOrigin === 'package_order'
+            ? 'package'
+            : (string) ($firstItem?->item_type ?? 'general');
+        $firstSnapshot = is_array($firstItem?->service_snapshot) ? $firstItem->service_snapshot : [];
+        $categoryId = isset($firstSnapshot['category_id']) ? (int) $firstSnapshot['category_id'] : null;
 
-    /**
-     * Accrue commission for a generic Booking.
-     */
-    public function accrueForBooking(Booking $booking): ?CommissionTransaction
-    {
         return $this->accrue(
-            $booking->company_id,
-            'general',
-            (string) $booking->total_price,
-            strtoupper((string) ($booking->currency ?? 'USD')),
-            null,
-            null
+            (int) $order->company_id,
+            $serviceType,
+            (string) $order->total,
+            strtoupper((string) ($order->currency ?? 'USD')),
+            $order->id,
+            $firstItem?->id,
+            $categoryId
         );
     }
 
@@ -55,14 +46,18 @@ class CommissionService
         string $serviceType,
         string $baseAmount,
         string $baseCurrency,
-        ?int $orderId,
-        ?int $orderItemId
+        ?string $orderId,
+        ?string $orderItemId,
+        ?int $categoryId
     ): ?CommissionTransaction {
         try {
             $ctx = CommissionResolutionContext::make(
                 sellerId: $sellerId,
                 serviceType: $serviceType,
-                opts: ['atTime' => now()],
+                opts: [
+                    'atTime' => now(),
+                    'categoryId' => $categoryId,
+                ],
             );
             $result = $this->resolver->resolve($ctx);
             $rule = $result->chosenRule;

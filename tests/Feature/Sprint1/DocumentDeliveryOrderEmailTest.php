@@ -3,7 +3,6 @@
 namespace Tests\Feature\Sprint1;
 
 use App\Mail\DocumentsReadyMail;
-use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\Offer;
@@ -26,8 +25,9 @@ class DocumentDeliveryOrderEmailTest extends TestCase
         Storage::fake('public');
         Mail::fake();
 
-        [$booking, $invoice] = $this->createBookingAndInvoice();
+        [$order, $invoice] = $this->createBookingAndInvoice();
         $order = Order::query()->findOrFail($invoice->order_id);
+        $originalEmail = $order->user?->email;
         $recipient = $this->createUser('document-delivery-order-recipient-'.str()->uuid().'@example.test');
         $order->user_id = $recipient->id;
         $order->save();
@@ -42,7 +42,7 @@ class DocumentDeliveryOrderEmailTest extends TestCase
         Mail::assertSent(DocumentsReadyMail::class, function (DocumentsReadyMail $mail) use ($recipient): bool {
             return $mail->hasTo($recipient->email);
         });
-        $this->assertNotSame($booking->user->email, $recipient->email);
+        $this->assertNotSame($originalEmail, $recipient->email);
     }
 
     public function test_send_paid_documents_returns_false_when_order_user_email_missing(): void
@@ -79,18 +79,18 @@ class DocumentDeliveryOrderEmailTest extends TestCase
     }
 
     /**
-     * @return array{Booking, Invoice}
+     * @return array{Order, Invoice}
      */
     private function createBookingAndInvoice(): array
     {
         $company = $this->createCompany();
         $user = $this->createUser('document-delivery-booking-user-'.str()->uuid().'@example.test');
         $offer = $this->createOffer($company, 100.00);
-        $booking = app(BookingService::class)->create(
+        $order = app(BookingService::class)->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $company->id,
-                'status' => Booking::STATUS_PENDING,
+                'status' => 'pending_payment',
                 'currency' => 'USD',
             ],
             [
@@ -99,9 +99,9 @@ class DocumentDeliveryOrderEmailTest extends TestCase
             []
         );
 
-        $invoice = app(InvoiceService::class)->createForBooking($booking, ['total_amount' => 100]);
+        $invoice = app(InvoiceService::class)->createForOrder($order, ['total_amount' => 100]);
 
-        return [$booking->fresh(['user']), $invoice->fresh()];
+        return [$order->fresh(['user']), $invoice->fresh()];
     }
 
     private function createCompany(): Company

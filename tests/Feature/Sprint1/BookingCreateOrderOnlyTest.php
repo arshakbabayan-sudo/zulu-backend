@@ -16,21 +16,18 @@ use InvalidArgumentException;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
-class BookingDualWriteTest extends TestCase
+class BookingCreateOrderOnlyTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_create_dual_writes_booking_and_order_rows(): void
+    public function test_create_returns_order_and_writes_order_items_only(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
         $firstOffer = $this->createOffer($company, 'flight', 110.00, 'USD');
         $secondOffer = $this->createOffer($company, 'flight', 90.00, 'USD');
 
-        $orderCountBefore = Order::count();
-        $orderItemsCountBefore = OrderItem::count();
-
-        $booking = app(BookingService::class)->create(
+        $order = app(BookingService::class)->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $company->id,
@@ -44,37 +41,16 @@ class BookingDualWriteTest extends TestCase
             []
         );
 
-        $this->assertSame(1, Booking::count());
-        $this->assertSame(2, BookingItem::count());
-        $this->assertSame($orderCountBefore + 1, Order::count());
-        $this->assertSame($orderItemsCountBefore + 2, OrderItem::count());
-
-        $booking->refresh();
-        $order = Order::query()->firstOrFail();
-
+        $this->assertInstanceOf(Order::class, $order);
         $this->assertSame('booking', $order->metadata['legacy_origin'] ?? null);
-        $this->assertSame($booking->id, $order->metadata['legacy_booking_id'] ?? null);
-        $this->assertSame($order->id, $booking->mirror_order_id);
-
-        $legacyItemIds = $booking->items()->pluck('id')->sort()->values()->all();
-        $orderItems = OrderItem::query()
-            ->where('order_id', $order->id)
-            ->orderBy('unit_price', 'desc')
-            ->get();
-
-        $this->assertCount(2, $orderItems);
-        $this->assertTrue($orderItems->every(fn (OrderItem $item): bool => $item->item_type === 'flight'));
-        $this->assertSame(
-            ['90.00', '110.00'],
-            $orderItems->pluck('unit_price')->map(fn ($v) => (string) $v)->sort()->values()->all()
-        );
-        $this->assertSame(
-            $legacyItemIds,
-            $orderItems->pluck('service_snapshot.legacy_booking_item_id')->sort()->values()->all()
-        );
+        $this->assertCount(2, $order->items);
+        $this->assertSame(0, Booking::query()->count());
+        $this->assertSame(0, BookingItem::query()->count());
+        $this->assertSame(1, Order::query()->count());
+        $this->assertSame(2, OrderItem::query()->count());
     }
 
-    public function test_create_rolls_back_legacy_booking_when_mirror_order_write_fails(): void
+    public function test_create_rolls_back_when_order_service_fails(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
@@ -83,11 +59,11 @@ class BookingDualWriteTest extends TestCase
         $this->mock(OrderService::class, function (MockInterface $mock): void {
             $mock->shouldReceive('create')
                 ->once()
-                ->andThrow(new InvalidArgumentException('forced dual-write failure'));
+                ->andThrow(new InvalidArgumentException('forced order creation failure'));
         });
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('forced dual-write failure');
+        $this->expectExceptionMessage('forced order creation failure');
 
         try {
             app(BookingService::class)->create(
@@ -103,17 +79,17 @@ class BookingDualWriteTest extends TestCase
                 []
             );
         } finally {
-            $this->assertSame(0, Booking::count());
-            $this->assertSame(0, BookingItem::count());
-            $this->assertSame(0, Order::count());
-            $this->assertSame(0, OrderItem::count());
+            $this->assertSame(0, Booking::query()->count());
+            $this->assertSame(0, BookingItem::query()->count());
+            $this->assertSame(0, Order::query()->count());
+            $this->assertSame(0, OrderItem::query()->count());
         }
     }
 
     private function createCompany(): Company
     {
         return Company::query()->create([
-            'name' => 'Booking Dual Write Co '.str()->uuid(),
+            'name' => 'Booking Create Order Only Co '.str()->uuid(),
             'type' => 'operator',
             'status' => 'active',
         ]);
@@ -122,8 +98,8 @@ class BookingDualWriteTest extends TestCase
     private function createUser(): User
     {
         return User::query()->create([
-            'name' => 'Booking Dual Write User',
-            'email' => 'booking-dual-write-'.str()->uuid().'@example.test',
+            'name' => 'Booking Create Order Only User',
+            'email' => 'booking-create-order-only-'.str()->uuid().'@example.test',
             'password' => 'password',
         ]);
     }

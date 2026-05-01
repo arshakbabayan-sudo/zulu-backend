@@ -2,9 +2,8 @@
 
 namespace App\Services\Finance;
 
-use App\Models\Booking;
 use App\Models\Company;
-use App\Models\PackageOrder;
+use App\Models\Order;
 use App\Models\Settlement;
 use App\Models\SupplierEntitlement;
 use App\Models\User;
@@ -24,32 +23,26 @@ class FinanceService
     /**
      * @return list<SupplierEntitlement>
      */
-    public function createEntitlementsForOrder(PackageOrder $order): array
+    public function createEntitlementsForOrder(Order $order): array
     {
         try {
             return DB::transaction(function () use ($order) {
-                $order->loadMissing(['items.offer']);
-
-                $existing = SupplierEntitlement::query()
-                    ->where('package_order_id', $order->id)
-                    ->get();
-
-                if ($existing->isNotEmpty()) {
-                    return $existing->all();
-                }
+                $order->loadMissing(['items']);
 
                 /** @var list<SupplierEntitlement> $created */
                 $created = [];
 
                 foreach ($order->items as $item) {
-                    $gross = bcadd((string) $item->price_snapshot, '0', 2);
-                    // Keep parity with CommissionService::accrue() by resolving at current runtime.
+                    $snapshot = $item->service_snapshot ?? [];
+                    $sellerId = (int) ($snapshot['company_id'] ?? $order->company_id ?? 0);
+                    $gross = bcadd((string) $item->total, '0', 2);
+
                     $ctx = CommissionResolutionContext::make(
-                        sellerId: (int) $item->company_id,
-                        serviceType: (string) $item->module_type,
+                        sellerId: $sellerId,
+                        serviceType: (string) $item->item_type,
                         opts: [
                             'atTime' => now(),
-                            'categoryId' => null,
+                            'categoryId' => isset($snapshot['category_id']) ? (int) $snapshot['category_id'] : null,
                             'partnerAgreementId' => null,
                         ]
                     );
@@ -57,102 +50,14 @@ class FinanceService
 
                     $commission = '0';
                     if ($rule !== null) {
-                        $baseCurrency = (string) $item->currency_snapshot;
+                        $baseCurrency = (string) $item->currency;
 
                         if ($rule->type === 'percentage') {
                             $commission = bcdiv(bcmul($gross, (string) $rule->percentage_value, 8), '100', 4);
                         } elseif ($rule->type === 'fixed') {
                             if ($rule->fixed_currency !== null && strtoupper((string) $rule->fixed_currency) !== strtoupper($baseCurrency)) {
                                 Log::warning('Commission fixed currency mismatch during entitlement accrual', [
-                                    'seller_id' => (int) $item->company_id,
-                                    'rule_id' => $rule->id,
-                                    'fixed_currency' => $rule->fixed_currency,
-                                    'base_currency' => $baseCurrency,
-                                ]);
-                            }
-
-                            $commission = bcadd((string) $rule->fixed_value, '0', 4);
-                        } else {
-                            $commission = bcadd(
-                                bcdiv(bcmul($gross, (string) $rule->percentage_value, 8), '100', 4),
-                                (string) $rule->fixed_value,
-                                4
-                            );
-                        }
-                    }
-
-                    $net = bcsub($gross, $commission, 2);
-
-                    $created[] = SupplierEntitlement::query()->create([
-                        'package_order_id' => $order->id,
-                        'package_order_item_id' => $item->id,
-                        'company_id' => $item->company_id,
-                        'service_type' => $item->module_type,
-                        'gross_amount' => $gross,
-                        'commission_amount' => $commission,
-                        'net_amount' => $net,
-                        'currency' => (string) $item->currency_snapshot,
-                        'status' => 'accrued',
-                    ]);
-                }
-
-                return $created;
-            });
-        } catch (\Throwable $e) {
-            Log::warning('Entitlement creation failed for package order', [
-                'package_order_id' => $order->id,
-                'message' => $e->getMessage(),
-            ]);
-
-            return [];
-        }
-    }
-
-    /**
-     * @return list<SupplierEntitlement>
-     */
-    public function createEntitlementsForBooking(Booking $booking): array
-    {
-        try {
-            return DB::transaction(function () use ($booking) {
-                $booking->loadMissing(['items.offer', 'company']);
-
-                $existing = SupplierEntitlement::query()
-                    ->where('booking_id', $booking->id)
-                    ->get();
-
-                if ($existing->isNotEmpty()) {
-                    return $existing->all();
-                }
-
-                /** @var list<SupplierEntitlement> $created */
-                $created = [];
-
-                foreach ($booking->items as $item) {
-                    $gross = bcadd((string) $item->price, '0', 2);
-                    $offerType = $item->offer?->type ?? 'unknown';
-                    // Keep parity with CommissionService::accrue() by resolving at current runtime.
-                    $ctx = CommissionResolutionContext::make(
-                        sellerId: (int) $booking->company_id,
-                        serviceType: (string) $offerType,
-                        opts: [
-                            'atTime' => now(),
-                            'categoryId' => null,
-                            'partnerAgreementId' => null,
-                        ]
-                    );
-                    $rule = $this->resolver->resolve($ctx)->chosenRule;
-
-                    $commission = '0';
-                    if ($rule !== null) {
-                        $baseCurrency = (string) ($booking->currency ?? 'usd');
-
-                        if ($rule->type === 'percentage') {
-                            $commission = bcdiv(bcmul($gross, (string) $rule->percentage_value, 8), '100', 4);
-                        } elseif ($rule->type === 'fixed') {
-                            if ($rule->fixed_currency !== null && strtoupper((string) $rule->fixed_currency) !== strtoupper($baseCurrency)) {
-                                Log::warning('Commission fixed currency mismatch during entitlement accrual', [
-                                    'seller_id' => (int) $booking->company_id,
+                                    'seller_id' => $sellerId,
                                     'rule_id' => $rule->id,
                                     'fixed_currency' => $rule->fixed_currency,
                                     'base_currency' => $baseCurrency,
@@ -174,23 +79,24 @@ class FinanceService
                     $created[] = SupplierEntitlement::query()->create([
                         'package_order_id' => null,
                         'package_order_item_id' => null,
-                        'booking_id' => $booking->id,
-                        'booking_item_id' => $item->id,
-                        'company_id' => $booking->company_id,
-                        'service_type' => $offerType,
+                        'booking_id' => null,
+                        'booking_item_id' => null,
+                        'company_id' => $sellerId,
+                        'service_type' => $item->item_type,
                         'gross_amount' => $gross,
                         'commission_amount' => $commission,
                         'net_amount' => $net,
-                        'currency' => $booking->currency ?? 'usd',
+                        'currency' => (string) $item->currency,
                         'status' => 'accrued',
+                        'notes' => 'order_id:'.$order->id.';order_item_id:'.$item->id,
                     ]);
                 }
 
                 return $created;
             });
         } catch (\Throwable $e) {
-            Log::warning('Entitlement creation failed for booking', [
-                'booking_id' => $booking->id,
+            Log::warning('Entitlement creation failed for order', [
+                'order_id' => $order->id,
                 'message' => $e->getMessage(),
             ]);
 

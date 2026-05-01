@@ -148,8 +148,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     Route::prefix('marketplace')->group(function () {
         Route::post('bookings', [MarketplaceController::class, 'store']);
-        Route::get('bookings/{booking}', [MarketplaceController::class, 'show'])->whereNumber('booking');
-        Route::post('bookings/{booking}/checkout', [MarketplaceController::class, 'checkout'])->whereNumber('booking');
+        Route::get('bookings/{orderId}', [MarketplaceController::class, 'show'])->whereUuid('orderId');
+        Route::post('bookings/{orderId}/checkout', [MarketplaceController::class, 'checkout'])->whereUuid('orderId');
     });
 
     Route::post('import/upload', [ImportUploadController::class, 'store'])->middleware('throttle:file-upload');

@@ -2,13 +2,12 @@
 
 namespace Tests\Feature\Sprint1;
 
-use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\Offer;
+use App\Models\Order;
 use App\Models\Package;
 use App\Models\PackageComponent;
-use App\Models\PackageOrder;
 use App\Models\User;
 use App\Services\Bookings\BookingService;
 use App\Services\Commissions\CommissionService;
@@ -25,74 +24,69 @@ class InvoiceServiceOrderLinkTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_create_for_booking_populates_order_id_when_mirror_is_present(): void
+    public function test_create_for_order_persists_order_link_and_defaults(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
         $offer = $this->createOffer($company, 'flight', 100.00);
-        $booking = $this->createBookingFlow(app(BookingService::class), $company, $user, $offer, 100.00);
+        $order = $this->createBookingFlow(app(BookingService::class), $company, $user, $offer, 100.00);
 
-        $invoice = app(InvoiceService::class)->createForBooking($booking, ['total_amount' => 100]);
+        $invoice = app(InvoiceService::class)->createForOrder($order, ['total_amount' => 100]);
 
         $this->assertInstanceOf(Invoice::class, $invoice);
-        $this->assertSame($booking->id, $invoice->booking_id);
+        $this->assertNull($invoice->booking_id);
         $this->assertNull($invoice->package_order_id);
-        $this->assertSame($booking->mirror_order_id, $invoice->order_id);
+        $this->assertSame($order->id, $invoice->order_id);
         $this->assertNotNull($invoice->order_id);
         $this->assertDatabaseHas('invoices', [
             'id' => $invoice->id,
-            'booking_id' => $booking->id,
+            'booking_id' => null,
             'package_order_id' => null,
-            'order_id' => $booking->mirror_order_id,
+            'order_id' => $order->id,
         ]);
     }
 
-    public function test_create_for_booking_keeps_order_id_null_when_booking_mirror_is_null(): void
+    public function test_create_for_order_uses_order_defaults_when_payload_is_empty(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
-        $booking = Booking::query()->create([
-            'user_id' => $user->id,
-            'company_id' => $company->id,
-            'status' => Booking::STATUS_PENDING,
-            'total_price' => 50.00,
-        ]);
-        Booking::query()->whereKey($booking->id)->update(['mirror_order_id' => null]);
-        $booking = $booking->fresh();
+        $offer = $this->createOffer($company, 'flight', 50.00);
+        $order = $this->createBookingFlow(app(BookingService::class), $company, $user, $offer, 50.00);
 
-        $invoice = app(InvoiceService::class)->createForBooking($booking, ['total_amount' => 50]);
+        $invoice = app(InvoiceService::class)->createForOrder($order);
 
-        $this->assertSame($booking->id, $invoice->booking_id);
+        $this->assertNull($invoice->booking_id);
         $this->assertNull($invoice->package_order_id);
-        $this->assertNull($invoice->order_id);
+        $this->assertSame($order->id, $invoice->order_id);
+        $this->assertSame((string) $order->total, (string) $invoice->total_amount);
         $this->assertDatabaseHas('invoices', [
             'id' => $invoice->id,
-            'booking_id' => $booking->id,
-            'order_id' => null,
+            'booking_id' => null,
+            'order_id' => $order->id,
         ]);
     }
 
-    public function test_create_for_package_order_populates_order_id_when_mirror_is_present(): void
+    public function test_create_for_order_from_package_flow_populates_order_id(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
         $packageOrder = $this->createPackageOrder($company, $user);
         $reference = 'PKG-INV-TEST-'.str()->uuid();
-        $invoice = app(InvoiceService::class)->createForPackageOrder($packageOrder, [
+        $invoice = app(InvoiceService::class)->createForOrder($packageOrder, [
             'total_amount' => 200,
             'unique_booking_reference' => $reference,
         ]);
 
         $this->assertInstanceOf(Invoice::class, $invoice);
         $this->assertNull($invoice->booking_id);
-        $this->assertSame($packageOrder->id, $invoice->package_order_id);
-        $this->assertSame($packageOrder->mirror_order_id, $invoice->order_id);
+        $this->assertNull($invoice->package_order_id);
+        $this->assertSame($packageOrder->id, $invoice->order_id);
         $this->assertNotNull($invoice->order_id);
         $this->assertDatabaseHas('invoices', [
             'id' => $invoice->id,
             'booking_id' => null,
-            'package_order_id' => $packageOrder->id,
-            'order_id' => $packageOrder->mirror_order_id,
+            'package_order_id' => null,
+            'order_id' => $packageOrder->id,
         ]);
     }
 
@@ -106,10 +100,10 @@ class InvoiceServiceOrderLinkTest extends TestCase
 
         $bookingOffer = $this->createOffer($companyA, 'flight', 120.00);
         $booking = $this->createBookingFlow(app(BookingService::class), $companyA, $user, $bookingOffer, 120.00);
-        $invoiceA = $invoiceService->createForBooking($booking, ['total_amount' => 120]);
+        $invoiceA = $invoiceService->createForOrder($booking, ['total_amount' => 120]);
 
         $packageOrderB = $this->createPackageOrder($companyB, $user);
-        $invoiceB = $invoiceService->createForPackageOrder($packageOrderB, [
+        $invoiceB = $invoiceService->createForOrder($packageOrderB, [
             'total_amount' => 180,
             'unique_booking_reference' => 'PKG-INV-LIST-'.str()->uuid(),
         ]);
@@ -131,10 +125,10 @@ class InvoiceServiceOrderLinkTest extends TestCase
 
         $bookingOffer = $this->createOffer($companyA, 'flight', 130.00);
         $booking = $this->createBookingFlow(app(BookingService::class), $companyA, $user, $bookingOffer, 130.00);
-        $invoiceA = $invoiceService->createForBooking($booking, ['total_amount' => 130]);
+        $invoiceA = $invoiceService->createForOrder($booking, ['total_amount' => 130]);
 
         $packageOrderB = $this->createPackageOrder($companyB, $user);
-        $invoiceService->createForPackageOrder($packageOrderB, [
+        $invoiceService->createForOrder($packageOrderB, [
             'total_amount' => 210,
             'unique_booking_reference' => 'PKG-INV-PAGE-'.str()->uuid(),
         ]);
@@ -154,13 +148,13 @@ class InvoiceServiceOrderLinkTest extends TestCase
         $offer = $this->createOffer($company, 'flight', 140.00);
         $bookingService = app(BookingService::class);
 
-        $booking1 = $this->createBookingFlow($bookingService, $company, $user, $offer, 140.00);
-        $invoiceService->createForBooking($booking1, ['total_amount' => 140]);
+        $booking1 = $this->createBookingFlow($bookingService, $company, $user, $offer, 140.00, legacyBookingId: 9001);
+        $invoiceService->createForOrder($booking1, ['total_amount' => 140]);
 
-        $booking2 = $this->createBookingFlow($bookingService, $company, $user, $offer, 160.00);
-        $invoice2 = $invoiceService->createForBooking($booking2, ['total_amount' => 160]);
+        $booking2 = $this->createBookingFlow($bookingService, $company, $user, $offer, 160.00, legacyBookingId: 9002);
+        $invoice2 = $invoiceService->createForOrder($booking2, ['total_amount' => 160]);
 
-        $results = $invoiceService->listForCompanies([$company->id], bookingId: $booking2->id);
+        $results = $invoiceService->listForCompanies([$company->id], bookingId: 9002);
 
         $this->assertCount(1, $results);
         $this->assertSame($invoice2->id, $results->first()->id);
@@ -171,13 +165,14 @@ class InvoiceServiceOrderLinkTest extends TestCase
         Company $company,
         User $user,
         Offer $offer,
-        float $price
-    ): Booking {
-        return $bookingService->create(
+        float $price,
+        ?int $legacyBookingId = null
+    ): Order {
+        $order = $bookingService->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $company->id,
-                'status' => Booking::STATUS_PENDING,
+                'status' => 'pending_payment',
                 'currency' => 'USD',
             ],
             [
@@ -185,9 +180,18 @@ class InvoiceServiceOrderLinkTest extends TestCase
             ],
             []
         );
+
+        if ($legacyBookingId !== null) {
+            $metadata = $order->metadata ?? [];
+            $metadata['legacy_booking_id'] = $legacyBookingId;
+            $order->metadata = $metadata;
+            $order->save();
+        }
+
+        return $order->fresh();
     }
 
-    private function createPackageOrder(Company $company, User $user): PackageOrder
+    private function createPackageOrder(Company $company, User $user): Order
     {
         $packageService = $this->makePackageOrderService();
         $package = $this->createPackageWithComponents($company, ['hotel'], 'Invoice Link Package');

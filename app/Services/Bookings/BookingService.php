@@ -2,16 +2,12 @@
 
 namespace App\Services\Bookings;
 
-use App\Models\Booking;
-use App\Models\Flight;
 use App\Models\Offer;
 use App\Models\Order;
-use App\Models\Passenger;
 use App\Services\Finance\FinanceService;
 use App\Services\Orders\OrderService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -81,216 +77,64 @@ class BookingService
     }
 
     /**
-     * @param  array{user_id:int,company_id:int,status?:string,total_price?:numeric,currency?:string}  $bookingData
+     * @param  array{user_id:int,company_id:int,status?:string,currency?:string}  $bookingData
      * @param  array<int,array{offer_id:int,price:numeric}>  $itemsData
      * @param  array<int, array<string, mixed>>  $passengersData
      */
-    public function create(array $bookingData, array $itemsData, array $passengersData = []): Booking
+    public function create(array $bookingData, array $itemsData, array $passengersData = []): Order
     {
-        return DB::transaction(function () use ($bookingData, $itemsData, $passengersData): Booking {
-            if (! isset($bookingData['status'])) {
-                $bookingData['status'] = 'pending';
-            }
-            if (! isset($bookingData['currency'])) {
-                $bookingData['currency'] = 'USD';
-            }
-            $bookingData['currency'] = strtoupper((string) $bookingData['currency']);
-            $bookingData['total_price'] = 0;
-            $booking = Booking::query()->create($bookingData);
-            $createdBookingItems = [];
-            foreach ($itemsData as $itemData) {
-                $createdBookingItems[] = $booking->items()->create($itemData);
-            }
+        $this->assertItemsAvailability($itemsData);
 
-            $offers = Offer::query()
-                ->with('flight')
-                ->whereIn('id', collect($createdBookingItems)->pluck('offer_id')->unique()->values()->all())
-                ->get()
-                ->keyBy('id');
+        $currency = strtoupper((string) ($bookingData['currency'] ?? 'USD'));
+        $offers = Offer::query()
+            ->with('flight')
+            ->whereIn('id', collect($itemsData)->pluck('offer_id')->filter()->unique()->values()->all())
+            ->get()
+            ->keyBy('id');
 
-            $statusMap = [
-                'pending' => 'pending_payment',
-                'confirmed' => 'confirmed',
-                'cancelled' => 'cancelled',
-            ];
+        $mappedPassengers = $this->normalizePassengers($passengersData);
+        $itemsPayload = $this->buildOrderItemsPayload($itemsData, $offers->all(), $currency, $mappedPassengers);
 
-            $order = $this->orderService->create(
-                [
-                    'user_id' => $bookingData['user_id'] ?? null,
-                    'company_id' => $bookingData['company_id'] ?? null,
-                    'currency' => $bookingData['currency'],
-                    'buyer_type' => 'client',
-                    'status' => $statusMap[$bookingData['status']] ?? 'pending_payment',
-                    'metadata' => [
-                        'legacy_origin' => 'booking',
-                        'legacy_booking_id' => $booking->id,
-                    ],
+        return $this->orderService->create(
+            [
+                'user_id' => $bookingData['user_id'] ?? null,
+                'company_id' => $bookingData['company_id'] ?? null,
+                'currency' => $currency,
+                'buyer_type' => 'client',
+                'status' => 'pending_payment',
+                'metadata' => [
+                    'legacy_origin' => 'booking',
                 ],
-                collect($createdBookingItems)->map(function ($bookingItem) use ($offers, $bookingData): array {
-                    $offer = $offers->get($bookingItem->offer_id);
-                    $flightId = null;
-
-                    if ($offer !== null && $offer->type === 'flight') {
-                        $flightId = $offer->flight_id ?? $offer->flight?->id;
-                    }
-
-                    return [
-                        'item_type' => 'flight',
-                        'item_id' => $flightId,
-                        'currency' => $bookingData['currency'],
-                        'unit_price' => $bookingItem->price,
-                        'quantity' => 1,
-                        'service_snapshot' => [
-                            'legacy_offer_id' => $bookingItem->offer_id,
-                            'legacy_booking_item_id' => $bookingItem->id,
-                        ],
-                    ];
-                })->values()->all()
-            );
-
-            $booking->mirror_order_id = $order->id;
-            $booking->save();
-
-            foreach ($passengersData as $pData) {
-                $passenger = null;
-                if (isset($pData['id'])) {
-                    $passenger = Passenger::query()->find($pData['id']);
-                }
-                if (! $passenger) {
-                    $dob = $pData['date_of_birth'] ?? $pData['birth_date'] ?? null;
-                    $passenger = Passenger::query()->create([
-                        'first_name' => $pData['first_name'],
-                        'last_name' => $pData['last_name'],
-                        'date_of_birth' => $dob,
-                        'passenger_type' => $pData['passenger_type'] ?? 'adult',
-                        'passport_number' => $pData['passport_number'] ?? null,
-                        'passport_expiry' => $pData['passport_expiry'] ?? $pData['passport_expiry_date'] ?? null,
-                        'nationality' => $pData['nationality'] ?? $pData['nationality_country_code'] ?? null,
-                        'gender' => $pData['gender'] ?? null,
-                        'email' => $pData['email'] ?? null,
-                        'phone' => $pData['phone'] ?? null,
-                    ]);
-                }
-                $booking->passengers()->attach($passenger->id, [
-                    'booking_item_id' => $pData['booking_item_id'] ?? null,
-                    'seat_number' => $pData['seat_number'] ?? null,
-                    'special_requests' => $pData['special_requests'] ?? null,
-                ]);
-            }
-
-            $booking->load(['items', 'passengers']);
-
-            return $this->recalculateTotal($booking);
-        });
+            ],
+            $itemsPayload
+        );
     }
 
-    public function recalculateTotal(Booking $booking): Booking
+    public function confirm(Order $order): Order
     {
-        $total = (float) $booking->items()->sum('price');
-        $booking->total_price = $total;
-        $booking->save();
+        $order->status = 'confirmed';
+        $order->save();
 
-        $booking->load(['items', 'passengers']);
+        // TODO Sprint 11/4: restore seat-capacity decrement once Order-native inventory flow is rebuilt.
+        try {
+            app(FinanceService::class)->createEntitlementsForOrder($order->fresh(['items']));
+        } catch (\Throwable $e) {
+            Log::warning('Order entitlement creation failed during booking confirm', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
-        return $booking;
+        return $order->fresh(['items']);
     }
 
-    public function confirm(Booking $booking): Booking
+    public function cancel(Order $order): Order
     {
-        $booking->status = Booking::STATUS_CONFIRMED;
-        $booking->save();
+        // TODO Sprint 11/4: restore seat-capacity increment once Order-native inventory flow is rebuilt.
+        $order->status = 'cancelled';
+        $order->save();
 
-        try {
-            $this->syncMirrorOrderStatus($booking, 'confirmed', 'confirmed');
-        } catch (\Throwable $e) {
-            Log::warning('Booking mirror order status sync failed during confirm', [
-                'booking_id' => $booking->id,
-                'mirror_order_id' => $booking->mirror_order_id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        try {
-            DB::transaction(function () use ($booking): void {
-                foreach ($booking->items()->with('offer.flight.cabins')->get() as $item) {
-                    $flight = $item->offer?->flight ?? null;
-                    if ($flight === null) {
-                        continue;
-                    }
-
-                    $flightRow = Flight::query()
-                        ->where('id', $flight->id)
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (! $flightRow) {
-                        continue;
-                    }
-
-                    if ((int) ($flightRow->seat_capacity_available ?? 0) <= 0) {
-                        continue;
-                    }
-
-                    $flightRow->decrement('seat_capacity_available');
-                }
-            });
-        } catch (\Throwable $e) {
-            Log::warning('Seat capacity decrement failed', [
-                'booking_id' => $booking->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        $booking->load(['items', 'passengers']);
-
-        try {
-            app(FinanceService::class)->createEntitlementsForBooking($booking);
-        } catch (\Throwable $e) {
-            Log::warning('Booking entitlement creation failed', [
-                'booking_id' => $booking->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        return $booking;
-    }
-
-    public function cancel(Booking $booking): Booking
-    {
-        $booking->status = Booking::STATUS_CANCELLED;
-        $booking->save();
-
-        try {
-            $this->syncMirrorOrderStatus($booking, 'cancelled', 'cancelled');
-        } catch (\Throwable $e) {
-            Log::warning('Booking mirror order status sync failed during cancel', [
-                'booking_id' => $booking->id,
-                'mirror_order_id' => $booking->mirror_order_id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        try {
-            foreach ($booking->items()->with('offer.flight')->get() as $item) {
-                $flight = $item->offer?->flight ?? null;
-                if ($flight === null) {
-                    continue;
-                }
-
-                Flight::query()
-                    ->where('id', $flight->id)
-                    ->increment('seat_capacity_available');
-            }
-        } catch (\Throwable $e) {
-            Log::warning('Seat capacity restore failed', [
-                'booking_id' => $booking->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        $booking->load(['items', 'passengers']);
-
-        return $booking;
+        return $order->fresh(['items']);
     }
 
     public function getWithDetails(int $id): ?Order
@@ -302,27 +146,117 @@ class BookingService
             ->first();
     }
 
-    protected function syncMirrorOrderStatus(Booking $booking, string $orderStatus, ?string $itemStatus = null): void
+    /**
+     * @param  array<int, array<string, mixed>>  $passengersData
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizePassengers(array $passengersData): array
     {
-        if ($booking->mirror_order_id === null) {
-            return;
+        $rows = [];
+
+        foreach ($passengersData as $passenger) {
+            if (! is_array($passenger)) {
+                continue;
+            }
+
+            $firstName = isset($passenger['first_name']) ? trim((string) $passenger['first_name']) : '';
+            $lastName = isset($passenger['last_name']) ? trim((string) $passenger['last_name']) : '';
+            if ($firstName === '' || $lastName === '') {
+                continue;
+            }
+
+            $rows[] = [
+                'booking_item_id' => isset($passenger['booking_item_id']) && $passenger['booking_item_id'] !== ''
+                    ? (string) $passenger['booking_item_id']
+                    : null,
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'date_of_birth' => $passenger['date_of_birth'] ?? $passenger['birth_date'] ?? null,
+                'passport_number' => $passenger['passport_number'] ?? null,
+                'passport_expiry' => $passenger['passport_expiry'] ?? $passenger['passport_expiry_date'] ?? null,
+                'nationality' => $passenger['nationality'] ?? $passenger['nationality_country_code'] ?? null,
+                'gender' => $passenger['gender'] ?? null,
+                'email' => $passenger['email'] ?? null,
+                'phone' => $passenger['phone'] ?? null,
+                'passenger_type' => $passenger['passenger_type'] ?? 'adult',
+            ];
         }
 
-        $order = Order::query()->find($booking->mirror_order_id);
-        if ($order === null) {
-            return;
+        return $rows;
+    }
+
+    /**
+     * @param  array<int, array{offer_id:int,price:numeric}>  $itemsData
+     * @param  array<int, Offer>  $offersById
+     * @param  array<int, array<string, mixed>>  $passengers
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildOrderItemsPayload(array $itemsData, array $offersById, string $currency, array $passengers): array
+    {
+        $passengersByLegacyItem = [];
+        foreach ($passengers as $passenger) {
+            $legacyItemId = $passenger['booking_item_id'] ?? null;
+            if ($legacyItemId === null) {
+                continue;
+            }
+
+            $passengersByLegacyItem[$legacyItemId][] = $this->stripPassengerLegacyKeys($passenger);
         }
 
-        $order->status = $orderStatus;
-        $order->save();
+        $hasPerItemMappings = $passengersByLegacyItem !== [];
+        $matchedMappedPassengers = false;
+        $sharedPassengers = array_map(
+            fn (array $passenger): array => $this->stripPassengerLegacyKeys($passenger),
+            $passengers
+        );
 
-        if ($itemStatus === null) {
-            return;
+        $payload = [];
+        foreach (array_values($itemsData) as $index => $itemData) {
+            $offer = $offersById[(int) ($itemData['offer_id'] ?? 0)] ?? null;
+            $flightId = null;
+            if ($offer !== null && $offer->type === 'flight') {
+                $flightId = $offer->flight_id ?? $offer->flight?->id;
+            }
+
+            $legacyItemKey = (string) ($itemData['booking_item_id'] ?? $itemData['id'] ?? ($index + 1));
+            $passengerData = $passengersByLegacyItem[$legacyItemKey] ?? null;
+            if ($passengerData !== null) {
+                $matchedMappedPassengers = true;
+            } elseif (! $hasPerItemMappings) {
+                $passengerData = $sharedPassengers;
+            }
+
+            $payload[] = [
+                'item_type' => 'flight',
+                'item_id' => $flightId,
+                'currency' => $currency,
+                'unit_price' => (float) ($itemData['price'] ?? 0),
+                'quantity' => 1,
+                'service_snapshot' => [
+                    'legacy_offer_id' => (int) ($itemData['offer_id'] ?? 0),
+                ],
+                'passenger_data' => $passengerData !== [] ? $passengerData : null,
+            ];
         }
 
-        foreach ($order->items()->get() as $item) {
-            $item->status = $itemStatus;
-            $item->save();
+        if ($hasPerItemMappings && ! $matchedMappedPassengers && $sharedPassengers !== []) {
+            foreach ($payload as &$itemPayload) {
+                $itemPayload['passenger_data'] = $sharedPassengers;
+            }
+            unset($itemPayload);
         }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $passenger
+     * @return array<string, mixed>
+     */
+    private function stripPassengerLegacyKeys(array $passenger): array
+    {
+        unset($passenger['booking_item_id']);
+
+        return $passenger;
     }
 }

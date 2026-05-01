@@ -2,14 +2,10 @@
 
 namespace Tests\Unit\Services\Finance;
 
-use App\Models\Booking;
-use App\Models\BookingItem;
 use App\Models\CommissionRule;
 use App\Models\Company;
-use App\Models\Offer;
-use App\Models\Package;
-use App\Models\PackageOrder;
-use App\Models\PackageOrderItem;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\SupplierEntitlement;
 use App\Models\User;
 use App\Services\Finance\FinanceService;
@@ -20,13 +16,12 @@ class FinanceServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_create_entitlements_for_booking_happy_path_percentage_rule(): void
+    public function test_create_entitlements_for_order_happy_path_percentage_rule(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
-        $offer = $this->createOffer($company, 'flight');
-        $booking = $this->createBooking($company, $user, 'USD', 100.00);
-        $item = $this->createBookingItem($booking, $offer, 100.00);
+        $order = $this->createOrder($company, $user, 'USD', 100.00);
+        $item = $this->createOrderItem($order, $company->id, 'flight', 100.00);
 
         $this->createRule([
             'type' => 'percentage',
@@ -36,12 +31,11 @@ class FinanceServiceTest extends TestCase
             'percentage_value' => 10.0,
         ]);
 
-        $created = app(FinanceService::class)->createEntitlementsForBooking($booking);
+        $created = app(FinanceService::class)->createEntitlementsForOrder($order);
 
         $this->assertCount(1, $created);
 
-        $entitlement = SupplierEntitlement::query()->where('booking_item_id', $item->id)->firstOrFail();
-        $this->assertSame($booking->id, $entitlement->booking_id);
+        $entitlement = SupplierEntitlement::query()->where('notes', 'like', '%'.$item->id.'%')->firstOrFail();
         $this->assertSame($company->id, $entitlement->company_id);
         $this->assertSame('flight', $entitlement->service_type);
         $this->assertEqualsWithDelta(100.0, (float) $entitlement->gross_amount, 0.0001);
@@ -53,14 +47,9 @@ class FinanceServiceTest extends TestCase
     {
         $company = $this->createCompany();
         $user = $this->createUser();
-        $packageOffer = $this->createOffer($company, 'package');
-        $moduleOfferA = $this->createOffer($company, 'flight');
-        $moduleOfferB = $this->createOffer($company, 'hotel');
-        $package = $this->createPackage($company, $packageOffer);
-        $order = $this->createPackageOrder($package, $company, $user, 'USD');
-
-        $itemA = $this->createPackageOrderItem($order, $moduleOfferA, $company->id, 'flight', 80.00, 1);
-        $itemB = $this->createPackageOrderItem($order, $moduleOfferB, $company->id, 'hotel', 120.00, 2);
+        $order = $this->createOrder($company, $user, 'USD', 200.00, metadata: ['legacy_origin' => 'package_order']);
+        $itemA = $this->createOrderItem($order, $company->id, 'flight', 80.00, 1);
+        $itemB = $this->createOrderItem($order, $company->id, 'hotel', 120.00, 1);
 
         $this->createRule([
             'type' => 'percentage',
@@ -73,18 +62,17 @@ class FinanceServiceTest extends TestCase
         $created = app(FinanceService::class)->createEntitlementsForOrder($order);
 
         $this->assertCount(2, $created);
-        $this->assertSame(2, SupplierEntitlement::query()->where('package_order_id', $order->id)->count());
-        $this->assertNotNull(SupplierEntitlement::query()->where('package_order_item_id', $itemA->id)->first());
-        $this->assertNotNull(SupplierEntitlement::query()->where('package_order_item_id', $itemB->id)->first());
+        $this->assertSame(2, SupplierEntitlement::query()->count());
+        $this->assertNotNull(SupplierEntitlement::query()->where('notes', 'like', '%'.$itemA->id.'%')->first());
+        $this->assertNotNull(SupplierEntitlement::query()->where('notes', 'like', '%'.$itemB->id.'%')->first());
     }
 
-    public function test_create_entitlements_for_booking_is_idempotent_and_reuses_existing_rows(): void
+    public function test_create_entitlements_for_order_is_not_idempotent(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
-        $offer = $this->createOffer($company, 'flight');
-        $booking = $this->createBooking($company, $user, 'USD', 100.00);
-        $this->createBookingItem($booking, $offer, 100.00);
+        $order = $this->createOrder($company, $user, 'USD', 100.00);
+        $this->createOrderItem($order, $company->id, 'flight', 100.00);
 
         $this->createRule([
             'type' => 'percentage',
@@ -94,28 +82,27 @@ class FinanceServiceTest extends TestCase
             'percentage_value' => 10.0,
         ]);
 
-        $first = app(FinanceService::class)->createEntitlementsForBooking($booking);
-        $second = app(FinanceService::class)->createEntitlementsForBooking($booking);
+        $first = app(FinanceService::class)->createEntitlementsForOrder($order);
+        $second = app(FinanceService::class)->createEntitlementsForOrder($order);
 
         $this->assertCount(1, $first);
         $this->assertCount(1, $second);
-        $this->assertSame($first[0]->id, $second[0]->id);
-        $this->assertSame(1, SupplierEntitlement::query()->where('booking_id', $booking->id)->count());
+        $this->assertNotSame($first[0]->id, $second[0]->id);
+        $this->assertSame(2, SupplierEntitlement::query()->count());
     }
 
-    public function test_create_entitlements_for_booking_without_rule_sets_zero_commission_and_net_equals_gross(): void
+    public function test_create_entitlements_for_order_without_rule_sets_zero_commission_and_net_equals_gross(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
-        $offer = $this->createOffer($company, 'flight');
-        $booking = $this->createBooking($company, $user, 'USD', 125.00);
-        $item = $this->createBookingItem($booking, $offer, 125.00);
+        $order = $this->createOrder($company, $user, 'USD', 125.00);
+        $item = $this->createOrderItem($order, $company->id, 'flight', 125.00);
 
-        $created = app(FinanceService::class)->createEntitlementsForBooking($booking);
+        $created = app(FinanceService::class)->createEntitlementsForOrder($order);
 
         $this->assertCount(1, $created);
 
-        $entitlement = SupplierEntitlement::query()->where('booking_item_id', $item->id)->firstOrFail();
+        $entitlement = SupplierEntitlement::query()->where('notes', 'like', '%'.$item->id.'%')->firstOrFail();
         $this->assertEqualsWithDelta(125.0, (float) $entitlement->gross_amount, 0.0001);
         $this->assertEqualsWithDelta(0.0, (float) $entitlement->commission_amount, 0.0001);
         $this->assertEqualsWithDelta(125.0, (float) $entitlement->net_amount, 0.0001);
@@ -139,93 +126,53 @@ class FinanceServiceTest extends TestCase
         ]);
     }
 
-    private function createOffer(Company $company, string $type): Offer
-    {
-        return Offer::query()->create([
-            'company_id' => $company->id,
-            'type' => $type,
-            'title' => strtoupper($type).' Offer '.str()->uuid(),
-            'price' => 100.00,
-            'currency' => 'USD',
-            'status' => 'active',
-        ]);
-    }
-
-    private function createBooking(Company $company, User $user, string $currency, float $totalPrice): Booking
-    {
-        return Booking::query()->create([
+    private function createOrder(
+        Company $company,
+        User $user,
+        string $currency,
+        float $total,
+        array $metadata = ['legacy_origin' => 'booking']
+    ): Order {
+        return Order::query()->create([
             'company_id' => $company->id,
             'user_id' => $user->id,
-            'status' => 'pending',
-            'total_price' => $totalPrice,
+            'order_number' => 'ORD-'.str()->upper(str()->random(10)),
+            'buyer_type' => 'client',
+            'status' => 'confirmed',
             'currency' => $currency,
+            'subtotal' => $total,
+            'tax' => 0,
+            'total' => $total,
+            'metadata' => $metadata,
         ]);
     }
 
-    private function createBookingItem(Booking $booking, Offer $offer, float $price): BookingItem
-    {
-        return BookingItem::query()->create([
-            'booking_id' => $booking->id,
-            'offer_id' => $offer->id,
-            'price' => $price,
-        ]);
-    }
-
-    private function createPackage(Company $company, Offer $packageOffer): Package
-    {
-        return Package::query()->create([
-            'offer_id' => $packageOffer->id,
-            'company_id' => $company->id,
-            'package_type' => 'fixed',
-            'status' => 'active',
-        ]);
-    }
-
-    private function createPackageOrder(Package $package, Company $company, User $user, string $currency): PackageOrder
-    {
-        return PackageOrder::query()->create([
-            'package_id' => $package->id,
-            'user_id' => $user->id,
-            'company_id' => $company->id,
-            'order_number' => 'PO-'.str()->upper(str()->random(12)),
-            'booking_channel' => 'public_b2c',
-            'status' => 'pending_payment',
-            'payment_status' => 'unpaid',
-            'adults_count' => 1,
-            'children_count' => 0,
-            'infants_count' => 0,
-            'currency' => $currency,
-            'base_component_total_snapshot' => 200.00,
-            'discount_snapshot' => 0,
-            'markup_snapshot' => 0,
-            'addon_total_snapshot' => 0,
-            'final_total_snapshot' => 200.00,
-            'display_price_mode_snapshot' => 'total',
-            'notes' => null,
-        ]);
-    }
-
-    private function createPackageOrderItem(
-        PackageOrder $order,
-        Offer $offer,
+    private function createOrderItem(
+        Order $order,
         int $companyId,
-        string $moduleType,
+        string $itemType,
         float $price,
-        int $sortOrder
-    ): PackageOrderItem {
-        return PackageOrderItem::query()->create([
-            'package_order_id' => $order->id,
-            'package_component_id' => null,
-            'offer_id' => $offer->id,
-            'module_type' => $moduleType,
-            'package_role' => $moduleType,
-            'company_id' => $companyId,
-            'is_required' => true,
-            'price_snapshot' => $price,
-            'currency_snapshot' => 'USD',
+        int $quantity = 1
+    ): OrderItem {
+        return OrderItem::query()->create([
+            'order_id' => $order->id,
+            'item_type' => $itemType,
+            'item_id' => null,
+            'package_id' => null,
+            'parent_item_id' => null,
+            'quantity' => $quantity,
+            'unit_price' => $price,
+            'total' => $price * $quantity,
+            'currency' => $order->currency,
+            'service_snapshot' => [
+                'company_id' => $companyId,
+                'is_required' => true,
+            ],
+            'passenger_data' => null,
+            'date_from' => null,
+            'date_to' => null,
             'status' => 'pending',
-            'failure_reason' => null,
-            'sort_order' => $sortOrder,
+            'external_ref' => null,
         ]);
     }
 

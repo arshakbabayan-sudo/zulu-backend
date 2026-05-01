@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Models\Booking;
 use App\Models\CommissionRule;
 use App\Models\Company;
+use App\Models\Offer;
+use App\Models\Order;
 use App\Models\User;
+use App\Services\Bookings\BookingService;
 use App\Services\Commissions\CommissionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -14,11 +16,11 @@ class CommissionAccrualCurrencyTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_accrue_for_booking_uses_booking_currency_eur(): void
+    public function test_accrue_for_order_uses_order_currency_eur(): void
     {
-        $booking = $this->createBookingForCurrencyCase('EUR');
+        $order = $this->createBookingForCurrencyCase('EUR');
 
-        $transaction = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForOrder($order);
 
         $this->assertNotNull($transaction);
         $this->assertSame('EUR', $transaction->commission_currency);
@@ -28,43 +30,43 @@ class CommissionAccrualCurrencyTest extends TestCase
         $this->assertEqualsWithDelta(10.0, (float) ($transaction->snapshot['percentage_value'] ?? 0), 0.0001);
     }
 
-    public function test_accrue_for_booking_uses_booking_currency_amd(): void
+    public function test_accrue_for_order_uses_order_currency_amd(): void
     {
-        $booking = $this->createBookingForCurrencyCase('AMD');
+        $order = $this->createBookingForCurrencyCase('AMD');
 
-        $transaction = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForOrder($order);
 
         $this->assertNotNull($transaction);
         $this->assertSame('AMD', $transaction->commission_currency);
         $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
     }
 
-    public function test_accrue_for_booking_defaults_to_usd_when_missing(): void
+    public function test_accrue_for_order_defaults_to_usd_when_missing(): void
     {
-        $booking = $this->createBookingForCurrencyCase('USD');
-        $attributes = $booking->getAttributes();
+        $order = $this->createBookingForCurrencyCase('USD');
+        $attributes = $order->getAttributes();
         unset($attributes['currency']);
-        $booking->setRawAttributes($attributes, true);
+        $order->setRawAttributes($attributes, true);
 
-        $transaction = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForOrder($order);
 
         $this->assertNotNull($transaction);
         $this->assertSame('USD', $transaction->commission_currency);
         $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
     }
 
-    public function test_accrue_for_booking_normalizes_lowercase_currency_to_upper(): void
+    public function test_accrue_for_order_normalizes_lowercase_currency_to_upper(): void
     {
-        $booking = $this->createBookingForCurrencyCase('amd');
+        $order = $this->createBookingForCurrencyCase('amd');
 
-        $transaction = app(CommissionService::class)->accrueForBooking($booking);
+        $transaction = app(CommissionService::class)->accrueForOrder($order);
 
         $this->assertNotNull($transaction);
         $this->assertSame('AMD', $transaction->commission_currency);
         $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
     }
 
-    private function createBookingForCurrencyCase(string $currency): Booking
+    private function createBookingForCurrencyCase(string $currency): Order
     {
         $company = Company::query()->create([
             'name' => 'Currency Test Company '.str()->uuid(),
@@ -76,7 +78,7 @@ class CommissionAccrualCurrencyTest extends TestCase
             'type' => 'percentage',
             'level' => 'seller',
             'scope_id' => $company->id,
-            'service_type' => 'general',
+            'service_type' => 'flight',
             'percentage_value' => 10,
             'direction' => 'zulu_from_seller',
             'priority' => 0,
@@ -91,11 +93,28 @@ class CommissionAccrualCurrencyTest extends TestCase
             'password' => 'password',
         ]);
 
-        return Booking::query()->create([
+        $offer = Offer::query()->create([
             'company_id' => $company->id,
-            'user_id' => $user->id,
-            'total_price' => 100.00,
-            'currency' => $currency,
+            'type' => 'flight',
+            'title' => 'Currency Flight '.str()->uuid(),
+            'price' => 100.00,
+            'currency' => strtoupper($currency),
+            'status' => Offer::STATUS_PUBLISHED,
         ]);
+
+        $bookingService = app(BookingService::class);
+        $order = $bookingService->create(
+            [
+                'company_id' => $company->id,
+                'user_id' => $user->id,
+                'currency' => $currency,
+                'status' => 'pending_payment',
+            ],
+            [
+                ['offer_id' => $offer->id, 'price' => 100.00],
+            ]
+        );
+
+        return $bookingService->confirm($order->fresh());
     }
 }

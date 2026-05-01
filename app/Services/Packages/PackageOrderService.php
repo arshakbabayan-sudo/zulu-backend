@@ -4,9 +4,9 @@ namespace App\Services\Packages;
 
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Package;
 use App\Models\PackageOrder;
-use App\Models\PackageOrderItem;
 use App\Models\User;
 use App\Services\Commissions\CommissionService;
 use App\Services\Finance\FinanceService;
@@ -30,7 +30,7 @@ class PackageOrderService
         private OrderService $orderService
     ) {}
 
-    public function createOrder(Package $package, User $user, array $input): PackageOrder
+    public function createOrder(Package $package, User $user, array $input): Order
     {
         $adultsCount = max(1, (int) ($input['adults_count'] ?? 1));
         $childrenCount = max(0, (int) ($input['children_count'] ?? 0));
@@ -110,96 +110,45 @@ class PackageOrderService
                 ]);
             }
 
-            $nextId = (int) (PackageOrder::query()->max('id') ?? 0) + 1;
+            $nextId = Order::query()
+                ->where('metadata->legacy_origin', 'package_order')
+                ->count() + 1;
             $orderNumber = 'PKG-'.str_pad((string) $nextId, 6, '0', STR_PAD_LEFT);
 
             $isBookable = (bool) $package->is_bookable;
-            $orderStatus = $isBookable ? 'pending_payment' : 'draft';
-
-            /** @var PackageOrder $packageOrder */
-            $packageOrder = PackageOrder::query()->create([
-                'package_id' => $package->id,
-                'user_id' => $user->id,
-                'company_id' => $package->company_id,
-                'order_number' => $orderNumber,
-                'booking_channel' => $bookingChannel,
-                'status' => $orderStatus,
-                'payment_status' => 'unpaid',
-                'adults_count' => $adultsCount,
-                'children_count' => $childrenCount,
-                'infants_count' => $infantsCount,
-                'currency' => $currency,
-                'base_component_total_snapshot' => $baseComponentTotal,
-                'discount_snapshot' => 0,
-                'markup_snapshot' => 0,
-                'addon_total_snapshot' => 0,
-                'final_total_snapshot' => $baseComponentTotal,
-                'display_price_mode_snapshot' => $package->display_price_mode ?? 'total',
-                'notes' => $notes,
-            ]);
-
-            $legacyItems = [];
-            foreach ($components as $component) {
-                $offer = $component->offer;
-                $linePrice = $component->price_override ?? $offer->price;
-                $itemCurrency = $package->currency ?? $offer->currency ?? $currency;
-
-                $legacyItem = PackageOrderItem::query()->create([
-                    'package_order_id' => $packageOrder->id,
-                    'package_component_id' => $component->id,
-                    'offer_id' => $component->offer_id,
-                    'module_type' => $component->module_type,
-                    'package_role' => $component->package_role,
-                    'company_id' => $offer->company_id,
-                    'is_required' => $component->is_required,
-                    'price_snapshot' => $linePrice,
-                    'currency_snapshot' => $itemCurrency,
-                    'status' => 'pending',
-                    'sort_order' => $component->sort_order,
-                ]);
-
-                $legacyItems[] = [
-                    'item' => $legacyItem,
-                    'component' => $component,
-                    'offer' => $offer,
-                ];
-            }
-
-            $statusMap = [
-                'draft' => 'cart',
-                'pending_payment' => 'pending_payment',
-            ];
+            $orderStatus = $isBookable ? 'pending_payment' : 'cart';
 
             $order = $this->orderService->create(
                 [
-                    'user_id' => $packageOrder->user_id,
-                    'company_id' => $packageOrder->company_id,
-                    'currency' => $packageOrder->currency,
-                    'order_number' => $packageOrder->order_number,
+                    'user_id' => $user->id,
+                    'company_id' => $package->company_id,
+                    'currency' => $currency,
+                    'order_number' => $orderNumber,
                     'buyer_type' => 'client',
-                    'status' => $statusMap[$packageOrder->status] ?? 'pending_payment',
+                    'status' => $orderStatus,
+                    'notes' => $notes,
                     'metadata' => [
                         'legacy_origin' => 'package_order',
-                        'legacy_package_order_id' => $packageOrder->id,
+                        'booking_channel' => $bookingChannel,
+                        'adults_count' => $adultsCount,
+                        'children_count' => $childrenCount,
+                        'infants_count' => $infantsCount,
                     ],
                 ],
-                collect($legacyItems)->map(function (array $legacyData) use ($package): array {
-                    /** @var PackageOrderItem $item */
-                    $item = $legacyData['item'];
-                    $component = $legacyData['component'];
-                    /** @var Offer $offer */
-                    $offer = $legacyData['offer'];
+                $components->map(function ($component) use ($package, $currency): array {
+                    $offer = $component->offer;
+                    $linePrice = $component->price_override ?? $offer->price;
+                    $itemCurrency = $package->currency ?? $offer->currency ?? $currency;
 
                     return [
                         'item_type' => $component->module_type,
                         'item_id' => $this->resolveOfferItemId($offer, $component->module_type),
                         'package_id' => $package->id,
-                        'unit_price' => $item->price_snapshot,
-                        'currency' => $item->currency_snapshot,
+                        'unit_price' => $linePrice,
+                        'currency' => $itemCurrency,
                         'service_snapshot' => [
                             'legacy_offer_id' => $offer->id,
                             'legacy_component_id' => $component->id,
-                            'legacy_package_order_item_id' => $item->id,
                             'package_role' => $component->package_role,
                             'sort_order' => $component->sort_order,
                             'is_required' => $component->is_required,
@@ -208,42 +157,28 @@ class PackageOrderService
                 })->values()->all()
             );
 
-            $packageOrder->mirror_order_id = $order->id;
-            $packageOrder->save();
-
-            return $packageOrder->load(['items.offer', 'items.company', 'package']);
+            return $order;
         });
     }
 
-    public function markPaid(PackageOrder $order): PackageOrder
+    public function markPaid(Order $order): Order
     {
         return DB::transaction(function () use ($order) {
             $this->assertOrderTransitionAllowed($order, 'paid');
 
             $order->status = 'paid';
-            $order->payment_status = 'paid';
             $order->save();
 
-            try {
-                $this->syncMirrorOrderStatus($order, 'paid');
-            } catch (\Throwable $e) {
-                Log::warning('Package order mirror status sync failed during markPaid', [
-                    'package_order_id' => $order->id,
-                    'mirror_order_id' => $order->mirror_order_id,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-
-            $invoice = $this->invoiceService->createForPackageOrder($order);
+            $invoice = $this->invoiceService->createForOrder($order);
             $payment = $this->paymentService->createForPackageOrderInvoice($invoice);
             $this->paymentService->markPaid($payment);
             $this->invoiceService->markPaid($invoice);
 
             try {
-                $this->commissionService->accrueForPackageOrder($order->fresh());
+                $this->commissionService->accrueForOrder($order->fresh(['items']));
             } catch (\Throwable $e) {
-                Log::warning('Package order commission accrual failed', [
-                    'package_order_id' => $order->id,
+                Log::warning('Order commission accrual failed', [
+                    'order_id' => $order->id,
                     'message' => $e->getMessage(),
                 ]);
             }
@@ -252,35 +187,35 @@ class PackageOrderService
                 if ($order->user_id !== null) {
                     $this->notificationService->createForEvent([
                         'user_id' => (int) $order->user_id,
-                        'event_type' => 'package_order.paid',
+                        'event_type' => 'order.paid',
                         'title' => 'Payment Successful',
                         'message' => 'Your order '.$order->order_number.' has been paid successfully.',
-                        'subject_type' => 'package_order',
-                        'subject_id' => $order->id,
+                        'subject_type' => 'order',
+                        'subject_id' => (string) $order->id,
                         'priority' => 'high',
                     ]);
                 }
             } catch (\Throwable $e) {
-                Log::warning('Package order paid notification failed', [
-                    'package_order_id' => $order->id,
+                Log::warning('Order paid notification failed', [
+                    'order_id' => $order->id,
                     'message' => $e->getMessage(),
                 ]);
             }
 
             try {
-                $this->financeService->createEntitlementsForOrder($order->fresh(['items.offer']));
+                $this->financeService->createEntitlementsForOrder($order->fresh(['items']));
             } catch (\Throwable $e) {
-                Log::warning('Entitlement creation failed for package order', [
-                    'package_order_id' => $order->id,
+                Log::warning('Entitlement creation failed for order', [
+                    'order_id' => $order->id,
                     'message' => $e->getMessage(),
                 ]);
             }
 
-            return $order->fresh(['items.offer', 'items.company', 'package']);
+            return $order->fresh(['items']);
         });
     }
 
-    public function confirmItem(PackageOrder $order, int $itemId): PackageOrderItem
+    public function confirmItem(Order $order, string $itemId): OrderItem
     {
         $item = $order->items()->whereKey($itemId)->first();
         if ($item === null) {
@@ -294,10 +229,10 @@ class PackageOrderService
 
         $this->recalculateOrderStatus($order->fresh(['items']));
 
-        return $item->fresh(['offer', 'company']);
+        return $item->fresh();
     }
 
-    public function failItem(PackageOrder $order, int $itemId, string $reason): PackageOrderItem
+    public function failItem(Order $order, string $itemId, string $reason): OrderItem
     {
         $item = $order->items()->whereKey($itemId)->first();
         if ($item === null) {
@@ -306,38 +241,29 @@ class PackageOrderService
             ]);
         }
 
+        $snapshot = $item->service_snapshot ?? [];
+        $snapshot['failure_reason'] = $reason;
+
         $item->status = 'failed';
-        $item->failure_reason = $reason;
+        $item->service_snapshot = $snapshot;
         $item->save();
 
         $this->recalculateOrderStatus($order->fresh(['items']));
 
-        return $item->fresh(['offer', 'company']);
+        return $item->fresh();
     }
 
-    public function cancelOrder(PackageOrder $order): PackageOrder
+    public function cancelOrder(Order $order): Order
     {
         return DB::transaction(function () use ($order) {
             $this->assertOrderTransitionAllowed($order, 'cancelled');
 
-            PackageOrderItem::query()
-                ->where('package_order_id', $order->id)
-                ->update(['status' => 'cancelled']);
+            $order->items()->update(['status' => 'cancelled']);
 
             $order->status = 'cancelled';
             $order->save();
 
-            try {
-                $this->syncMirrorOrderStatus($order, 'cancelled', 'cancelled');
-            } catch (\Throwable $e) {
-                Log::warning('Package order mirror status sync failed during cancelOrder', [
-                    'package_order_id' => $order->id,
-                    'mirror_order_id' => $order->mirror_order_id,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-
-            return $order->fresh(['items.offer', 'items.company', 'package', 'user']);
+            return $order->fresh(['items', 'user']);
         });
     }
 
@@ -387,17 +313,14 @@ class PackageOrderService
             ->first();
     }
 
-    private function assertOrderTransitionAllowed(PackageOrder $order, string $targetStatus): void
+    private function assertOrderTransitionAllowed(Order $order, string $targetStatus): void
     {
         /** @var array<string, list<string>> $allowed */
         $allowed = [
-            'draft' => ['pending_payment', 'cancelled'],
-            'pending_payment' => ['paid', 'cancelled', 'draft'],
-            'paid' => ['partially_confirmed', 'confirmed', 'partially_failed', 'cancelled'],
-            'partially_confirmed' => ['confirmed', 'partially_failed', 'cancelled'],
-            'confirmed' => ['completed', 'cancelled'],
-            'partially_failed' => ['cancelled', 'confirmed'],
-            'completed' => [],
+            'cart' => ['pending_payment', 'cancelled'],
+            'pending_payment' => ['paid', 'cancelled', 'cart'],
+            'paid' => ['confirmed', 'cancelled'],
+            'confirmed' => ['cancelled'],
             'cancelled' => [],
         ];
 
@@ -411,7 +334,7 @@ class PackageOrderService
         }
     }
 
-    private function recalculateOrderStatus(PackageOrder $order): void
+    private function recalculateOrderStatus(Order $order): void
     {
         if (! $order->relationLoaded('items')) {
             $order->load('items');
@@ -421,15 +344,19 @@ class PackageOrderService
 
         $newStatus = $order->status;
 
-        if ($items->isNotEmpty() && $items->every(fn (PackageOrderItem $i) => $i->status === 'confirmed')) {
+        if ($items->isNotEmpty() && $items->every(fn (OrderItem $i): bool => $i->status === 'confirmed')) {
             $newStatus = 'confirmed';
-        } elseif ($items->contains(fn (PackageOrderItem $i) => $i->is_required && $i->status === 'failed')) {
-            $newStatus = 'partially_failed';
+        } elseif ($items->contains(function (OrderItem $i): bool {
+            $snapshot = $i->service_snapshot ?? [];
+
+            return (($snapshot['is_required'] ?? false) === true) && $i->status === 'failed';
+        })) {
+            $newStatus = 'paid';
         } elseif (
-            $items->contains(fn (PackageOrderItem $i) => $i->status === 'confirmed')
-            && $items->every(fn (PackageOrderItem $i) => in_array($i->status, ['confirmed', 'pending', 'awaiting_supplier'], true))
+            $items->contains(fn (OrderItem $i): bool => $i->status === 'confirmed')
+            && $items->every(fn (OrderItem $i): bool => in_array($i->status, ['confirmed', 'pending'], true))
         ) {
-            $newStatus = 'partially_confirmed';
+            $newStatus = 'paid';
         }
 
         if ($newStatus !== $order->status) {
@@ -468,29 +395,5 @@ class PackageOrderService
         }
 
         return null;
-    }
-
-    protected function syncMirrorOrderStatus(PackageOrder $packageOrder, string $orderStatus, ?string $itemStatus = null): void
-    {
-        if ($packageOrder->mirror_order_id === null) {
-            return;
-        }
-
-        $order = Order::query()->find($packageOrder->mirror_order_id);
-        if ($order === null) {
-            return;
-        }
-
-        $order->status = $orderStatus;
-        $order->save();
-
-        if ($itemStatus === null) {
-            return;
-        }
-
-        foreach ($order->items()->get() as $item) {
-            $item->status = $itemStatus;
-            $item->save();
-        }
     }
 }

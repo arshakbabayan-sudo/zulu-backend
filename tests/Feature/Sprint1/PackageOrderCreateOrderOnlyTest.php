@@ -11,25 +11,67 @@ use App\Models\PackageComponent;
 use App\Models\PackageOrder;
 use App\Models\PackageOrderItem;
 use App\Models\User;
-use App\Services\Commissions\CommissionService;
-use App\Services\Finance\FinanceService;
-use App\Services\Invoices\InvoiceService;
-use App\Services\Notifications\NotificationService;
 use App\Services\Orders\OrderService;
 use App\Services\Packages\PackageOrderService;
-use App\Services\Payments\PaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use InvalidArgumentException;
+use Mockery\MockInterface;
 use Tests\TestCase;
 
-class PackageOrderDualWriteTest extends TestCase
+class PackageOrderCreateOrderOnlyTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_create_order_dual_writes_package_order_and_order_rows(): void
+    public function test_create_order_returns_order_and_writes_order_items_only(): void
     {
         $company = $this->createCompany();
         $user = $this->createUser();
+        $package = $this->createPackageWithComponents($company);
 
+        $order = app(PackageOrderService::class)->createOrder($package, $user, [
+            'booking_channel' => 'public_b2c',
+            'adults_count' => 1,
+        ]);
+
+        $this->assertInstanceOf(Order::class, $order);
+        $this->assertSame('package_order', $order->metadata['legacy_origin'] ?? null);
+        $this->assertCount(2, $order->items);
+        $this->assertSame(0, PackageOrder::query()->count());
+        $this->assertSame(0, PackageOrderItem::query()->count());
+        $this->assertSame(1, Order::query()->count());
+        $this->assertSame(2, OrderItem::query()->count());
+    }
+
+    public function test_create_order_rolls_back_when_order_service_fails(): void
+    {
+        $company = $this->createCompany();
+        $user = $this->createUser();
+        $package = $this->createPackageWithComponents($company);
+
+        $this->mock(OrderService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('create')
+                ->once()
+                ->andThrow(new InvalidArgumentException('forced package order creation failure'));
+        });
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('forced package order creation failure');
+
+        try {
+            app(PackageOrderService::class)->createOrder($package, $user, [
+                'booking_channel' => 'public_b2c',
+                'adults_count' => 1,
+            ]);
+        } finally {
+            $this->assertSame(0, PackageOrder::query()->count());
+            $this->assertSame(0, PackageOrderItem::query()->count());
+            $this->assertSame(0, Order::query()->count());
+            $this->assertSame(0, OrderItem::query()->count());
+        }
+    }
+
+    private function createPackageWithComponents(Company $company): Package
+    {
         $packageOffer = $this->createOffer($company, 'package', 200.00, 'USD');
         $flightOffer = $this->createOffer($company, 'flight', 120.00, 'USD');
         $hotelOffer = $this->createOffer($company, 'hotel', 80.00, 'USD');
@@ -41,7 +83,7 @@ class PackageOrderDualWriteTest extends TestCase
             'package_title' => 'Sprint 1 Package',
             'currency' => 'USD',
             'is_public' => true,
-            'is_bookable' => false,
+            'is_bookable' => true,
             'status' => 'active',
         ]);
 
@@ -67,49 +109,13 @@ class PackageOrderDualWriteTest extends TestCase
             'price_override' => 80.00,
         ]);
 
-        $service = new PackageOrderService(
-            app(InvoiceService::class),
-            app(PaymentService::class),
-            app(CommissionService::class),
-            app(NotificationService::class),
-            app(FinanceService::class),
-            app(OrderService::class)
-        );
-
-        $packageOrder = $service->createOrder($package, $user, [
-            'booking_channel' => 'public_b2c',
-            'adults_count' => 1,
-        ]);
-
-        $this->assertSame(1, PackageOrder::count());
-        $this->assertSame(2, PackageOrderItem::count());
-        $this->assertSame('draft', $packageOrder->status);
-
-        $packageOrder->refresh();
-        $order = Order::query()->firstOrFail();
-
-        $this->assertSame($order->id, $packageOrder->mirror_order_id);
-        $this->assertSame($packageOrder->order_number, $order->order_number);
-        $this->assertSame('cart', $order->status);
-        $this->assertSame('package_order', $order->metadata['legacy_origin'] ?? null);
-        $this->assertSame($packageOrder->id, $order->metadata['legacy_package_order_id'] ?? null);
-
-        $orderItems = OrderItem::query()->where('order_id', $order->id)->get();
-        $this->assertCount(2, $orderItems);
-        $this->assertSame(
-            ['flight', 'hotel'],
-            $orderItems->pluck('item_type')->sort()->values()->all()
-        );
-        $this->assertSame(
-            [$package->id],
-            $orderItems->pluck('package_id')->unique()->values()->all()
-        );
+        return $package;
     }
 
     private function createCompany(): Company
     {
         return Company::query()->create([
-            'name' => 'Package Dual Write Co '.str()->uuid(),
+            'name' => 'Package Create Order Only Co '.str()->uuid(),
             'type' => 'operator',
             'status' => 'active',
         ]);
@@ -118,8 +124,8 @@ class PackageOrderDualWriteTest extends TestCase
     private function createUser(): User
     {
         return User::query()->create([
-            'name' => 'Package Dual Write User',
-            'email' => 'package-dual-write-'.str()->uuid().'@example.test',
+            'name' => 'Package Create Order Only User',
+            'email' => 'package-create-order-only-'.str()->uuid().'@example.test',
             'password' => 'password',
         ]);
     }

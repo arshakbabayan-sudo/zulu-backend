@@ -2,9 +2,9 @@
 
 namespace App\Services\Marketplace;
 
-use App\Models\Booking;
 use App\Models\Invoice;
 use App\Models\Offer;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\User;
 use App\Services\Bookings\BookingService;
@@ -21,7 +21,7 @@ class MarketplaceService
         private PaymentService $paymentService,
     ) {}
 
-    public function createBooking(User $user, Offer $offer): Booking
+    public function createBooking(User $user, Offer $offer): Order
     {
         return $this->bookingService->create(
             [
@@ -38,20 +38,20 @@ class MarketplaceService
     }
 
     /**
-     * @return array{booking: Booking, invoice: \App\Models\Invoice, payment: \App\Models\Payment}
+     * @return array{order: Order, invoice: Invoice, payment: Payment}
      */
-    public function checkoutPaidBooking(Booking $booking): array
+    public function checkoutPaidBooking(Order $order): array
     {
-        return DB::transaction(function () use ($booking): array {
-            $locked = Booking::query()
-                ->whereKey($booking->getKey())
+        return DB::transaction(function () use ($order): array {
+            $locked = Order::query()
+                ->whereKey($order->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($locked->status !== Booking::STATUS_PENDING) {
+            if ($locked->status !== 'pending_payment') {
                 throw new HttpResponseException(response()->json([
                     'success' => false,
-                    'message' => 'Booking cannot be checked out',
+                    'message' => 'Order cannot be checked out',
                 ], 422));
             }
 
@@ -64,10 +64,10 @@ class MarketplaceService
                     && $payment->status === Payment::STATUS_PAID
                     && $existingInvoice->status === Invoice::STATUS_PAID
                     && $lockedFresh !== null
-                    && $lockedFresh->status === Booking::STATUS_CONFIRMED
+                    && $lockedFresh->status === 'confirmed'
                 ) {
                     return [
-                        'booking' => $lockedFresh,
+                        'order' => $lockedFresh,
                         'invoice' => $existingInvoice->fresh(),
                         'payment' => $payment->fresh(),
                     ];
@@ -79,14 +79,14 @@ class MarketplaceService
                 ], 409));
             }
 
-            $invoice = $this->invoiceService->createForBooking($locked, []);
+            $invoice = $this->invoiceService->createForOrder($locked, []);
             $payment = $this->paymentService->createForInvoice($invoice, []);
             $this->paymentService->markPaid($payment);
             $invoice = $this->invoiceService->markPaid($invoice->fresh());
-            $bookingConfirmed = $this->bookingService->confirm($locked->fresh());
+            $confirmedOrder = $this->bookingService->confirm($locked->fresh());
 
             return [
-                'booking' => $bookingConfirmed->load('items'),
+                'order' => $confirmedOrder->load('items'),
                 'invoice' => $invoice,
                 'payment' => $payment->fresh(),
             ];

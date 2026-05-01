@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Sprint1;
 
-use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Offer;
 use App\Models\Order;
@@ -83,12 +82,12 @@ class BookingPackageReadMigrationTest extends TestCase
         $user = $this->createUser();
         $offer = $this->createOffer($company, 'flight', 190.00);
 
-        $booking = $this->createBookingFlow($bookingService, $company, $user, $offer, 190.00);
+        $booking = $this->createBookingFlow($bookingService, $company, $user, $offer, 190.00, legacyBookingId: 7001);
 
-        $order = $bookingService->getWithDetails($booking->id);
+        $order = $bookingService->getWithDetails(7001);
 
         $this->assertNotNull($order);
-        $this->assertSame($booking->id, (int) ($order->metadata['legacy_booking_id'] ?? 0));
+        $this->assertSame(7001, (int) ($order->metadata['legacy_booking_id'] ?? 0));
         $this->assertNull($bookingService->getWithDetails(999999));
     }
 
@@ -133,12 +132,14 @@ class BookingPackageReadMigrationTest extends TestCase
             'booking_channel' => 'public_b2c',
             'adults_count' => 1,
         ]);
+        $legacyOrder->metadata = array_merge($legacyOrder->metadata ?? [], ['legacy_package_order_id' => 8001]);
+        $legacyOrder->save();
 
-        $order = $packageOrderService->findForUser($legacyOrder->id, $owner);
+        $order = $packageOrderService->findForUser(8001, $owner);
 
         $this->assertNotNull($order);
-        $this->assertSame($legacyOrder->id, (int) ($order->metadata['legacy_package_order_id'] ?? 0));
-        $this->assertNull($packageOrderService->findForUser($legacyOrder->id, $otherUser));
+        $this->assertSame(8001, (int) ($order->metadata['legacy_package_order_id'] ?? 0));
+        $this->assertNull($packageOrderService->findForUser(8001, $otherUser));
     }
 
     public function test_package_order_service_find_for_company_scope_happy_and_miss(): void
@@ -154,12 +155,14 @@ class BookingPackageReadMigrationTest extends TestCase
             'booking_channel' => 'public_b2c',
             'adults_count' => 1,
         ]);
+        $legacyOrder->metadata = array_merge($legacyOrder->metadata ?? [], ['legacy_package_order_id' => 8002]);
+        $legacyOrder->save();
 
-        $inScope = $packageOrderService->findForCompanyScope($legacyOrder->id, [$companyA->id]);
-        $outOfScope = $packageOrderService->findForCompanyScope($legacyOrder->id, [$companyB->id]);
+        $inScope = $packageOrderService->findForCompanyScope(8002, [$companyA->id]);
+        $outOfScope = $packageOrderService->findForCompanyScope(8002, [$companyB->id]);
 
         $this->assertNotNull($inScope);
-        $this->assertSame($legacyOrder->id, (int) ($inScope->metadata['legacy_package_order_id'] ?? 0));
+        $this->assertSame(8002, (int) ($inScope->metadata['legacy_package_order_id'] ?? 0));
         $this->assertNull($outOfScope);
     }
 
@@ -168,13 +171,14 @@ class BookingPackageReadMigrationTest extends TestCase
         Company $company,
         User $user,
         Offer $offer,
-        float $price
-    ): Booking {
-        return $bookingService->create(
+        float $price,
+        ?int $legacyBookingId = null
+    ): Order {
+        $order = $bookingService->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $company->id,
-                'status' => Booking::STATUS_PENDING,
+                'status' => 'pending_payment',
                 'currency' => 'USD',
             ],
             [
@@ -182,6 +186,13 @@ class BookingPackageReadMigrationTest extends TestCase
             ],
             []
         );
+
+        if ($legacyBookingId !== null) {
+            $order->metadata = array_merge($order->metadata ?? [], ['legacy_booking_id' => $legacyBookingId]);
+            $order->save();
+        }
+
+        return $order->fresh();
     }
 
     /**

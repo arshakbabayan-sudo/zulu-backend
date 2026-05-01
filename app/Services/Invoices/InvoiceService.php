@@ -2,9 +2,8 @@
 
 namespace App\Services\Invoices;
 
-use App\Models\Booking;
 use App\Models\Invoice;
-use App\Models\PackageOrder;
+use App\Models\Order;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -56,29 +55,16 @@ class InvoiceService
     /**
      * @param  array{total_amount?:numeric,status?:string}  $data
      */
-    public function createForBooking(Booking $booking, array $data = []): Invoice
-    {
-        return $booking->invoices()->create([
-            'order_id' => $booking->mirror_order_id,
-            'total_amount' => $data['total_amount'] ?? $booking->total_price,
-            'status' => $data['status'] ?? 'pending',
-        ]);
-    }
-
-    /**
-     * @param  array{total_amount?:numeric,currency?:string,unique_booking_reference?:string,status?:string,notes?:string|null}  $data
-     */
-    public function createForPackageOrder(PackageOrder $packageOrder, array $data = []): Invoice
+    public function createForOrder(Order $order, array $data = []): Invoice
     {
         return Invoice::query()->create([
             'booking_id' => null,
-            'package_order_id' => $packageOrder->id,
-            'order_id' => $packageOrder->mirror_order_id,
-            'total_amount' => $data['total_amount'] ?? $packageOrder->final_total_snapshot,
-            'currency' => $data['currency'] ?? $packageOrder->currency,
-            'unique_booking_reference' => $data['unique_booking_reference']
-                ?? ('PKG-INV-'.$packageOrder->order_number),
-            'status' => $data['status'] ?? Invoice::STATUS_PENDING,
+            'package_order_id' => null,
+            'order_id' => $order->id,
+            'total_amount' => $data['total_amount'] ?? $order->total,
+            'currency' => $order->currency,
+            'unique_booking_reference' => $data['unique_booking_reference'] ?? $order->order_number,
+            'status' => $data['status'] ?? 'pending',
             'notes' => $data['notes'] ?? null,
         ]);
     }
