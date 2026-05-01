@@ -17,6 +17,7 @@
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\Admin\PageController;
+use App\Http\Controllers\Api\AdminAuditLogController;
 use App\Http\Controllers\Api\AdminContractController;
 use App\Http\Controllers\Api\AdminContractTemplateController;
 use App\Http\Controllers\Api\AdminInventoryController;
@@ -340,6 +341,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('banners', [PlatformAdminBannerController::class, 'store']);
         Route::patch('banners/{banner}', [PlatformAdminBannerController::class, 'update'])->whereNumber('banner');
         Route::delete('banners/{banner}', [PlatformAdminBannerController::class, 'destroy'])->whereNumber('banner');
+
+        // Audit logs (PART 26)
+        Route::get('audit-logs', [AdminAuditLogController::class, 'index']);
+        Route::get('audit-logs/{log}', [AdminAuditLogController::class, 'show'])
+            ->where('log', '[0-9a-f-]{36}');
+        Route::post('audit-logs/verify-integrity', [AdminAuditLogController::class, 'verifyIntegrity']);
 
         // Contracts (PART 05)
         Route::get('contracts', [AdminContractController::class, 'index']);
