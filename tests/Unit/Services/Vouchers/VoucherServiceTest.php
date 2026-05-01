@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Vouchers;
 
 use App\Models\Company;
+use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
@@ -161,6 +162,38 @@ class VoucherServiceTest extends TestCase
         $this->assertSame('Corrected Name', $reissued->holder_name);
         $this->assertNotSame($original->qr_token, $reissued->qr_token);
         $this->assertStringContainsString('-R', $reissued->voucher_number);
+    }
+
+    public function test_issue_creates_in_app_notification_for_order_user(): void
+    {
+        $user = User::factory()->create();
+        $order = $this->createOrderWithItems(
+            [['item_type' => 'hotel', 'parent_index' => null]],
+            ['user_id' => $user->id]
+        );
+
+        (new VoucherService)->issueForOrder($order);
+
+        $notification = Notification::query()
+            ->where('user_id', $user->id)
+            ->where('event_type', 'voucher.issued')
+            ->first();
+
+        $this->assertNotNull($notification, 'voucher.issued notification should be created.');
+        $this->assertSame('unread', $notification->status);
+        $this->assertStringContainsString('voucher', strtolower($notification->message));
+    }
+
+    public function test_issue_skips_notification_when_user_id_null(): void
+    {
+        $order = $this->createOrderWithItems(
+            [['item_type' => 'hotel', 'parent_index' => null]],
+            ['user_id' => null, 'buyer_type' => 'guest']
+        );
+
+        (new VoucherService)->issueForOrder($order);
+
+        $this->assertSame(0, Notification::query()->count());
     }
 
     public function test_void_changes_status_to_void(): void

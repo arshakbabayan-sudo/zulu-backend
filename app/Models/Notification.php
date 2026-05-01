@@ -23,8 +23,13 @@ class Notification extends Model
         'package_order.cancelled',
         'order.confirmed',
         'order.cancelled',
+        'order.paid',
+        'order.fulfilled',
         'payment.succeeded',
         'payment.failed',
+        'voucher.issued',
+        'voucher.voided',
+        'voucher.reissued',
         'account.welcome',
         'account.password_reset',
     ];

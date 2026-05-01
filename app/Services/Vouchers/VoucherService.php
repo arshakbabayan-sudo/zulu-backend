@@ -6,6 +6,7 @@ use App\Mail\VoucherIssuedMail;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Voucher;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +15,8 @@ use Illuminate\Support\Facades\Mail;
 class VoucherService
 {
     public function __construct(
-        private ?VoucherPdfService $pdfService = null
+        private ?VoucherPdfService $pdfService = null,
+        private ?NotificationService $notificationService = null
     ) {}
 
     /**
@@ -84,7 +86,38 @@ class VoucherService
         })->each(function (Voucher $voucher) use ($order): void {
             $this->renderPdfSafely($voucher);
             $this->sendIssuedMailSafely($voucher, $order);
+            $this->createInAppNotificationSafely($voucher, $order);
         });
+    }
+
+    private function createInAppNotificationSafely(Voucher $voucher, Order $order): void
+    {
+        if ($order->user_id === null) {
+            return;
+        }
+
+        $service = $this->notificationService ?? app(NotificationService::class);
+
+        try {
+            $service->createForEvent([
+                'user_id' => (int) $order->user_id,
+                'event_type' => 'voucher.issued',
+                'title' => 'Voucher issued',
+                'message' => 'Your voucher '.$voucher->voucher_number.' is ready.',
+                'subject_type' => 'voucher',
+                'subject_id' => null,
+                'priority' => 'normal',
+                'variables' => [
+                    'order_number' => (string) ($order->order_number ?? ''),
+                    'voucher_number' => $voucher->voucher_number,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Voucher in-app notification failed', [
+                'voucher_id' => $voucher->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function renderPdfSafely(Voucher $voucher): void
