@@ -21,8 +21,8 @@ class ReviewService
             'target_entity_id' => ['required', 'integer', 'min:1'],
             'rating' => ['required', 'integer', 'min:1', 'max:10'],
             'review_text' => ['nullable', 'string', 'max:2000'],
-            'package_order_id' => ['nullable', 'integer', 'exists:package_orders,id'],
-            'booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
+            'package_order_id' => ['nullable', 'integer', 'min:1'],
+            'booking_id' => ['nullable', 'integer', 'min:1'],
         ])->validate();
 
         if (! empty($validated['package_order_id'])) {
@@ -63,8 +63,6 @@ class ReviewService
 
         return Review::query()->create([
             'user_id' => $user->id,
-            'package_order_id' => $validated['package_order_id'] ?? null,
-            'booking_id' => $validated['booking_id'] ?? null,
             'target_entity_type' => $validated['target_entity_type'],
             'target_entity_id' => (int) $validated['target_entity_id'],
             'rating' => (int) $validated['rating'],

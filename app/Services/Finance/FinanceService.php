@@ -77,10 +77,6 @@ class FinanceService
                     $net = bcsub($gross, $commission, 2);
 
                     $created[] = SupplierEntitlement::query()->create([
-                        'package_order_id' => null,
-                        'package_order_item_id' => null,
-                        'booking_id' => null,
-                        'booking_item_id' => null,
                         'company_id' => $sellerId,
                         'service_type' => $item->item_type,
                         'gross_amount' => $gross,

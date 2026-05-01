@@ -15,8 +15,6 @@ class Review extends Model
 
     protected $fillable = [
         'user_id',
-        'package_order_id',
-        'booking_id',
         'target_entity_type',
         'target_entity_id',
         'rating',

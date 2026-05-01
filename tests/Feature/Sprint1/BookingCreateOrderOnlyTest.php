@@ -2,8 +2,6 @@
 
 namespace Tests\Feature\Sprint1;
 
-use App\Models\Booking;
-use App\Models\BookingItem;
 use App\Models\Company;
 use App\Models\Offer;
 use App\Models\Order;
@@ -44,8 +42,6 @@ class BookingCreateOrderOnlyTest extends TestCase
         $this->assertInstanceOf(Order::class, $order);
         $this->assertSame('booking', $order->metadata['legacy_origin'] ?? null);
         $this->assertCount(2, $order->items);
-        $this->assertSame(0, Booking::query()->count());
-        $this->assertSame(0, BookingItem::query()->count());
         $this->assertSame(1, Order::query()->count());
         $this->assertSame(2, OrderItem::query()->count());
     }
@@ -79,8 +75,6 @@ class BookingCreateOrderOnlyTest extends TestCase
                 []
             );
         } finally {
-            $this->assertSame(0, Booking::query()->count());
-            $this->assertSame(0, BookingItem::query()->count());
             $this->assertSame(0, Order::query()->count());
             $this->assertSame(0, OrderItem::query()->count());
         }

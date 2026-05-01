@@ -8,8 +8,6 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Package;
 use App\Models\PackageComponent;
-use App\Models\PackageOrder;
-use App\Models\PackageOrderItem;
 use App\Models\User;
 use App\Services\Orders\OrderService;
 use App\Services\Packages\PackageOrderService;
@@ -36,8 +34,6 @@ class PackageOrderCreateOrderOnlyTest extends TestCase
         $this->assertInstanceOf(Order::class, $order);
         $this->assertSame('package_order', $order->metadata['legacy_origin'] ?? null);
         $this->assertCount(2, $order->items);
-        $this->assertSame(0, PackageOrder::query()->count());
-        $this->assertSame(0, PackageOrderItem::query()->count());
         $this->assertSame(1, Order::query()->count());
         $this->assertSame(2, OrderItem::query()->count());
     }
@@ -63,8 +59,6 @@ class PackageOrderCreateOrderOnlyTest extends TestCase
                 'adults_count' => 1,
             ]);
         } finally {
-            $this->assertSame(0, PackageOrder::query()->count());
-            $this->assertSame(0, PackageOrderItem::query()->count());
             $this->assertSame(0, Order::query()->count());
             $this->assertSame(0, OrderItem::query()->count());
         }

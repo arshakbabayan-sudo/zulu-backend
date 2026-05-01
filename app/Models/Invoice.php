@@ -21,8 +21,6 @@ class Invoice extends Model
     public const STATUS_CANCELLED = 'cancelled';
 
     protected $fillable = [
-        'booking_id',
-        'package_order_id',
         'order_id',
         'unique_booking_reference',
         'total_amount',

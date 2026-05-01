@@ -34,14 +34,10 @@ class InvoiceServiceOrderLinkTest extends TestCase
         $invoice = app(InvoiceService::class)->createForOrder($order, ['total_amount' => 100]);
 
         $this->assertInstanceOf(Invoice::class, $invoice);
-        $this->assertNull($invoice->booking_id);
-        $this->assertNull($invoice->package_order_id);
         $this->assertSame($order->id, $invoice->order_id);
         $this->assertNotNull($invoice->order_id);
         $this->assertDatabaseHas('invoices', [
             'id' => $invoice->id,
-            'booking_id' => null,
-            'package_order_id' => null,
             'order_id' => $order->id,
         ]);
     }
@@ -55,13 +51,10 @@ class InvoiceServiceOrderLinkTest extends TestCase
 
         $invoice = app(InvoiceService::class)->createForOrder($order);
 
-        $this->assertNull($invoice->booking_id);
-        $this->assertNull($invoice->package_order_id);
         $this->assertSame($order->id, $invoice->order_id);
         $this->assertSame((string) $order->total, (string) $invoice->total_amount);
         $this->assertDatabaseHas('invoices', [
             'id' => $invoice->id,
-            'booking_id' => null,
             'order_id' => $order->id,
         ]);
     }
@@ -78,14 +71,10 @@ class InvoiceServiceOrderLinkTest extends TestCase
         ]);
 
         $this->assertInstanceOf(Invoice::class, $invoice);
-        $this->assertNull($invoice->booking_id);
-        $this->assertNull($invoice->package_order_id);
         $this->assertSame($packageOrder->id, $invoice->order_id);
         $this->assertNotNull($invoice->order_id);
         $this->assertDatabaseHas('invoices', [
             'id' => $invoice->id,
-            'booking_id' => null,
-            'package_order_id' => null,
             'order_id' => $packageOrder->id,
         ]);
     }

@@ -108,7 +108,6 @@ class PaymentRefundTest extends TestCase
     private function createPaymentWithStatus(string $status): Payment
     {
         $invoice = Invoice::query()->create([
-            'booking_id' => null,
             'total_amount' => 100.00,
             'currency' => 'usd',
             'status' => Invoice::STATUS_PENDING,

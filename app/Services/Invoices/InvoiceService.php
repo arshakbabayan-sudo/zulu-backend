@@ -58,8 +58,6 @@ class InvoiceService
     public function createForOrder(Order $order, array $data = []): Invoice
     {
         return Invoice::query()->create([
-            'booking_id' => null,
-            'package_order_id' => null,
             'order_id' => $order->id,
             'total_amount' => $data['total_amount'] ?? $order->total,
             'currency' => $order->currency,
