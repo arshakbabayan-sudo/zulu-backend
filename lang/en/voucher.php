@@ -32,4 +32,11 @@ return [
     'issuer' => 'Issued By',
     'footer' => 'This document confirms your booking. Present it to the service provider on arrival.',
     'language_label' => 'EN',
+    'email' => [
+        'subject' => 'Your ZULU voucher :number is ready',
+        'greeting' => 'Hello :name,',
+        'intro' => 'Thank you for booking with ZULU. Your voucher is attached to this email as a PDF.',
+        'attached_note' => 'Please print or save the attached PDF and present it to the service provider on arrival.',
+        'signature' => 'Have a great trip!',
+    ],
 ];

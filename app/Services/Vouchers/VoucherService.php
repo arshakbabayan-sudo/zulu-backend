@@ -2,12 +2,14 @@
 
 namespace App\Services\Vouchers;
 
+use App\Mail\VoucherIssuedMail;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Voucher;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class VoucherService
 {
@@ -79,8 +81,9 @@ class VoucherService
             }
 
             return $issued;
-        })->each(function (Voucher $voucher): void {
+        })->each(function (Voucher $voucher) use ($order): void {
             $this->renderPdfSafely($voucher);
+            $this->sendIssuedMailSafely($voucher, $order);
         });
     }
 
@@ -97,6 +100,24 @@ class VoucherService
         } catch (\Throwable $e) {
             Log::warning('Voucher PDF render failed', [
                 'voucher_id' => $voucher->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function sendIssuedMailSafely(Voucher $voucher, Order $order): void
+    {
+        $email = $order->user?->email;
+        if (! is_string($email) || $email === '') {
+            return;
+        }
+
+        try {
+            Mail::to($email)->send(new VoucherIssuedMail($voucher->fresh()));
+        } catch (\Throwable $e) {
+            Log::warning('Voucher issuance email failed', [
+                'voucher_id' => $voucher->id,
+                'email' => $email,
                 'message' => $e->getMessage(),
             ]);
         }
