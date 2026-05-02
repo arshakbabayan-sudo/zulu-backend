@@ -56,6 +56,7 @@ use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\AdminConnectionController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\StorefrontPackageController;
@@ -387,6 +388,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('contract-templates', [AdminContractTemplateController::class, 'store']);
         Route::patch('contract-templates/{template}', [AdminContractTemplateController::class, 'update'])
             ->where('template', '[0-9a-f-]{36}');
+
+        // Connections (PART 18)
+        Route::get('connections', [AdminConnectionController::class, 'index']);
+        Route::get('connections/stats', [AdminConnectionController::class, 'stats']);
+        Route::get('connections/{id}', [AdminConnectionController::class, 'show'])
+            ->where('id', '[0-9a-f-]{36}');
+        Route::post('connections/{id}/force-terminate', [AdminConnectionController::class, 'forceTerminate'])
+            ->where('id', '[0-9a-f-]{36}');
 
         // Vouchers (PART 09)
         Route::get('vouchers', [AdminVoucherController::class, 'index']);
