@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\AdminPlatformStatisticsController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
 use App\Http\Controllers\Api\AdminVoucherController;
+use App\Http\Controllers\Api\AISearchController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\CarController;
@@ -97,6 +98,10 @@ Route::get('webhooks/events', [SellerWebhookController::class, 'supportedEvents'
 // Public search helpers (PART 20)
 Route::get('search/autocomplete', [SavedSearchController::class, 'autocomplete'])->middleware('throttle:api_public');
 Route::get('search/popular', [SavedSearchController::class, 'popular'])->middleware('throttle:api_public');
+
+// AI Search (PART 34 Phase 1) — natural-language → Claude parser → discovery search
+Route::post('ai/search', [AISearchController::class, 'search'])
+    ->middleware('throttle:10,1');
 
 Route::prefix('v1')->name('v1.')->group(function () use ($registerPublicDiscoveryRoutes) {
     Route::get('/health', function (PlatformReadinessService $readinessService) {
