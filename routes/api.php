@@ -57,6 +57,7 @@ use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\AdminConnectionController;
+use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\StorefrontPackageController;
@@ -388,6 +389,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('contract-templates', [AdminContractTemplateController::class, 'store']);
         Route::patch('contract-templates/{template}', [AdminContractTemplateController::class, 'update'])
             ->where('template', '[0-9a-f-]{36}');
+
+        // Package booking sagas (PART 19 — HEART)
+        Route::get('package-sagas', [AdminPackageSagaController::class, 'index']);
+        Route::get('package-sagas/stats', [AdminPackageSagaController::class, 'stats']);
+        Route::get('package-sagas/{id}', [AdminPackageSagaController::class, 'show'])
+            ->where('id', '[0-9a-f-]{36}');
+        Route::post('package-sagas/{id}/retry', [AdminPackageSagaController::class, 'retry'])
+            ->where('id', '[0-9a-f-]{36}');
 
         // Connections (PART 18)
         Route::get('connections', [AdminConnectionController::class, 'index']);
