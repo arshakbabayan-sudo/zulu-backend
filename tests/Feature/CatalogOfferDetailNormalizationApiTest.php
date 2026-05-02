@@ -40,11 +40,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
             'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'CAT-F1',
             'service_type' => 'scheduled',
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'EVN',
-            'arrival_country' => 'EG',
-            'arrival_city' => 'Sharm',
             'arrival_airport' => 'SSH',
             'departure_at' => '2026-09-01 08:00:00',
             'arrival_at' => '2026-09-01 12:00:00',
@@ -189,8 +185,6 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Car::query()->create([
             'offer_id' => $offer->id,
             'location_id' => $this->locationIds()['yerevan_city'],
-            'pickup_location' => 'Lot A',
-            'dropoff_location' => 'Lot B',
             'vehicle_class' => 'economy',
         ]);
 
@@ -324,11 +318,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
             'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'LST-F1',
             'service_type' => 'scheduled',
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'EVN',
-            'arrival_country' => 'EG',
-            'arrival_city' => 'Sharm',
             'arrival_airport' => 'SSH',
             'departure_at' => '2026-09-01 08:00:00',
             'arrival_at' => '2026-09-01 12:00:00',
@@ -370,8 +360,6 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Car::query()->create([
             'offer_id' => $carOffer->id,
             'location_id' => $this->locationIds()['yerevan_city'],
-            'pickup_location' => 'P',
-            'dropoff_location' => 'D',
             'vehicle_class' => 'compact',
         ]);
 
@@ -452,11 +440,7 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
             'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'HIDE-WEB-1',
             'service_type' => 'scheduled',
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'EVN',
-            'arrival_country' => 'EG',
-            'arrival_city' => 'Sharm',
             'arrival_airport' => 'SSH',
             'departure_at' => '2026-09-01 08:00:00',
             'arrival_at' => '2026-09-01 12:00:00',

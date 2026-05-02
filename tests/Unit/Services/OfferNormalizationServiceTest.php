@@ -173,8 +173,6 @@ class OfferNormalizationServiceTest extends TestCase
         Car::query()->create([
             'offer_id' => $offer->id,
             'location_id' => $this->locationIds()['yerevan_city'],
-            'pickup_location' => 'EVN Airport',
-            'dropoff_location' => 'City center',
             'vehicle_class' => 'economy',
         ]);
 
@@ -272,11 +270,7 @@ class OfferNormalizationServiceTest extends TestCase
             'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'X1',
             'service_type' => 'scheduled',
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'EVN',
-            'arrival_country' => 'EG',
-            'arrival_city' => 'Sharm',
             'arrival_airport' => 'SSH',
             'departure_airport_code' => 'EVN',
             'arrival_airport_code' => 'SSH',
@@ -474,11 +468,7 @@ class OfferNormalizationServiceTest extends TestCase
             'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'Z',
             'service_type' => 'scheduled',
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'EVN',
-            'arrival_country' => 'EG',
-            'arrival_city' => 'Sharm',
             'arrival_airport' => 'SSH',
             'departure_at' => '2026-08-01 10:00:00',
             'arrival_at' => '2026-08-01 12:00:00',

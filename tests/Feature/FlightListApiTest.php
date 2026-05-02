@@ -42,11 +42,7 @@ class FlightListApiTest extends TestCase
             'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => $code,
             'service_type' => 'scheduled',
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'EVN',
-            'arrival_country' => 'EG',
-            'arrival_city' => 'Sharm',
             'arrival_airport' => 'SSH',
             'departure_at' => '2026-09-01 10:00:00',
             'arrival_at' => '2026-09-01 15:00:00',
@@ -104,8 +100,6 @@ class FlightListApiTest extends TestCase
         $company = Company::query()->firstOrFail();
         $this->seedFlight($company, [], 'A');
         $this->seedFlight($company, [
-            'departure_city' => 'Paris',
-            'departure_country' => 'FR',
             'flight_code_internal' => 'L-PAR',
         ], 'B');
 
@@ -125,8 +119,6 @@ class FlightListApiTest extends TestCase
         $o2 = $this->seedFlight($company, [
             'flight_code_internal' => 'P-B',
             'adult_price' => 50,
-            'departure_city' => 'Paris',
-            'departure_country' => 'FR',
         ], 'P2');
         $o2->update(['price' => 120]);
 
@@ -228,8 +220,6 @@ class FlightListApiTest extends TestCase
         $this->seedFlight($company, [
             'flight_code_internal' => 'HIDDEN-ADMIN',
             'appears_in_admin' => false,
-            'departure_city' => 'Paris',
-            'departure_country' => 'FR',
         ], 'HA');
 
         $res = $this->getJson('/api/flights', $this->authHeaders());

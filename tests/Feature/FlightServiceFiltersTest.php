@@ -36,11 +36,7 @@ class FlightServiceFiltersTest extends TestCase
             'location_id' => $this->locationIds()['yerevan_city'],
             'flight_code_internal' => 'FLT-FIL-'.$codeSuffix,
             'service_type' => 'scheduled',
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'EVN',
-            'arrival_country' => 'EG',
-            'arrival_city' => 'Sharm',
             'arrival_airport' => 'SSH',
             'departure_at' => '2026-09-01 10:00:00',
             'arrival_at' => '2026-09-01 15:00:00',
@@ -109,9 +105,6 @@ class FlightServiceFiltersTest extends TestCase
         $company = Company::query()->firstOrFail();
         $this->createFlightOffer($company, ['departure_city' => 'Yerevan', 'arrival_city' => 'Sharm'], '1');
         $this->createFlightOffer($company, [
-            'departure_city' => 'Paris',
-            'departure_country' => 'FR',
-            'arrival_city' => 'Sharm',
             'flight_code_internal' => 'FLT-FIL-PAR',
         ], '2');
 
@@ -167,8 +160,6 @@ class FlightServiceFiltersTest extends TestCase
         $o2 = $this->createFlightOffer($company, [
             'adult_price' => 900,
             'flight_code_internal' => 'P2',
-            'departure_city' => 'Paris',
-            'departure_country' => 'FR',
         ], 'P2');
         $o2->update(['price' => 150]);
 
@@ -210,19 +201,16 @@ class FlightServiceFiltersTest extends TestCase
         $this->seed(RbacBootstrapSeeder::class);
         $company = Company::query()->firstOrFail();
         $this->createFlightOffer($company, [
-            'departure_city' => 'Yerevan',
             'cabin_class' => 'economy',
             'status' => 'active',
         ], 'M1');
         $this->createFlightOffer($company, [
-            'departure_city' => 'Yerevan',
             'cabin_class' => 'business',
             'status' => 'active',
             'flight_code_internal' => 'M2',
         ], 'M2');
 
         $n = $this->flights->filteredQuery([
-            'departure_city' => 'Yerevan',
             'cabin_class' => 'economy',
             'status' => 'active',
         ])->count();
@@ -299,11 +287,7 @@ class FlightServiceFiltersTest extends TestCase
         $user = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
 
         $o1 = $this->createFlightOffer($company, [
-            'departure_country' => 'AM',
-            'departure_city' => 'Yerevan',
             'departure_airport' => 'Zvartnots',
-            'arrival_country' => 'FR',
-            'arrival_city' => 'Paris',
             'arrival_airport' => 'CDG',
             'cabin_class' => 'business',
             'hand_baggage_included' => true,
@@ -320,11 +304,7 @@ class FlightServiceFiltersTest extends TestCase
         $o1->update(['price' => 580]);
 
         $o2 = $this->createFlightOffer($company, [
-            'departure_country' => 'AM',
-            'departure_city' => 'Gyumri',
             'departure_airport' => 'LWN',
-            'arrival_country' => 'IT',
-            'arrival_city' => 'Rome',
             'arrival_airport' => 'FCO',
             'cabin_class' => 'economy',
             'hand_baggage_included' => false,

@@ -47,8 +47,6 @@ class CarWriteApiTest extends TestCase
             'offer_id' => $offerId,
             'company_id' => $companyId,
             'location_id' => $this->locationIds()['yerevan_city'],
-            'pickup_location' => 'EVN',
-            'dropoff_location' => 'City',
             'vehicle_class' => 'economy',
             'vehicle_type' => 'sedan',
             'brand' => 'Toyota',
@@ -240,14 +238,10 @@ class CarWriteApiTest extends TestCase
         $o2 = $this->makeCarOffer($company, 'Car B');
 
         $this->postJson('/api/cars', $this->validCreatePayload($o1->id, $company->id, [
-            'pickup_location' => 'Yerevan, AM',
-            'dropoff_location' => 'Yerevan, AM',
             'base_price' => 100,
         ]), $headers)->assertStatus(201);
 
         $this->postJson('/api/cars', $this->validCreatePayload($o2->id, $company->id, [
-            'pickup_location' => 'Gyumri, AM',
-            'dropoff_location' => 'Gyumri, AM',
             'base_price' => 40,
         ]), $headers)->assertStatus(201);
 
