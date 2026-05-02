@@ -30,3 +30,4 @@ rr.exe
 
 # Sprint 0 cutover artifacts — local-only rollback insurance
 .env.mysql.bak.*
+rr
