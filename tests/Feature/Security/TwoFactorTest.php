@@ -6,7 +6,6 @@ use App\Models\User;
 use App\Services\Security\TotpGenerator;
 use App\Services\Security\TwoFactorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;

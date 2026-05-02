@@ -232,13 +232,13 @@ class LocalizationController extends Controller
         }
 
         $langs = $service->getAllLanguages()->map(fn ($row) => [
-            'id'         => (int) $row->id,
-            'code'       => $row->code,
-            'name'       => $row->name,
-            'name_en'    => $row->name_en,
+            'id' => (int) $row->id,
+            'code' => $row->code,
+            'name' => $row->name,
+            'name_en' => $row->name_en,
             'is_default' => (bool) $row->is_default,
             'is_enabled' => (bool) $row->is_enabled,
-            'rtl'        => (bool) ($row->rtl ?? false),
+            'rtl' => (bool) ($row->rtl ?? false),
             'sort_order' => (int) $row->sort_order,
         ])->values();
 
@@ -258,8 +258,8 @@ class LocalizationController extends Controller
         $updated = $service->setDefaultLanguage($language);
 
         return response()->json(['success' => true, 'data' => [
-            'id'         => $updated->id,
-            'code'       => $updated->code,
+            'id' => $updated->id,
+            'code' => $updated->code,
             'is_default' => (bool) $updated->is_default,
         ]]);
     }
@@ -275,9 +275,9 @@ class LocalizationController extends Controller
         }
 
         $validated = $request->validate([
-            'name'    => ['required', 'string', 'max:64'],
+            'name' => ['required', 'string', 'max:64'],
             'name_en' => ['required', 'string', 'max:64'],
-            'rtl'     => ['sometimes', 'boolean'],
+            'rtl' => ['sometimes', 'boolean'],
         ]);
 
         $updated = $service->updateLanguage(
@@ -288,11 +288,11 @@ class LocalizationController extends Controller
         );
 
         return response()->json(['success' => true, 'data' => [
-            'id'         => $updated->id,
-            'code'       => $updated->code,
-            'name'       => $updated->name,
-            'name_en'    => $updated->name_en,
-            'rtl'        => (bool) $updated->rtl,
+            'id' => $updated->id,
+            'code' => $updated->code,
+            'name' => $updated->name,
+            'name_en' => $updated->name_en,
+            'rtl' => (bool) $updated->rtl,
             'is_default' => (bool) $updated->is_default,
             'is_enabled' => (bool) $updated->is_enabled,
             'sort_order' => (int) $updated->sort_order,
@@ -403,10 +403,10 @@ class LocalizationController extends Controller
     public function uiTranslationsPaginated(Request $request, LocalizationService $service): JsonResponse
     {
         $validated = $request->validate([
-            'lang'     => ['required', 'string', 'max:8'],
-            'page'     => ['sometimes', 'integer', 'min:1'],
+            'lang' => ['required', 'string', 'max:8'],
+            'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:5', 'max:100'],
-            'search'   => ['sometimes', 'string', 'max:100'],
+            'search' => ['sometimes', 'string', 'max:100'],
         ]);
 
         $result = $service->getUiTranslationsPaginated(
@@ -433,8 +433,8 @@ class LocalizationController extends Controller
         }
 
         $validated = $request->validate([
-            'language_code'  => ['required', 'string', 'max:8'],
-            'translations'   => ['required', 'array', 'min:1'],
+            'language_code' => ['required', 'string', 'max:8'],
+            'translations' => ['required', 'array', 'min:1'],
             'translations.*' => ['string'],
         ]);
 
@@ -462,8 +462,8 @@ class LocalizationController extends Controller
         }
 
         $validated = $request->validate([
-            'code'    => ['required', 'string', 'max:8'],
-            'name'    => ['required', 'string', 'max:64'],
+            'code' => ['required', 'string', 'max:8'],
+            'name' => ['required', 'string', 'max:64'],
             'name_en' => ['required', 'string', 'max:64'],
         ]);
 
@@ -480,10 +480,10 @@ class LocalizationController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'id'         => $lang->id,
-                'code'       => $lang->code,
-                'name'       => $lang->name,
-                'name_en'    => $lang->name_en,
+                'id' => $lang->id,
+                'code' => $lang->code,
+                'name' => $lang->name,
+                'name_en' => $lang->name_en,
                 'is_default' => $lang->is_default,
                 'is_enabled' => $lang->is_enabled,
                 'sort_order' => $lang->sort_order,

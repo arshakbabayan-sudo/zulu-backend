@@ -5,6 +5,7 @@ namespace App\Services\Offers;
 use App\Models\Offer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
 class OfferService
 {
@@ -100,7 +101,7 @@ class OfferService
         return $offer;
     }
 
-    private function loadInventoryModule(Offer $offer): ?\Illuminate\Database\Eloquent\Model
+    private function loadInventoryModule(Offer $offer): ?Model
     {
         $relation = match ($offer->type) {
             'flight', 'hotel', 'transfer', 'car', 'excursion' => $offer->type,

@@ -17,17 +17,17 @@ class TestUsersSeeder extends Seeder
         $platformCompany = Company::query()->updateOrCreate(
             ['name' => 'ZULU SPIN Platform'],
             [
-                'legal_name'         => 'ZULU SPIN Platform LLC',
-                'type'               => 'platform',
-                'governance_status'  => 'active',
-                'country'            => 'AM',
-                'city'               => 'Yerevan',
-                'address'            => 'Platform HQ',
-                'phone'              => '+37400000000',
-                'tax_id'             => 'PLATFORM001',
-                'status'             => 'active',
-                'is_seller'          => false,
-                'profile_completed'  => true,
+                'legal_name' => 'ZULU SPIN Platform LLC',
+                'type' => 'platform',
+                'governance_status' => 'active',
+                'country' => 'AM',
+                'city' => 'Yerevan',
+                'address' => 'Platform HQ',
+                'phone' => '+37400000000',
+                'tax_id' => 'PLATFORM001',
+                'status' => 'active',
+                'is_seller' => false,
+                'profile_completed' => true,
             ]
         );
 
@@ -35,9 +35,9 @@ class TestUsersSeeder extends Seeder
         $superAdmin = User::query()->updateOrCreate(
             ['email' => 'admin@zuluspin.com'],
             [
-                'name'     => 'Zulu Super Admin',
+                'name' => 'Zulu Super Admin',
                 'password' => Hash::make('password'),
-                'status'   => 'active',
+                'status' => 'active',
             ]
         );
 
@@ -53,16 +53,16 @@ class TestUsersSeeder extends Seeder
         $testCompany = Company::query()->updateOrCreate(
             ['name' => 'Test Travel Agency'],
             [
-                'legal_name'        => 'Test Travel Agency LLC',
-                'type'              => 'agency',
+                'legal_name' => 'Test Travel Agency LLC',
+                'type' => 'agency',
                 'governance_status' => 'active',
-                'country'           => 'AM',
-                'city'              => 'Yerevan',
-                'address'           => '1 Test Street, Yerevan',
-                'phone'             => '+37491000001',
-                'tax_id'            => 'TEST123456',
-                'status'            => 'active',
-                'is_seller'         => true,
+                'country' => 'AM',
+                'city' => 'Yerevan',
+                'address' => '1 Test Street, Yerevan',
+                'phone' => '+37491000001',
+                'tax_id' => 'TEST123456',
+                'status' => 'active',
+                'is_seller' => true,
                 'profile_completed' => true,
             ]
         );
@@ -71,9 +71,9 @@ class TestUsersSeeder extends Seeder
         $companyAdmin = User::query()->updateOrCreate(
             ['email' => 'company@zuluspin.com'],
             [
-                'name'     => 'Company Admin',
+                'name' => 'Company Admin',
                 'password' => Hash::make('password'),
-                'status'   => 'active',
+                'status' => 'active',
             ]
         );
 
@@ -89,9 +89,9 @@ class TestUsersSeeder extends Seeder
         User::query()->updateOrCreate(
             ['email' => 'user@zuluspin.com'],
             [
-                'name'     => 'Test User',
+                'name' => 'Test User',
                 'password' => Hash::make('password'),
-                'status'   => 'active',
+                'status' => 'active',
             ]
         );
 

@@ -3,8 +3,6 @@
 namespace Tests\Feature\Webhooks;
 
 use App\Models\Company;
-use App\Models\WebhookDelivery;
-use App\Models\WebhookSubscription;
 use App\Services\Webhooks\WebhookService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;

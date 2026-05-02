@@ -108,7 +108,7 @@ class ConnectionVisibilityResolver
      * For a given (viewer, supplier) pair, lists the service types granted by the connection.
      * Returns null when scope is 'all' or 'services' (caller must inspect items individually).
      *
-     * @return array<int, string>|null  null = not narrowable to type list
+     * @return array<int, string>|null null = not narrowable to type list
      */
     public function visibleServiceTypes(Company $viewer, Company $supplier): ?array
     {

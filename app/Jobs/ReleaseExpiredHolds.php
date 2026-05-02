@@ -27,4 +27,3 @@ class ReleaseExpiredHolds implements ShouldQueue
         Log::info("Released {$count} expired service holds.");
     }
 }
-

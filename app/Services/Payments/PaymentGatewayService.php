@@ -5,7 +5,11 @@ namespace App\Services\Payments;
 use App\Models\Payment;
 use App\Models\PaymentLog;
 use Illuminate\Support\Facades\Log;
+use Stripe\Event;
+use Stripe\Exception\ApiErrorException;
+use Stripe\Exception\SignatureVerificationException;
 use Stripe\StripeClient;
+use Stripe\Webhook;
 
 class PaymentGatewayService
 {
@@ -86,7 +90,7 @@ class PaymentGatewayService
                 'client_secret' => $intent->client_secret,
                 'payment_intent_id' => $intent->id,
             ];
-        } catch (\Stripe\Exception\ApiErrorException $e) {
+        } catch (ApiErrorException $e) {
             PaymentLog::query()->create([
                 'payment_id' => $payment->id,
                 'event_type' => 'intent.failed',
@@ -128,7 +132,7 @@ class PaymentGatewayService
             }
 
             return ['success' => false, 'status' => $intent->status, 'error' => 'Payment not succeeded'];
-        } catch (\Stripe\Exception\ApiErrorException $e) {
+        } catch (ApiErrorException $e) {
             Log::error('Stripe confirmPaymentIntent failed', ['error' => $e->getMessage()]);
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -171,7 +175,7 @@ class PaymentGatewayService
             ]);
 
             return ['success' => true, 'refund_id' => $refund->id, 'status' => $refund->status];
-        } catch (\Stripe\Exception\ApiErrorException $e) {
+        } catch (ApiErrorException $e) {
             Log::error('Stripe refund failed', ['error' => $e->getMessage(), 'payment_id' => $payment->id]);
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -181,7 +185,7 @@ class PaymentGatewayService
     /**
      * Verify Stripe webhook signature and return the event.
      *
-     * @return array{success: true, event: \Stripe\Event}|array{success: false, error: string}
+     * @return array{success: true, event: Event}|array{success: false, error: string}
      */
     public function constructWebhookEvent(string $payload, string $sigHeader): array
     {
@@ -191,14 +195,14 @@ class PaymentGatewayService
         }
 
         try {
-            $event = \Stripe\Webhook::constructEvent(
+            $event = Webhook::constructEvent(
                 $payload,
                 $sigHeader,
                 config('payment.stripe.webhook_secret')
             );
 
             return ['success' => true, 'event' => $event];
-        } catch (\Stripe\Exception\SignatureVerificationException $e) {
+        } catch (SignatureVerificationException $e) {
             return ['success' => false, 'error' => 'Invalid signature'];
         } catch (\UnexpectedValueException $e) {
             return ['success' => false, 'error' => 'Invalid payload'];

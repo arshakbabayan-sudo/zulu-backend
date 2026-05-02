@@ -101,4 +101,3 @@ class HoldService
             ->update(['released' => true]);
     }
 }
-

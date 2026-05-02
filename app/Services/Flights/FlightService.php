@@ -46,8 +46,10 @@ class FlightService
         'user_email',
         'departure_airport',
         'departure_airport_code',
+        'departure_city',
         'arrival_airport',
         'arrival_airport_code',
+        'arrival_city',
         'departure_at_from',
         'departure_at_to',
         'arrival_at_from',
@@ -525,8 +527,10 @@ class FlightService
         $stringEquals = [
             'departure_airport' => 'departure_airport',
             'departure_airport_code' => 'departure_airport_code',
+            'departure_city' => 'departure_city',
             'arrival_airport' => 'arrival_airport',
             'arrival_airport_code' => 'arrival_airport_code',
+            'arrival_city' => 'arrival_city',
             'connection_type' => 'connection_type',
             'cabin_class' => 'cabin_class',
             'fare_family' => 'fare_family',
@@ -667,7 +671,7 @@ class FlightService
             $invoiceId = $filters['invoice_id'];
             if ($invoiceId !== null && $invoiceId !== '' && is_numeric($invoiceId) && (int) $invoiceId > 0) {
                 $query->whereExists(function ($sub) use ($invoiceId): void {
-                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                    $sub->select(DB::raw(1))
                         ->from('order_items')
                         ->join('invoices', 'invoices.order_id', '=', 'order_items.order_id')
                         ->whereColumn('order_items.item_id', 'flights.id')
@@ -684,7 +688,7 @@ class FlightService
                 if ($needle !== '') {
                     $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
                     $query->whereExists(function ($sub) use ($safeNeedle): void {
-                        $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                        $sub->select(DB::raw(1))
                             ->from('order_items')
                             ->join('orders', 'orders.id', '=', 'order_items.order_id')
                             ->join('users', 'users.id', '=', 'orders.user_id')
@@ -854,6 +858,8 @@ class FlightService
             'arrival_airport' => ['required', 'string', 'max:191'],
             'departure_airport_code' => ['nullable', 'string', 'max:8'],
             'arrival_airport_code' => ['nullable', 'string', 'max:8'],
+            'departure_city' => ['nullable', 'string', 'max:191'],
+            'arrival_city' => ['nullable', 'string', 'max:191'],
             'departure_terminal' => ['nullable', 'string', 'max:32'],
             'arrival_terminal' => ['nullable', 'string', 'max:32'],
             'departure_at' => ['required', 'date'],

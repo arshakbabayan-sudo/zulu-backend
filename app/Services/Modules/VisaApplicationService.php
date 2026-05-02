@@ -76,7 +76,7 @@ class VisaApplicationService
     {
         return VisaApplication::query()
             ->with(['user:id,name,email', 'visa:id,country_id,country,name,visa_type'])
-            ->when($userId !== null, fn($q) => $q->where('user_id', $userId))
+            ->when($userId !== null, fn ($q) => $q->where('user_id', $userId))
             ->latest('id')
             ->get();
     }

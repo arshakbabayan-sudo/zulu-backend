@@ -67,6 +67,7 @@ class ExcursionController extends Controller
      * On success, `offers.price` = `base_price`.
      *
      * @group Excursions
+     *
      * @bodyParam offer_id int required ID of an existing offer with type=excursion. Example: 90
      * @bodyParam location string required Example: Garni, Armenia
      * @bodyParam duration string required Example: 4 hours

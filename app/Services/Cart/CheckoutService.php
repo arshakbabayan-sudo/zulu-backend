@@ -26,8 +26,8 @@ class CheckoutService
 
     /**
      * @param  array<string, mixed>  $payload
-     *      Optional: notes, passenger_data (applied to items lacking own data),
-     *                booking_channel, hold_minutes (override default)
+     *                                         Optional: notes, passenger_data (applied to items lacking own data),
+     *                                         booking_channel, hold_minutes (override default)
      */
     public function checkout(User $user, array $payload = []): Order
     {

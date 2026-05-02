@@ -12,8 +12,11 @@ class SupportTicket extends Model
     use HasFactory;
 
     public const STATUS_OPEN = 'open';
+
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_RESOLVED = 'resolved';
+
     public const STATUS_CLOSED = 'closed';
 
     /** @var list<string> */

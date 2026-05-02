@@ -11,10 +11,10 @@ class BannerController extends Controller
     public function index(): JsonResponse
     {
         $banners = Banner::orderBy('sort_order')->get();
-        
+
         return response()->json([
             'success' => true,
-            'data' => $banners
+            'data' => $banners,
         ]);
     }
 }

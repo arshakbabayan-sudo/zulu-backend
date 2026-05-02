@@ -47,6 +47,8 @@ class CarWriteApiTest extends TestCase
             'offer_id' => $offerId,
             'company_id' => $companyId,
             'location_id' => $this->locationIds()['yerevan_city'],
+            'pickup_location' => 'Yerevan Airport',
+            'dropoff_location' => 'Yerevan City center',
             'vehicle_class' => 'economy',
             'vehicle_type' => 'sedan',
             'brand' => 'Toyota',

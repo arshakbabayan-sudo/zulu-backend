@@ -43,7 +43,9 @@ class FlightListApiTest extends TestCase
             'flight_code_internal' => $code,
             'service_type' => 'scheduled',
             'departure_airport' => 'EVN',
+            'departure_city' => 'Yerevan',
             'arrival_airport' => 'SSH',
+            'arrival_city' => 'Sharm El Sheikh',
             'departure_at' => '2026-09-01 10:00:00',
             'arrival_at' => '2026-09-01 15:00:00',
             'duration_minutes' => 300,
@@ -101,6 +103,7 @@ class FlightListApiTest extends TestCase
         $this->seedFlight($company, [], 'A');
         $this->seedFlight($company, [
             'flight_code_internal' => 'L-PAR',
+            'departure_city' => 'Paris',
         ], 'B');
 
         $res = $this->getJson('/api/flights?departure_city=Yerevan', $this->authHeaders());

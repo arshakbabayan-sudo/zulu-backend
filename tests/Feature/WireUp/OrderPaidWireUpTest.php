@@ -2,12 +2,11 @@
 
 namespace Tests\Feature\WireUp;
 
+use App\Models\Company;
 use App\Models\LoyaltyAccount;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
-use App\Models\WebhookSubscription;
-use App\Services\Cart\CartService;
 use App\Services\Packages\PackageOrderService;
 use App\Services\Webhooks\WebhookService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,7 +33,7 @@ class OrderPaidWireUpTest extends TestCase
         Http::fake(['*' => Http::response('ok', 200)]);
 
         $user = User::factory()->create();
-        $company = \App\Models\Company::query()->create([
+        $company = Company::query()->create([
             'name' => 'WH Co', 'type' => 'operator', 'status' => 'active',
         ]);
 

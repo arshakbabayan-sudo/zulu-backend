@@ -75,7 +75,7 @@ return new class extends Migration
             DB::statement("ALTER TABLE connections ADD CONSTRAINT connections_type_check CHECK (type IN ('supplier_reseller','mutual','white_label','partner_feed'))");
             DB::statement("ALTER TABLE connections ADD CONSTRAINT connections_direction_check CHECK (direction IN ('a_to_b','b_to_a','both'))");
             DB::statement("ALTER TABLE connections ADD CONSTRAINT connections_status_check CHECK (status IN ('proposed','active','paused','terminated','rejected'))");
-            DB::statement("ALTER TABLE connections ADD CONSTRAINT connections_self_ref_check CHECK (seller_a_company_id <> seller_b_company_id)");
+            DB::statement('ALTER TABLE connections ADD CONSTRAINT connections_self_ref_check CHECK (seller_a_company_id <> seller_b_company_id)');
         }
     }
 

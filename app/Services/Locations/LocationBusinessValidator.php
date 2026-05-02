@@ -38,5 +38,4 @@ class LocationBusinessValidator
 
         return $location;
     }
-
 }

@@ -39,4 +39,3 @@ class LocationQaSeeder extends Seeder
         return $location->fresh();
     }
 }
-

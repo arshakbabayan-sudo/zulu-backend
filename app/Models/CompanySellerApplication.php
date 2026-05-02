@@ -11,8 +11,11 @@ class CompanySellerApplication extends Model
     use HasFactory;
 
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_UNDER_REVIEW = 'under_review';
+
     public const STATUS_APPROVED = 'approved';
+
     public const STATUS_REJECTED = 'rejected';
 
     /** @var list<string> */
@@ -49,4 +52,3 @@ class CompanySellerApplication extends Model
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 }
-

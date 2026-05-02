@@ -23,4 +23,3 @@ class PruneExpiredTokens extends Command
         return self::SUCCESS;
     }
 }
-

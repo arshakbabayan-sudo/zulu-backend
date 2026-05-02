@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
-use App\Models\Connection;
 use App\Models\User;
 use App\Services\Partnerships\PartnerConnectionService;
 use Database\Seeders\RbacBootstrapSeeder;
@@ -40,11 +39,13 @@ class AdminConnectionControllerTest extends TestCase
         $service = app(PartnerConnectionService::class);
 
         // 1 proposed
-        $a = $this->makeCompany(); $b = $this->makeCompany();
+        $a = $this->makeCompany();
+        $b = $this->makeCompany();
         $service->propose($a, $b, $admin);
 
         // 1 active
-        $c = $this->makeCompany(); $d = $this->makeCompany();
+        $c = $this->makeCompany();
+        $d = $this->makeCompany();
         $accepter = User::factory()->create();
         $conn = $service->propose($c, $d, $admin);
         $service->accept($conn, $accepter);
@@ -61,7 +62,8 @@ class AdminConnectionControllerTest extends TestCase
     {
         $admin = $this->createPlatformAdmin();
         $service = app(PartnerConnectionService::class);
-        $a = $this->makeCompany(); $b = $this->makeCompany();
+        $a = $this->makeCompany();
+        $b = $this->makeCompany();
         $conn = $service->propose($a, $b, $admin);
 
         Sanctum::actingAs($admin);
@@ -85,7 +87,8 @@ class AdminConnectionControllerTest extends TestCase
     {
         $admin = $this->createPlatformAdmin();
         $service = app(PartnerConnectionService::class);
-        $a = $this->makeCompany(); $b = $this->makeCompany();
+        $a = $this->makeCompany();
+        $b = $this->makeCompany();
         $conn = $service->propose($a, $b, $admin);
         $accepter = User::factory()->create();
         $service->accept($conn, $accepter);
@@ -104,7 +107,8 @@ class AdminConnectionControllerTest extends TestCase
     {
         $admin = $this->createPlatformAdmin();
         $service = app(PartnerConnectionService::class);
-        $a = $this->makeCompany(); $b = $this->makeCompany();
+        $a = $this->makeCompany();
+        $b = $this->makeCompany();
         $conn = $service->propose($a, $b, $admin);
         $service->accept($conn, User::factory()->create());
 

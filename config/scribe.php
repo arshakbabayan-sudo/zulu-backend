@@ -1,5 +1,15 @@
 <?php
 
+use Knuckles\Scribe\Extracting\Strategies\Headers\GetFromRouteRules;
+use Knuckles\Scribe\Extracting\Strategies\Metadata\GetFromDocBlocks;
+use Knuckles\Scribe\Extracting\Strategies\QueryParameters\GetFromInlineValidator;
+use Knuckles\Scribe\Extracting\Strategies\ResponseFields\GetFromResponseFieldAttribute;
+use Knuckles\Scribe\Extracting\Strategies\Responses\ResponseCalls;
+use Knuckles\Scribe\Extracting\Strategies\Responses\UseApiResourceTags;
+use Knuckles\Scribe\Extracting\Strategies\Responses\UseResponseAttributes;
+use Knuckles\Scribe\Extracting\Strategies\UrlParameters\GetFromLaravelAPI;
+use Knuckles\Scribe\Matching\RouteMatcher;
+
 return [
     'type' => 'laravel',
 
@@ -13,13 +23,13 @@ return [
         [
             'match' => [
                 'prefixes' => ['api/*'],
-                'domains'  => ['*'],
+                'domains' => ['*'],
             ],
             'include' => [],
             'exclude' => [],
-            'apply'   => [
+            'apply' => [
                 'headers' => [
-                    'Accept'        => 'application/json',
+                    'Accept' => 'application/json',
                     'Authorization' => 'Bearer {YOUR_AUTH_TOKEN}',
                 ],
                 'response_calls' => [
@@ -30,13 +40,13 @@ return [
     ],
 
     'auth' => [
-        'enabled'     => true,
-        'default'     => true,
-        'in'          => 'bearer',
-        'name'        => 'token',
-        'use_value'   => env('SCRIBE_AUTH_KEY', ''),
+        'enabled' => true,
+        'default' => true,
+        'in' => 'bearer',
+        'name' => 'token',
+        'use_value' => env('SCRIBE_AUTH_KEY', ''),
         'placeholder' => '{YOUR_AUTH_TOKEN}',
-        'extra_info'  => 'Obtain a token via POST /api/login.',
+        'extra_info' => 'Obtain a token via POST /api/login.',
     ],
 
     'intro_text' => <<<'MD'
@@ -57,18 +67,18 @@ return [
     'example_languages' => ['bash', 'javascript'],
 
     'postman' => [
-        'enabled'     => true,
-        'overrides'   => [],
+        'enabled' => true,
+        'overrides' => [],
     ],
 
     'openapi' => [
-        'enabled'   => true,
+        'enabled' => true,
         'overrides' => [],
     ],
 
     'groups' => [
         'default' => 'General',
-        'order'   => [
+        'order' => [
             'Auth',
             'Offers',
             'Flights',
@@ -85,27 +95,27 @@ return [
     'last_updated' => 'Last updated: {date:F j, Y}',
 
     'examples' => [
-        'faker_seed'      => 1234,
-        'models_source'   => ['factoryCreate', 'factoryMake', 'databaseFirst'],
+        'faker_seed' => 1234,
+        'models_source' => ['factoryCreate', 'factoryMake', 'databaseFirst'],
     ],
 
     'strategies' => [
-        'metadata'            => [\Knuckles\Scribe\Extracting\Strategies\Metadata\GetFromDocBlocks::class],
-        'urlParameters'       => [\Knuckles\Scribe\Extracting\Strategies\UrlParameters\GetFromLaravelAPI::class],
-        'queryParameters'     => [\Knuckles\Scribe\Extracting\Strategies\QueryParameters\GetFromInlineValidator::class],
-        'headers'             => [\Knuckles\Scribe\Extracting\Strategies\Headers\GetFromRouteRules::class],
-        'bodyParameters'      => [\Knuckles\Scribe\Extracting\Strategies\BodyParameters\GetFromInlineValidator::class],
-        'responses'           => [
-            \Knuckles\Scribe\Extracting\Strategies\Responses\UseResponseAttributes::class,
-            \Knuckles\Scribe\Extracting\Strategies\Responses\UseApiResourceTags::class,
-            \Knuckles\Scribe\Extracting\Strategies\Responses\ResponseCalls::class,
+        'metadata' => [GetFromDocBlocks::class],
+        'urlParameters' => [GetFromLaravelAPI::class],
+        'queryParameters' => [GetFromInlineValidator::class],
+        'headers' => [GetFromRouteRules::class],
+        'bodyParameters' => [Knuckles\Scribe\Extracting\Strategies\BodyParameters\GetFromInlineValidator::class],
+        'responses' => [
+            UseResponseAttributes::class,
+            UseApiResourceTags::class,
+            ResponseCalls::class,
         ],
-        'responseFields'      => [\Knuckles\Scribe\Extracting\Strategies\ResponseFields\GetFromResponseFieldAttribute::class],
+        'responseFields' => [GetFromResponseFieldAttribute::class],
     ],
 
     'database_connections_to_transact' => [],
 
     'fractal' => ['serializer' => null],
 
-    'routeMatcher' => \Knuckles\Scribe\Matching\RouteMatcher::class,
+    'routeMatcher' => RouteMatcher::class,
 ];

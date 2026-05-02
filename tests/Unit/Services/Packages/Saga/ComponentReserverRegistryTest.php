@@ -17,7 +17,7 @@ class ComponentReserverRegistryTest extends TestCase
 {
     public function test_registry_seeds_all_seven_service_types_with_stub_by_default(): void
     {
-        $registry = new ComponentReserverRegistry();
+        $registry = new ComponentReserverRegistry;
 
         foreach (SagaComponentState::SERVICE_TYPES as $type) {
             $reserver = $registry->for($type);
@@ -28,14 +28,14 @@ class ComponentReserverRegistryTest extends TestCase
 
     public function test_for_unknown_service_type_throws(): void
     {
-        $registry = new ComponentReserverRegistry();
+        $registry = new ComponentReserverRegistry;
         $this->expectException(InvalidArgumentException::class);
         $registry->for('bogus');
     }
 
     public function test_register_overrides_default_stub(): void
     {
-        $registry = new ComponentReserverRegistry();
+        $registry = new ComponentReserverRegistry;
         $custom = new class implements ComponentReserverInterface
         {
             public function reserve(SagaComponentState $component, ?OrderItem $item = null): ReservationResult
@@ -68,7 +68,7 @@ class ComponentReserverRegistryTest extends TestCase
 
     public function test_register_unknown_type_throws(): void
     {
-        $registry = new ComponentReserverRegistry();
+        $registry = new ComponentReserverRegistry;
         $custom = new StubComponentReserver('flight'); // type irrelevant for the test
 
         $this->expectException(InvalidArgumentException::class);

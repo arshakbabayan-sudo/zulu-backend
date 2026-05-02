@@ -69,6 +69,7 @@ class FlightController extends Controller
      * Returns 422 if the offer already has a flight, or if the departure country is geo-restricted.
      *
      * @group Flights
+     *
      * @bodyParam offer_id int required ID of an existing offer with type=flight. Example: 42
      * @bodyParam departure_country string required Example: Armenia
      * @bodyParam departure_city string required Example: Yerevan
@@ -118,7 +119,7 @@ class FlightController extends Controller
     public function update(Request $request, Flight $flight, FlightService $flightService): JsonResponse
     {
         $request->validate([
-            'offer_id'   => ['prohibited'],
+            'offer_id' => ['prohibited'],
             'company_id' => ['prohibited'],
         ]);
 
@@ -171,6 +172,7 @@ class FlightController extends Controller
      * Returns 422 if the cabin class already exists on this flight.
      *
      * @group Flight Cabins
+     *
      * @bodyParam cabin_class string required One of: economy, premium_economy, business, first. Example: economy
      * @bodyParam adult_price numeric required Must be > 0. Example: 180.00
      * @bodyParam seat_capacity_total int required Example: 150

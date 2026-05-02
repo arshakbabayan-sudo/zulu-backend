@@ -222,4 +222,3 @@ class LocationTreeQaStep10Test extends TestCase
         ];
     }
 }
-

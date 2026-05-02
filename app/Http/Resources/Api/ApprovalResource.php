@@ -2,11 +2,12 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Models\Approval;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\Approval
+ * @mixin Approval
  */
 class ApprovalResource extends JsonResource
 {

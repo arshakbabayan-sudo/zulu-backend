@@ -67,6 +67,7 @@ class TransferController extends Controller
      * On success, `offers.price` = `base_price`.
      *
      * @group Transfers
+     *
      * @bodyParam offer_id int required ID of an existing offer with type=transfer. Example: 70
      * @bodyParam transfer_title string required Example: Airport to City Center
      * @bodyParam transfer_type string required One of: airport_transfer, city_transfer, intercity. Example: airport_transfer

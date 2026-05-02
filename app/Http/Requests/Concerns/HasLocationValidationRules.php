@@ -2,12 +2,13 @@
 
 namespace App\Http\Requests\Concerns;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Validation\Rule;
 
 trait HasLocationValidationRules
 {
     /**
-     * @return array<int, \Illuminate\Contracts\Validation\ValidationRule|string>
+     * @return array<int, ValidationRule|string>
      */
     protected function nullableLocationIdRules(): array
     {
@@ -15,11 +16,10 @@ trait HasLocationValidationRules
     }
 
     /**
-     * @return array<int, \Illuminate\Contracts\Validation\ValidationRule|string>
+     * @return array<int, ValidationRule|string>
      */
     protected function requiredLocationIdRules(): array
     {
         return ['required', 'integer', Rule::exists('locations', 'id')];
     }
 }
-

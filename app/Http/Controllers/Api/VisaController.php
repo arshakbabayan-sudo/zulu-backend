@@ -172,6 +172,4 @@ class VisaController extends Controller
 
         return $existing;
     }
-
-
 }

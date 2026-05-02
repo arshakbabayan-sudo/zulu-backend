@@ -173,6 +173,8 @@ class OfferNormalizationServiceTest extends TestCase
         Car::query()->create([
             'offer_id' => $offer->id,
             'location_id' => $this->locationIds()['yerevan_city'],
+            'pickup_location' => 'EVN Airport',
+            'dropoff_location' => 'City center',
             'vehicle_class' => 'economy',
         ]);
 

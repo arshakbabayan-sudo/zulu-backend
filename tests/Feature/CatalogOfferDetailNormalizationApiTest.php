@@ -185,6 +185,8 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Car::query()->create([
             'offer_id' => $offer->id,
             'location_id' => $this->locationIds()['yerevan_city'],
+            'pickup_location' => 'Lot A',
+            'dropoff_location' => 'Lot B',
             'vehicle_class' => 'economy',
         ]);
 
@@ -360,6 +362,8 @@ class CatalogOfferDetailNormalizationApiTest extends TestCase
         Car::query()->create([
             'offer_id' => $carOffer->id,
             'location_id' => $this->locationIds()['yerevan_city'],
+            'pickup_location' => 'Depot',
+            'dropoff_location' => 'Depot',
             'vehicle_class' => 'compact',
         ]);
 

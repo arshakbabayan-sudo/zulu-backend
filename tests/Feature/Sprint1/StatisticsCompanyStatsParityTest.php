@@ -17,6 +17,7 @@ use App\Services\Notifications\NotificationService;
 use App\Services\Orders\OrderService;
 use App\Services\Packages\PackageOrderService;
 use App\Services\Payments\PaymentService;
+use App\Services\Vouchers\VoucherService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -165,7 +166,7 @@ class StatisticsCompanyStatsParityTest extends TestCase
             app(NotificationService::class),
             app(FinanceService::class),
             app(OrderService::class),
-            app(\App\Services\Vouchers\VoucherService::class)
+            app(VoucherService::class)
         );
     }
 

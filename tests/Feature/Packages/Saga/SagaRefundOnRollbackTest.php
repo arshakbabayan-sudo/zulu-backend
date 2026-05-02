@@ -3,12 +3,13 @@
 namespace Tests\Feature\Packages\Saga;
 
 use App\Models\Company;
+use App\Models\Invoice;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Package;
-use App\Models\PackageBookingSaga;
 use App\Models\PackageComponent;
+use App\Models\Payment;
 use App\Services\Packages\Saga\ComponentReserverRegistry;
 use App\Services\Packages\Saga\Contracts\ComponentReserverInterface;
 use App\Services\Packages\Saga\DTOs\ConfirmationResult;
@@ -27,10 +28,25 @@ class SagaRefundOnRollbackTest extends TestCase
         // Force hotel reservation to fail
         app(ComponentReserverRegistry::class)->register('hotel', new class implements ComponentReserverInterface
         {
-            public function reserve($c, $i = null): ReservationResult { return ReservationResult::failure('inventory'); }
-            public function confirm($c): ConfirmationResult { return ConfirmationResult::success(); }
-            public function rollback($c): RollbackResult { return RollbackResult::success(); }
-            public function serviceType(): string { return 'hotel'; }
+            public function reserve($c, $i = null): ReservationResult
+            {
+                return ReservationResult::failure('inventory');
+            }
+
+            public function confirm($c): ConfirmationResult
+            {
+                return ConfirmationResult::success();
+            }
+
+            public function rollback($c): RollbackResult
+            {
+                return RollbackResult::success();
+            }
+
+            public function serviceType(): string
+            {
+                return 'hotel';
+            }
         });
 
         $package = $this->makePackage(['hotel']);
@@ -48,24 +64,39 @@ class SagaRefundOnRollbackTest extends TestCase
     {
         app(ComponentReserverRegistry::class)->register('hotel', new class implements ComponentReserverInterface
         {
-            public function reserve($c, $i = null): ReservationResult { return ReservationResult::failure('inventory'); }
-            public function confirm($c): ConfirmationResult { return ConfirmationResult::success(); }
-            public function rollback($c): RollbackResult { return RollbackResult::success(); }
-            public function serviceType(): string { return 'hotel'; }
+            public function reserve($c, $i = null): ReservationResult
+            {
+                return ReservationResult::failure('inventory');
+            }
+
+            public function confirm($c): ConfirmationResult
+            {
+                return ConfirmationResult::success();
+            }
+
+            public function rollback($c): RollbackResult
+            {
+                return RollbackResult::success();
+            }
+
+            public function serviceType(): string
+            {
+                return 'hotel';
+            }
         });
 
         // Create an invoice + payment in pending state — refund() will throw because not in paid state
         $package = $this->makePackage(['hotel']);
         $order = $this->makeOrder($package);
 
-        $invoice = \App\Models\Invoice::query()->create([
+        $invoice = Invoice::query()->create([
             'order_id' => $order->id,
             'unique_booking_reference' => 'REF-'.str()->random(6),
             'total_amount' => 100,
             'currency' => 'USD',
-            'status' => \App\Models\Invoice::STATUS_ISSUED,
+            'status' => Invoice::STATUS_ISSUED,
         ]);
-        $payment = \App\Models\Payment::query()->create([
+        $payment = Payment::query()->create([
             'invoice_id' => $invoice->id,
             'amount' => 100,
             'currency' => 'USD',

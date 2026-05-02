@@ -2,8 +2,8 @@
 
 namespace App\Services\Transfers;
 
-use App\Models\Offer;
 use App\Models\Location;
+use App\Models\Offer;
 use App\Models\Transfer;
 use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Locations\LocationBusinessValidator;

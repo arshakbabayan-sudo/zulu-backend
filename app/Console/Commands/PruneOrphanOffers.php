@@ -16,9 +16,9 @@ class PruneOrphanOffers extends Command
 
     public function handle(): int
     {
-        $hours   = (int) $this->option('hours');
-        $dryRun  = (bool) $this->option('dry-run');
-        $cutoff  = now()->subHours($hours);
+        $hours = (int) $this->option('hours');
+        $dryRun = (bool) $this->option('dry-run');
+        $cutoff = now()->subHours($hours);
 
         $query = Offer::query()
             ->where('status', Offer::STATUS_DRAFT)
@@ -26,10 +26,10 @@ class PruneOrphanOffers extends Command
             ->whereIn('type', ['flight', 'hotel', 'transfer', 'car', 'excursion'])
             ->where(function (Builder $q): void {
                 $q->where(fn (Builder $q) => $q->where('type', 'flight')->whereDoesntHave('flight'))
-                  ->orWhere(fn (Builder $q) => $q->where('type', 'hotel')->whereDoesntHave('hotel'))
-                  ->orWhere(fn (Builder $q) => $q->where('type', 'transfer')->whereDoesntHave('transfer'))
-                  ->orWhere(fn (Builder $q) => $q->where('type', 'car')->whereDoesntHave('car'))
-                  ->orWhere(fn (Builder $q) => $q->where('type', 'excursion')->whereDoesntHave('excursion'));
+                    ->orWhere(fn (Builder $q) => $q->where('type', 'hotel')->whereDoesntHave('hotel'))
+                    ->orWhere(fn (Builder $q) => $q->where('type', 'transfer')->whereDoesntHave('transfer'))
+                    ->orWhere(fn (Builder $q) => $q->where('type', 'car')->whereDoesntHave('car'))
+                    ->orWhere(fn (Builder $q) => $q->where('type', 'excursion')->whereDoesntHave('excursion'));
             });
 
         $orphans = $query->get(['id', 'type', 'company_id', 'created_at']);

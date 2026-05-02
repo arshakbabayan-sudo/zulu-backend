@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Products;
 
 use App\Http\Requests\Concerns\HasLocationValidationRules;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ProductLocationRequest extends FormRequest
@@ -15,7 +16,7 @@ class ProductLocationRequest extends FormRequest
     }
 
     /**
-     * @return array<string, array<int, \Illuminate\Contracts\Validation\ValidationRule|string>>
+     * @return array<string, array<int, ValidationRule|string>>
      */
     public function rules(): array
     {
@@ -24,4 +25,3 @@ class ProductLocationRequest extends FormRequest
         ];
     }
 }
-

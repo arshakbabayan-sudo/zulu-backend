@@ -11,7 +11,7 @@ return new class extends Migration
     {
         $driver = Schema::getConnection()->getDriverName();
 
-        Schema::create('loyalty_accounts', function (Blueprint $table) use ($driver): void {
+        Schema::create('loyalty_accounts', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('user_id')->unique();
             $table->bigInteger('points_balance')->default(0);
@@ -55,7 +55,7 @@ return new class extends Migration
             DB::statement("ALTER TABLE loyalty_transactions ADD CONSTRAINT loyalty_transactions_type_check CHECK (type IN ('earn','redeem','expire','adjust'))");
         }
 
-        Schema::create('loyalty_redemptions', function (Blueprint $table) use ($driver): void {
+        Schema::create('loyalty_redemptions', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('account_id');
             $table->uuid('order_id')->nullable();

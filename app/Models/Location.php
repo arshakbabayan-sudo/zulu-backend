@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
 
@@ -16,7 +16,9 @@ class Location extends Model
     use HasFactory;
 
     public const TYPE_COUNTRY = 'country';
+
     public const TYPE_REGION = 'region';
+
     public const TYPE_CITY = 'city';
 
     protected $fillable = [
@@ -261,4 +263,3 @@ class Location extends Model
         return isset($location->id) && (int) $location->id > 0 ? (string) $location->id : null;
     }
 }
-

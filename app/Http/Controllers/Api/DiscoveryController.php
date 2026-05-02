@@ -13,8 +13,7 @@ class DiscoveryController extends Controller
 {
     public function __construct(
         private readonly OfferVisibilityService $offerVisibilityService
-    ) {
-    }
+    ) {}
 
     /**
      * Public discovery search endpoint.

@@ -45,9 +45,9 @@ class CartService
      * Add an item to the user's cart. Returns the (possibly newly created) cart.
      *
      * @param  array<string, mixed>  $item
-     *      Required: item_type, currency, unit_price
-     *      Optional: item_id, package_id, quantity, service_snapshot, passenger_data,
-     *                date_from, date_to, external_ref
+     *                                      Required: item_type, currency, unit_price
+     *                                      Optional: item_id, package_id, quantity, service_snapshot, passenger_data,
+     *                                      date_from, date_to, external_ref
      */
     public function addItem(User $user, array $item): Order
     {

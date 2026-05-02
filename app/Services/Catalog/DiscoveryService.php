@@ -5,6 +5,7 @@ namespace App\Services\Catalog;
 use App\Models\Hotel;
 use App\Models\HotelRoom;
 use App\Models\Offer;
+use App\Models\Review;
 use App\Models\ServiceConnection;
 use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Offers\OfferNormalizationService;
@@ -34,85 +35,85 @@ class DiscoveryService
         $cacheKey = 'discovery_search:'.md5(json_encode([$input, $lang], JSON_UNESCAPED_UNICODE));
 
         return Cache::remember($cacheKey, 30, function () use ($input, $lang): array {
-        $perPage = (int) ($input['per_page'] ?? 20);
-        $perPage = max(1, min(100, $perPage));
-        $page = max(1, (int) ($input['page'] ?? 1));
-        $sort = $input['sort'] ?? 'price_asc';
-        if (! in_array($sort, ['price_asc', 'price_desc', 'newest'], true)) {
-            $sort = 'price_asc';
-        }
-
-        $moduleType = isset($input['module_type']) && $input['module_type'] !== ''
-            ? (string) $input['module_type']
-            : null;
-
-        $query = Offer::query()->where('status', Offer::STATUS_PUBLISHED);
-
-        if ($moduleType !== null) {
-            $query->where('type', $moduleType);
-        }
-
-        $this->applyOfferPriceCurrencyFilters($query, $input);
-        $this->applyLocationAndModuleFilters($query, $input, $moduleType);
-        $this->applyDateRangeFilters($query, $input, $moduleType);
-        $this->applyFreeCancellationFilter($query, $input, $moduleType);
-        $this->applyPackageEligibleFilter($query, $input, $moduleType);
-        $this->applyHistorySearchFilters($query, $input, $moduleType);
-
-        match ($sort) {
-            'price_desc' => $query->orderBy('price', 'desc'),
-            'newest' => $query->orderBy('id', 'desc'),
-            default => $query->orderBy('price', 'asc'),
-        };
-
-        /** @var LengthAwarePaginator<int, Offer> $paginator */
-        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
-
-        $offers = $paginator->getCollection();
-        $relations = [];
-        $types = $offers->pluck('type')->filter()->unique()->values()->all();
-        if (in_array('flight', $types, true)) {
-            $relations[] = 'flight.cabins';
-        }
-        if (in_array('hotel', $types, true)) {
-            $relations[] = 'hotel';
-        }
-        if (in_array('transfer', $types, true)) {
-            $relations[] = 'transfer';
-        }
-        if (in_array('car', $types, true)) {
-            $relations[] = 'car';
-        }
-        if (in_array('excursion', $types, true)) {
-            $relations[] = 'excursion';
-        }
-        if (in_array('package', $types, true)) {
-            $relations[] = 'package';
-        }
-        if (in_array('visa', $types, true)) {
-            $relations[] = 'visa';
-        }
-        if ($relations !== []) {
-            $offers->loadMissing($relations);
-        }
-
-        $items = [];
-        foreach ($offers as $offer) {
-            $normalized = $this->normalizationService->normalize($offer, true, $lang);
-            if ($normalized !== null) {
-                $items[] = $normalized;
+            $perPage = (int) ($input['per_page'] ?? 20);
+            $perPage = max(1, min(100, $perPage));
+            $page = max(1, (int) ($input['page'] ?? 1));
+            $sort = $input['sort'] ?? 'price_asc';
+            if (! in_array($sort, ['price_asc', 'price_desc', 'newest'], true)) {
+                $sort = 'price_asc';
             }
-        }
 
-        return [
-            'items' => $items,
-            'meta' => [
-                'current_page' => $paginator->currentPage(),
-                'last_page' => $paginator->lastPage(),
-                'total' => $paginator->total(),
-                'per_page' => $paginator->perPage(),
-            ],
-        ];
+            $moduleType = isset($input['module_type']) && $input['module_type'] !== ''
+                ? (string) $input['module_type']
+                : null;
+
+            $query = Offer::query()->where('status', Offer::STATUS_PUBLISHED);
+
+            if ($moduleType !== null) {
+                $query->where('type', $moduleType);
+            }
+
+            $this->applyOfferPriceCurrencyFilters($query, $input);
+            $this->applyLocationAndModuleFilters($query, $input, $moduleType);
+            $this->applyDateRangeFilters($query, $input, $moduleType);
+            $this->applyFreeCancellationFilter($query, $input, $moduleType);
+            $this->applyPackageEligibleFilter($query, $input, $moduleType);
+            $this->applyHistorySearchFilters($query, $input, $moduleType);
+
+            match ($sort) {
+                'price_desc' => $query->orderBy('price', 'desc'),
+                'newest' => $query->orderBy('id', 'desc'),
+                default => $query->orderBy('price', 'asc'),
+            };
+
+            /** @var LengthAwarePaginator<int, Offer> $paginator */
+            $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+
+            $offers = $paginator->getCollection();
+            $relations = [];
+            $types = $offers->pluck('type')->filter()->unique()->values()->all();
+            if (in_array('flight', $types, true)) {
+                $relations[] = 'flight.cabins';
+            }
+            if (in_array('hotel', $types, true)) {
+                $relations[] = 'hotel';
+            }
+            if (in_array('transfer', $types, true)) {
+                $relations[] = 'transfer';
+            }
+            if (in_array('car', $types, true)) {
+                $relations[] = 'car';
+            }
+            if (in_array('excursion', $types, true)) {
+                $relations[] = 'excursion';
+            }
+            if (in_array('package', $types, true)) {
+                $relations[] = 'package';
+            }
+            if (in_array('visa', $types, true)) {
+                $relations[] = 'visa';
+            }
+            if ($relations !== []) {
+                $offers->loadMissing($relations);
+            }
+
+            $items = [];
+            foreach ($offers as $offer) {
+                $normalized = $this->normalizationService->normalize($offer, true, $lang);
+                if ($normalized !== null) {
+                    $items[] = $normalized;
+                }
+            }
+
+            return [
+                'items' => $items,
+                'meta' => [
+                    'current_page' => $paginator->currentPage(),
+                    'last_page' => $paginator->lastPage(),
+                    'total' => $paginator->total(),
+                    'per_page' => $paginator->perPage(),
+                ],
+            ];
         });
     }
 
@@ -203,7 +204,7 @@ class DiscoveryService
     }
 
     /**
-     * Module row id for {@see \App\Models\Review} targets (aligned with `Review::TARGET_ENTITY_TYPES`).
+     * Module row id for {@see Review} targets (aligned with `Review::TARGET_ENTITY_TYPES`).
      *
      * @return array{entity_type: string, entity_id: int}|null
      */
@@ -389,18 +390,18 @@ class DiscoveryService
             $outer->where(function (Builder $q) use ($flightFilter): void {
                 $q->where('type', 'flight')->whereHas('flight', $flightFilter);
             })
-            ->orWhere(function (Builder $q): void {
-                $q->where('type', 'hotel')->whereHas('hotel', fn (Builder $h) => $h->where('appears_in_web', true));
-            })
-            ->orWhere(function (Builder $q): void {
-                $q->where('type', 'transfer')->whereHas('transfer', fn (Builder $t) => $t->where('appears_in_web', true));
-            })
-            ->orWhere(function (Builder $q): void {
-                $q->where('type', 'car')->whereHas('car', fn (Builder $c) => $c->where('appears_in_web', true));
-            })
-            ->orWhere(function (Builder $q): void {
-                $q->where('type', 'excursion')->whereHas('excursion', fn (Builder $e) => $e->where('appears_in_web', true));
-            });
+                ->orWhere(function (Builder $q): void {
+                    $q->where('type', 'hotel')->whereHas('hotel', fn (Builder $h) => $h->where('appears_in_web', true));
+                })
+                ->orWhere(function (Builder $q): void {
+                    $q->where('type', 'transfer')->whereHas('transfer', fn (Builder $t) => $t->where('appears_in_web', true));
+                })
+                ->orWhere(function (Builder $q): void {
+                    $q->where('type', 'car')->whereHas('car', fn (Builder $c) => $c->where('appears_in_web', true));
+                })
+                ->orWhere(function (Builder $q): void {
+                    $q->where('type', 'excursion')->whereHas('excursion', fn (Builder $e) => $e->where('appears_in_web', true));
+                });
         });
     }
 

@@ -138,9 +138,9 @@ class LocalizationService
     public function updateLanguage(SupportedLanguage $language, string $name, string $nameEn, bool $rtl): SupportedLanguage
     {
         $language->update([
-            'name'    => trim($name),
+            'name' => trim($name),
             'name_en' => trim($nameEn),
-            'rtl'     => $rtl,
+            'rtl' => $rtl,
         ]);
         $this->forgetLanguageCaches();
 
@@ -167,9 +167,9 @@ class LocalizationService
         $maxSort = (int) SupportedLanguage::query()->max('sort_order');
 
         $created = SupportedLanguage::query()->create([
-            'code'       => $code,
-            'name'       => trim($name),
-            'name_en'    => trim($nameEn),
+            'code' => $code,
+            'name' => trim($name),
+            'name_en' => trim($nameEn),
             'is_default' => false,
             'is_enabled' => true,
             'sort_order' => $maxSort + 1,
@@ -194,7 +194,7 @@ class LocalizationService
      */
     public function getUiTranslations(string $languageCode): array
     {
-        $cacheKey = 'ui_translations_' . $languageCode;
+        $cacheKey = 'ui_translations_'.$languageCode;
 
         return Cache::rememberForever($cacheKey, function () use ($languageCode): array {
             return UiTranslation::query()
@@ -225,7 +225,7 @@ class LocalizationService
             $count++;
         }
 
-        Cache::forget('ui_translations_' . $canonicalCode);
+        Cache::forget('ui_translations_'.$canonicalCode);
 
         return $count;
     }
@@ -242,13 +242,13 @@ class LocalizationService
         }
 
         $deleted = (int) $q->delete();
-        Cache::forget('ui_translations_' . $languageCode);
+        Cache::forget('ui_translations_'.$languageCode);
 
         return $deleted;
     }
 
     /**
-     * @return array<string, string>  Paginated key-value rows for admin editor
+     * @return array<string, string> Paginated key-value rows for admin editor
      */
     public function getUiTranslationsPaginated(string $languageCode, int $page, int $perPage, string $search = ''): array
     {
@@ -264,7 +264,7 @@ class LocalizationService
                 ->where('d.language_code', $defaultCode);
 
             if ($search !== '') {
-                $like = '%' . $search . '%';
+                $like = '%'.$search.'%';
                 $q->where(function ($sub) use ($like): void {
                     $sub->where('d.key', 'like', $like)
                         ->orWhere('d.value', 'like', $like)
@@ -287,11 +287,11 @@ class LocalizationService
                 ->all();
 
             return [
-                'data'         => $rows,
-                'total'        => $total,
-                'per_page'     => $perPage,
+                'data' => $rows,
+                'total' => $total,
+                'per_page' => $perPage,
                 'current_page' => $page,
-                'last_page'    => (int) ceil($total / $perPage),
+                'last_page' => (int) ceil($total / $perPage),
             ];
         }
 
@@ -299,8 +299,8 @@ class LocalizationService
 
         if ($search !== '') {
             $q->where(function ($sub) use ($search): void {
-                $sub->where('key', 'like', '%' . $search . '%')
-                    ->orWhere('value', 'like', '%' . $search . '%');
+                $sub->where('key', 'like', '%'.$search.'%')
+                    ->orWhere('value', 'like', '%'.$search.'%');
             });
         }
 
@@ -314,11 +314,11 @@ class LocalizationService
             ->all();
 
         return [
-            'data'         => $rows,
-            'total'        => $total,
-            'per_page'     => $perPage,
+            'data' => $rows,
+            'total' => $total,
+            'per_page' => $perPage,
             'current_page' => $page,
-            'last_page'    => (int) ceil($total / $perPage),
+            'last_page' => (int) ceil($total / $perPage),
         ];
     }
 
@@ -375,6 +375,7 @@ class LocalizationService
 
         try {
             $lowerToCanonical = $this->enabledLanguageCodeMap();
+
             return $this->resolveLanguageOrDefault($requested, $lowerToCanonical);
         } catch (Throwable) {
             return 'en';

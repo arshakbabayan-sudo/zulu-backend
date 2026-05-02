@@ -8,7 +8,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | This file defines the core navigation structure for both Platform Admin
-    | and Company Admin surfaces, following the official 
+    | and Company Admin surfaces, following the official
     | ADMIN_MANAGEMENT_SURFACE_MAP.md architecture.
     |
     */

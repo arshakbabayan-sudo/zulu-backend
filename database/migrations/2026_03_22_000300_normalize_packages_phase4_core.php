@@ -205,7 +205,7 @@ return new class extends Migration
             Schema::table($tableName, function (Blueprint $table) {
                 $table->dropForeign(['offer_id']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Missing FK, non-standard constraint names, or SQLite in-memory quirks — rename path still works.
         }
     }

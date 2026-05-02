@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasTable('service_holds')) {
+        if (! Schema::hasTable('service_holds')) {
             Schema::create('service_holds', function (Blueprint $table) {
                 $table->id();
                 $table->morphs('holdable'); // holdable_type, holdable_id (Flight, Hotel, etc.)
@@ -31,4 +31,3 @@ return new class extends Migration
         Schema::dropIfExists('service_holds');
     }
 };
-

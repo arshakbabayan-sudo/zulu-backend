@@ -25,7 +25,8 @@ class Banner extends Model
     public function getTitleAttribute()
     {
         $locale = app()->getLocale();
-        $field = 'title_' . $locale;
+        $field = 'title_'.$locale;
+
         return $this->{$field} ?? $this->title_en;
     }
 }

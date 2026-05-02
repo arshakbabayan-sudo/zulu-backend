@@ -3,7 +3,6 @@
 namespace App\Services\Packages;
 
 use App\Models\Package;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class PackageSearchService

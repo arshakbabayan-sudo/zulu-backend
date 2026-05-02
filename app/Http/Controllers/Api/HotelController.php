@@ -71,6 +71,7 @@ class HotelController extends Controller
      * On success, `offers.price` = MIN(active room pricing price).
      *
      * @group Hotels
+     *
      * @bodyParam offer_id int required ID of an existing offer with type=hotel. Example: 55
      * @bodyParam hotel_name string required Example: Grand Zulu Hotel
      * @bodyParam property_type string required Example: hotel

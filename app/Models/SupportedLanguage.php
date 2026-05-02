@@ -27,7 +27,7 @@ class SupportedLanguage extends Model
         return [
             'is_default' => 'boolean',
             'is_enabled' => 'boolean',
-            'rtl'        => 'boolean',
+            'rtl' => 'boolean',
             'sort_order' => 'integer',
         ];
     }

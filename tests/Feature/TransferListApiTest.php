@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\Order;
-use App\Models\OrderItem;
 use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\Offer;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;

@@ -6,7 +6,6 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Package;
 use App\Models\PackageBookingSaga;
-use App\Models\PackageComponent;
 use App\Models\Payment;
 use App\Models\SagaComponentState;
 use App\Models\SagaStateLog;
@@ -274,6 +273,7 @@ class PackageBookingOrchestrator
                     'component_id' => $componentState->id,
                     'message' => $e->getMessage(),
                 ]);
+
                 continue; // log but proceed; failure here is a soft issue (already reserved)
             }
 
@@ -345,6 +345,7 @@ class PackageBookingOrchestrator
                 $componentState->status = 'failed';
                 $componentState->error_message = 'Rollback exception: '.$e->getMessage();
                 $componentState->save();
+
                 continue;
             }
 

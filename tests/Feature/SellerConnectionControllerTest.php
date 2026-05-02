@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
-use App\Models\Connection;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Partnerships\PartnerConnectionService;

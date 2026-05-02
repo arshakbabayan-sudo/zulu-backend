@@ -67,6 +67,7 @@ class CarController extends Controller
      * On success, `offers.price` = `base_price`.
      *
      * @group Cars
+     *
      * @bodyParam offer_id int required ID of an existing offer with type=car. Example: 80
      * @bodyParam pickup_location string required Example: Yerevan Airport
      * @bodyParam dropoff_location string required Example: Yerevan City Center

@@ -8,6 +8,7 @@ use App\Services\Cart\CartService;
 use App\Services\Cart\CheckoutService;
 use Database\Seeders\RbacBootstrapSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -81,7 +82,7 @@ class AdminCartControllerTest extends TestCase
         ]);
 
         // Backdate updated_at by writing directly
-        \Illuminate\Support\Facades\DB::table('orders')
+        DB::table('orders')
             ->where('id', $cart->id)
             ->update(['updated_at' => now()->subHours($hoursAgo)]);
 

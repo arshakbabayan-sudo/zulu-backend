@@ -18,6 +18,7 @@ use App\Services\Orders\OrderService;
 use App\Services\Packages\PackageOrderService;
 use App\Services\Payments\PaymentService;
 use App\Services\Reviews\ReviewService;
+use App\Services\Vouchers\VoucherService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -203,7 +204,7 @@ class ReviewServiceOrderLookupTest extends TestCase
             app(NotificationService::class),
             app(FinanceService::class),
             app(OrderService::class),
-            app(\App\Services\Vouchers\VoucherService::class)
+            app(VoucherService::class)
         );
     }
 

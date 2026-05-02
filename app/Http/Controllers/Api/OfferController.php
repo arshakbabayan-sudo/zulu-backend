@@ -28,6 +28,7 @@ class OfferController extends Controller
      * and `?page=` for pagination.
      *
      * @group Offers
+     *
      * @queryParam type string Filter by offer type. Example: flight
      * @queryParam page int Page number for paginated results.
      */
@@ -96,6 +97,7 @@ class OfferController extends Controller
      * `offers.price` will be overwritten by the module service on first write.
      *
      * @group Offers
+     *
      * @bodyParam company_id int required The company that owns this offer. Example: 1
      * @bodyParam type string required One of: flight, hotel, transfer, car, excursion, package, visa. Example: flight
      * @bodyParam title string required Display title. Example: Yerevan → Dubai Economy

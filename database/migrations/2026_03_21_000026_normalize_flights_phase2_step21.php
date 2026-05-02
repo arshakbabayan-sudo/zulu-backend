@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -95,8 +96,8 @@ return new class extends Migration
                 continue;
             }
 
-            $departure = \Illuminate\Support\Carbon::parse($row->departure_time);
-            $arrival = \Illuminate\Support\Carbon::parse($row->arrival_time);
+            $departure = Carbon::parse($row->departure_time);
+            $arrival = Carbon::parse($row->arrival_time);
             $durationMinutes = max(0, abs((int) $departure->diffInMinutes($arrival)));
 
             DB::table('flights_new')->insert([

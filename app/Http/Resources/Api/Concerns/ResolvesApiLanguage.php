@@ -2,12 +2,13 @@
 
 namespace App\Http\Resources\Api\Concerns;
 
+use App\Http\Middleware\ResolveLanguage;
 use Illuminate\Http\Request;
 
 trait ResolvesApiLanguage
 {
     /**
-     * Resolved locale from {@see \App\Http\Middleware\ResolveLanguage} (`?lang` or `Accept-Language`).
+     * Resolved locale from {@see ResolveLanguage} (`?lang` or `Accept-Language`).
      */
     protected function apiLang(Request $request): string
     {

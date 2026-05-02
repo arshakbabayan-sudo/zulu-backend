@@ -3,11 +3,11 @@
 namespace Tests\Unit\Models;
 
 use App\Models\Order;
-use App\Models\Package;
 use App\Models\PackageBookingSaga;
 use App\Models\SagaComponentState;
 use App\Models\SagaStateLog;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -54,7 +54,7 @@ class PackageBookingSagaModelTest extends TestCase
         $order = $this->makeOrder();
         PackageBookingSaga::query()->create(['order_id' => $order->id]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         PackageBookingSaga::query()->create(['order_id' => $order->id]);
     }
 

@@ -71,7 +71,7 @@ class ApprovalService
 
         $approval->save();
 
-        $this->notifyRequester($approval, 'Your request has been rejected. Reason: ' . ($notes ?? 'No reason provided.'));
+        $this->notifyRequester($approval, 'Your request has been rejected. Reason: '.($notes ?? 'No reason provided.'));
 
         return $approval->fresh();
     }
@@ -100,7 +100,7 @@ class ApprovalService
                 'type' => 'approval_update',
                 'title' => 'Approval Status Updated',
                 'message' => $message,
-                'status' => 'unread'
+                'status' => 'unread',
             ]);
         }
     }

@@ -83,9 +83,13 @@ class SavedSearchTest extends TestCase
     {
         $service = app(SavedSearchService::class);
         // log paris 3 times, lisbon 1 time, london 2 times
-        for ($i = 0; $i < 3; $i++) $service->logQuery(null, 'paris', 'package', [], 5);
+        for ($i = 0; $i < 3; $i++) {
+            $service->logQuery(null, 'paris', 'package', [], 5);
+        }
         $service->logQuery(null, 'liverpool', 'hotel', [], 5);
-        for ($i = 0; $i < 2; $i++) $service->logQuery(null, 'lisbon', 'hotel', [], 5);
+        for ($i = 0; $i < 2; $i++) {
+            $service->logQuery(null, 'lisbon', 'hotel', [], 5);
+        }
 
         $response = $this->getJson('/api/search/autocomplete?q=li');
 
@@ -107,8 +111,12 @@ class SavedSearchTest extends TestCase
     public function test_popular_returns_aggregated_counts(): void
     {
         $service = app(SavedSearchService::class);
-        for ($i = 0; $i < 5; $i++) $service->logQuery(null, 'paris', 'package', [], 5);
-        for ($i = 0; $i < 3; $i++) $service->logQuery(null, 'london', 'hotel', [], 5);
+        for ($i = 0; $i < 5; $i++) {
+            $service->logQuery(null, 'paris', 'package', [], 5);
+        }
+        for ($i = 0; $i < 3; $i++) {
+            $service->logQuery(null, 'london', 'hotel', [], 5);
+        }
 
         $response = $this->getJson('/api/search/popular');
 
