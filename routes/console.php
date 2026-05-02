@@ -25,3 +25,11 @@ Schedule::command('i18n:audit')->weeklyOn(1, '04:30');
 
 // Sprint 21 — OpenAPI spec regeneration (daily at 04:00; written to storage/app/openapi.json)
 Schedule::command('api:generate-openapi --output=storage/app/openapi.json')->dailyAt('04:00');
+
+// Sprint 54 — Daily PostgreSQL backup (PART 32). Writes gzipped SQL to local disk
+// at storage/app/backups/db, retains 14 days. For off-site retention configure a
+// non-local disk via DB_BACKUP_DISK and re-deploy.
+Schedule::command('db:backup --disk='.env('DB_BACKUP_DISK', 'local').' --keep='.env('DB_BACKUP_KEEP', 14))
+    ->dailyAt('02:30')
+    ->withoutOverlapping()
+    ->onOneServer();
