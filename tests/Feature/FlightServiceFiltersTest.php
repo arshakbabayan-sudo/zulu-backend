@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Booking;
-use App\Models\BookingItem;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Company;
 use App\Models\Flight;
 use App\Models\Invoice;
@@ -99,20 +99,10 @@ class FlightServiceFiltersTest extends TestCase
         $this->assertSame($all, $this->flights->filteredQuery(['not_a_real_filter' => 'x'])->count());
     }
 
-    public function test_filter_departure_city_and_arrival_city(): void
+    public function test_filter_departure_city_and_arrival_city_obsolete(): void
     {
-        $this->seed(RbacBootstrapSeeder::class);
-        $company = Company::query()->firstOrFail();
-        $this->createFlightOffer($company, ['departure_city' => 'Yerevan', 'arrival_city' => 'Sharm'], '1');
-        $this->createFlightOffer($company, [
-            'flight_code_internal' => 'FLT-FIL-PAR',
-        ], '2');
-
-        $idsY = $this->flights->filteredQuery(['departure_city' => 'Yerevan'])->pluck('id')->sort()->values()->all();
-        $this->assertCount(1, $idsY);
-
-        $idsA = $this->flights->filteredQuery(['arrival_city' => 'Sharm'])->pluck('id')->sort()->values()->all();
-        $this->assertCount(2, $idsA);
+        // Columns dropped by migration 2026_04_16_000100; geographic filtering now via location_id (PART 32 location tree).
+        $this->markTestSkipped('departure_city / arrival_city dropped from flights schema; location filter tested separately.');
     }
 
     public function test_filter_cabin_class_and_connection_type(): void
@@ -320,19 +310,29 @@ class FlightServiceFiltersTest extends TestCase
         ], 'Other Air');
         $o2->update(['price' => 180]);
 
-        $booking = Booking::query()->create([
+        $order = Order::query()->create([
+            'order_number' => 'FLT-FILTER-1',
             'user_id' => $user->id,
             'company_id' => $company->id,
-            'status' => Booking::STATUS_CONFIRMED,
-            'total_price' => 580,
+            'buyer_type' => 'client',
+            'status' => 'confirmed',
+            'currency' => 'USD',
+            'subtotal' => 580,
+            'tax' => 0,
+            'total' => 580,
         ]);
-        BookingItem::query()->create([
-            'booking_id' => $booking->id,
-            'offer_id' => $o1->id,
-            'price' => 580,
+        OrderItem::query()->create([
+            'order_id' => $order->id,
+            'item_type' => 'flight',
+            'item_id' => $o1->flight->id,
+            'quantity' => 1,
+            'unit_price' => 580,
+            'total' => 580,
+            'currency' => 'USD',
+            'status' => 'confirmed',
         ]);
         $invoice = Invoice::query()->create([
-            'booking_id' => $booking->id,
+            'order_id' => $order->id,
             'total_amount' => 580,
             'status' => Invoice::STATUS_ISSUED,
         ]);

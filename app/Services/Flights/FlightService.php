@@ -44,12 +44,8 @@ class FlightService
         'quantity',
         'invoice_id',
         'user_email',
-        'departure_country',
-        'departure_city',
         'departure_airport',
         'departure_airport_code',
-        'arrival_country',
-        'arrival_city',
         'arrival_airport',
         'arrival_airport_code',
         'departure_at_from',
@@ -496,27 +492,20 @@ class FlightService
 
         $table = $query->getModel()->getTable();
 
-        foreach (['country', 'city', 'airport'] as $routeFilterKey) {
-            if (! array_key_exists($routeFilterKey, $filters)) {
-                continue;
+        // 'country' and 'city' aliases map to the dropped flights.{departure,arrival}_{country,city} columns
+        // (migration 2026_04_16_000100). Geographic filtering moved to location_id; for now those alias keys are no-ops.
+        if (array_key_exists('airport', $filters)) {
+            $value = $filters['airport'];
+            if ($value !== null && $value !== '' && (is_string($value) || is_numeric($value))) {
+                $needle = trim((string) $value);
+                if ($needle !== '') {
+                    $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
+                    $query->where(function (Builder $q) use ($table, $safeNeedle): void {
+                        $q->where($table.'.departure_airport', 'like', $safeNeedle)
+                            ->orWhere($table.'.arrival_airport', 'like', $safeNeedle);
+                    });
+                }
             }
-
-            $value = $filters[$routeFilterKey];
-            if ($value === null || $value === '' || (! is_string($value) && ! is_numeric($value))) {
-                continue;
-            }
-
-            $needle = trim((string) $value);
-            if ($needle === '') {
-                continue;
-            }
-
-            $columnStem = $routeFilterKey;
-            $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
-            $query->where(function (Builder $q) use ($table, $columnStem, $safeNeedle): void {
-                $q->where($table.'.departure_'.$columnStem, 'like', $safeNeedle)
-                    ->orWhere($table.'.arrival_'.$columnStem, 'like', $safeNeedle);
-            });
         }
 
         if (array_key_exists('airline', $filters)) {
@@ -534,12 +523,8 @@ class FlightService
         }
 
         $stringEquals = [
-            'departure_country' => 'departure_country',
-            'departure_city' => 'departure_city',
             'departure_airport' => 'departure_airport',
             'departure_airport_code' => 'departure_airport_code',
-            'arrival_country' => 'arrival_country',
-            'arrival_city' => 'arrival_city',
             'arrival_airport' => 'arrival_airport',
             'arrival_airport_code' => 'arrival_airport_code',
             'connection_type' => 'connection_type',
@@ -681,8 +666,13 @@ class FlightService
         if (array_key_exists('invoice_id', $filters)) {
             $invoiceId = $filters['invoice_id'];
             if ($invoiceId !== null && $invoiceId !== '' && is_numeric($invoiceId) && (int) $invoiceId > 0) {
-                $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($invoiceId): void {
-                    $q->where('id', (int) $invoiceId);
+                $query->whereExists(function ($sub) use ($invoiceId): void {
+                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('order_items')
+                        ->join('invoices', 'invoices.order_id', '=', 'order_items.order_id')
+                        ->whereColumn('order_items.item_id', 'flights.id')
+                        ->where('order_items.item_type', 'flight')
+                        ->where('invoices.id', (int) $invoiceId);
                 });
             }
         }
@@ -693,8 +683,14 @@ class FlightService
                 $needle = trim((string) $email);
                 if ($needle !== '') {
                     $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
-                    $query->whereHas('offer.bookingItems.booking.user', function (Builder $q) use ($safeNeedle): void {
-                        $q->where('email', 'like', $safeNeedle);
+                    $query->whereExists(function ($sub) use ($safeNeedle): void {
+                        $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                            ->from('order_items')
+                            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                            ->join('users', 'users.id', '=', 'orders.user_id')
+                            ->whereColumn('order_items.item_id', 'flights.id')
+                            ->where('order_items.item_type', 'flight')
+                            ->where('users.email', 'like', $safeNeedle);
                     });
                 }
             }
@@ -854,11 +850,7 @@ class FlightService
             'location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
             'flight_code_internal' => ['required', 'string', 'max:191'],
             'service_type' => ['required', 'string', Rule::in(Flight::SERVICE_TYPES)],
-            'departure_country' => ['required', 'string', 'max:191'],
-            'departure_city' => ['required', 'string', 'max:191'],
             'departure_airport' => ['required', 'string', 'max:191'],
-            'arrival_country' => ['required', 'string', 'max:191'],
-            'arrival_city' => ['required', 'string', 'max:191'],
             'arrival_airport' => ['required', 'string', 'max:191'],
             'departure_airport_code' => ['nullable', 'string', 'max:8'],
             'arrival_airport_code' => ['nullable', 'string', 'max:8'],

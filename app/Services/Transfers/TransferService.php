@@ -383,24 +383,42 @@ class TransferService
         $userEmail = $this->normalizeListingString($filters['user_email'] ?? null);
         if ($userEmail !== null) {
             $like = '%'.addcslashes($userEmail, '%_\\').'%';
-            $query->whereHas('offer.bookingItems.booking.user', function (Builder $q) use ($like): void {
-                $q->where('email', 'like', $like);
+            $query->whereExists(function ($sub) use ($like): void {
+                $sub->select(DB::raw(1))
+                    ->from('order_items')
+                    ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                    ->join('users', 'users.id', '=', 'orders.user_id')
+                    ->whereColumn('order_items.item_id', 'transfers.id')
+                    ->where('order_items.item_type', 'transfer')
+                    ->where('users.email', 'like', $like);
             });
         }
 
         $invoiceId = $this->normalizeListingInt($filters['invoice_id'] ?? null);
         if ($invoiceId !== null) {
-            $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($invoiceId): void {
-                $q->whereKey($invoiceId);
+            $query->whereExists(function ($sub) use ($invoiceId): void {
+                $sub->select(DB::raw(1))
+                    ->from('order_items')
+                    ->join('invoices', 'invoices.order_id', '=', 'order_items.order_id')
+                    ->whereColumn('order_items.item_id', 'transfers.id')
+                    ->where('order_items.item_type', 'transfer')
+                    ->where('invoices.id', $invoiceId);
             });
         }
 
         $orderNumber = $this->normalizeListingString($filters['order_number'] ?? null);
         if ($orderNumber !== null) {
             $like = '%'.addcslashes($orderNumber, '%_\\').'%';
-            $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($like): void {
-                $q->where('unique_booking_reference', 'like', $like)
-                    ->orWhere('vendor_locator', 'like', $like);
+            $query->whereExists(function ($sub) use ($like): void {
+                $sub->select(DB::raw(1))
+                    ->from('order_items')
+                    ->join('invoices', 'invoices.order_id', '=', 'order_items.order_id')
+                    ->whereColumn('order_items.item_id', 'transfers.id')
+                    ->where('order_items.item_type', 'transfer')
+                    ->where(function ($q) use ($like): void {
+                        $q->where('invoices.unique_booking_reference', 'like', $like)
+                            ->orWhere('invoices.vendor_locator', 'like', $like);
+                    });
             });
         }
     }

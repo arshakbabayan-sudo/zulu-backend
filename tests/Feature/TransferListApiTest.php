@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Booking;
-use App\Models\BookingItem;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\Offer;
@@ -460,19 +460,29 @@ class TransferListApiTest extends TestCase
             'transfer_title' => 'Booked Transfer',
         ]));
 
-        $booking = Booking::query()->create([
+        $order = Order::query()->create([
+            'order_number' => 'ORDER-ABC-123',
             'user_id' => $admin->id,
             'company_id' => $company->id,
-            'status' => Booking::STATUS_CONFIRMED,
-            'total_price' => 123.45,
+            'buyer_type' => 'client',
+            'status' => 'confirmed',
+            'currency' => 'USD',
+            'subtotal' => 123.45,
+            'tax' => 0,
+            'total' => 123.45,
         ]);
-        BookingItem::query()->create([
-            'booking_id' => $booking->id,
-            'offer_id' => $offer->id,
-            'price' => 123.45,
+        OrderItem::query()->create([
+            'order_id' => $order->id,
+            'item_type' => 'transfer',
+            'item_id' => $transfer->id,
+            'quantity' => 1,
+            'unit_price' => 123.45,
+            'total' => 123.45,
+            'currency' => 'USD',
+            'status' => 'confirmed',
         ]);
         $invoice = Invoice::query()->create([
-            'booking_id' => $booking->id,
+            'order_id' => $order->id,
             'unique_booking_reference' => 'ORDER-ABC-123',
             'total_amount' => 123.45,
             'currency' => 'USD',

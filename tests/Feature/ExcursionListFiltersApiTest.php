@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Booking;
-use App\Models\BookingItem;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\Offer;
@@ -87,19 +87,29 @@ class ExcursionListFiltersApiTest extends TestCase
         $byRange->assertOk();
         $this->assertContains($e2->id, collect($byRange->json('data'))->pluck('id')->all());
 
-        $booking = Booking::query()->create([
+        $order = Order::query()->create([
+            'order_number' => 'EXC-ORDER-99',
             'user_id' => $admin->id,
             'company_id' => $company->id,
-            'status' => Booking::STATUS_CONFIRMED,
-            'total_price' => 40,
+            'buyer_type' => 'client',
+            'status' => 'confirmed',
+            'currency' => 'USD',
+            'subtotal' => 40,
+            'tax' => 0,
+            'total' => 40,
         ]);
-        BookingItem::query()->create([
-            'booking_id' => $booking->id,
-            'offer_id' => $offerCheap->id,
-            'price' => 40,
+        OrderItem::query()->create([
+            'order_id' => $order->id,
+            'item_type' => 'excursion',
+            'item_id' => $e1->id,
+            'quantity' => 1,
+            'unit_price' => 40,
+            'total' => 40,
+            'currency' => 'USD',
+            'status' => 'confirmed',
         ]);
         $invoice = Invoice::query()->create([
-            'booking_id' => $booking->id,
+            'order_id' => $order->id,
             'unique_booking_reference' => 'EXC-ORDER-99',
             'total_amount' => 40,
             'currency' => 'USD',
