@@ -56,6 +56,7 @@ use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\SupportAdminController;
@@ -149,6 +150,25 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         ->where('contract', '[0-9a-f-]{36}');
     Route::post('seller/contracts/{contract}/sign', [SellerContractController::class, 'sign'])
         ->where('contract', '[0-9a-f-]{36}');
+
+    // Seller B2B partner connections (PART 18)
+    Route::get('seller/connections', [SellerConnectionController::class, 'index']);
+    Route::post('seller/connections', [SellerConnectionController::class, 'store']);
+    Route::get('seller/connections/{id}', [SellerConnectionController::class, 'show'])
+        ->where('id', '[0-9a-f-]{36}');
+    Route::post('seller/connections/{id}/accept', [SellerConnectionController::class, 'accept'])
+        ->where('id', '[0-9a-f-]{36}');
+    Route::post('seller/connections/{id}/reject', [SellerConnectionController::class, 'reject'])
+        ->where('id', '[0-9a-f-]{36}');
+    Route::post('seller/connections/{id}/counter', [SellerConnectionController::class, 'counter'])
+        ->where('id', '[0-9a-f-]{36}');
+    Route::post('seller/connections/{id}/pause', [SellerConnectionController::class, 'pause'])
+        ->where('id', '[0-9a-f-]{36}');
+    Route::post('seller/connections/{id}/resume', [SellerConnectionController::class, 'resume'])
+        ->where('id', '[0-9a-f-]{36}');
+    Route::post('seller/connections/{id}/terminate', [SellerConnectionController::class, 'terminate'])
+        ->where('id', '[0-9a-f-]{36}');
+    Route::get('seller/visible-suppliers', [SellerConnectionController::class, 'visibleSuppliers']);
 
     // Customer notification preferences (PART 23)
     Route::get('customer/notification-preferences', [NotificationPreferenceController::class, 'index']);
