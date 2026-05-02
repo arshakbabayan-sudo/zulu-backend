@@ -7,8 +7,11 @@ use App\Models\OrderItem;
 use App\Models\Package;
 use App\Models\PackageBookingSaga;
 use App\Models\PackageComponent;
+use App\Models\Payment;
 use App\Models\SagaComponentState;
 use App\Models\SagaStateLog;
+use App\Services\Payments\PaymentService;
+use App\Services\Webhooks\WebhookService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -30,7 +33,19 @@ class PackageBookingOrchestrator
 {
     public function __construct(
         private ComponentReserverRegistry $registry,
+        private ?PaymentService $paymentService = null,
+        private ?WebhookService $webhookService = null,
     ) {}
+
+    private function paymentService(): PaymentService
+    {
+        return $this->paymentService ?? app(PaymentService::class);
+    }
+
+    private function webhookService(): WebhookService
+    {
+        return $this->webhookService ?? app(WebhookService::class);
+    }
 
     /**
      * Run the saga for an order. Returns the saga record (existing or new).
@@ -281,6 +296,25 @@ class PackageBookingOrchestrator
         OrderItem::query()
             ->where('order_id', $order->id)
             ->update(['status' => 'confirmed']);
+
+        try {
+            $this->webhookService()->dispatch('order.confirmed', [
+                'order_id' => (string) $order->id,
+                'order_number' => $order->order_number,
+                'company_id' => $order->company_id,
+                'confirmed_at' => now()->toIso8601String(),
+            ]);
+            $this->webhookService()->dispatch('package_saga.confirmed', [
+                'saga_id' => (string) $saga->id,
+                'order_id' => (string) $order->id,
+                'confirmed_at' => now()->toIso8601String(),
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('order.confirmed/package_saga.confirmed webhook dispatch failed', [
+                'saga_id' => $saga->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function rollbackPhase(PackageBookingSaga $saga): void
@@ -337,6 +371,93 @@ class PackageBookingOrchestrator
         if ($order !== null) {
             $order->status = 'failed';
             $order->save();
+
+            $this->attemptRefund($saga, $order);
+
+            $this->fireOrderFailedWebhook($order, $saga);
+        }
+    }
+
+    /**
+     * Attempt to refund the order's payment after rollback. Records outcome on saga.context.
+     * Failures (no payment, gateway error, already refunded, no Stripe config) are non-fatal.
+     */
+    private function attemptRefund(PackageBookingSaga $saga, Order $order): void
+    {
+        $context = is_array($saga->context) ? $saga->context : [];
+
+        if ($order->payment_id === null) {
+            $context['refund'] = ['status' => 'skipped', 'reason' => 'no_payment_on_order', 'at' => now()->toIso8601String()];
+            $saga->context = $context;
+            $saga->save();
+            $this->log($saga, 'rolled_back', 'rolled_back', 'refund_skipped', null, $context['refund']);
+
+            return;
+        }
+
+        $payment = Payment::query()->find($order->payment_id);
+        if ($payment === null) {
+            $context['refund'] = ['status' => 'skipped', 'reason' => 'payment_not_found', 'at' => now()->toIso8601String()];
+            $saga->context = $context;
+            $saga->save();
+
+            return;
+        }
+
+        try {
+            $refunded = $this->paymentService()->refund($payment);
+
+            $saga->status = 'refunded';
+            $saga->save();
+
+            $context['refund'] = [
+                'status' => 'success',
+                'payment_id' => $refunded->id,
+                'at' => now()->toIso8601String(),
+            ];
+            $saga->context = $context;
+            $saga->save();
+            $this->log($saga, 'rolled_back', 'refunded', 'refund_completed', null, $context['refund']);
+        } catch (Throwable $e) {
+            Log::warning('Saga refund attempt failed', [
+                'saga_id' => $saga->id,
+                'payment_id' => $payment->id,
+                'message' => $e->getMessage(),
+            ]);
+            $context['refund'] = [
+                'status' => 'failed',
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+                'at' => now()->toIso8601String(),
+            ];
+            $saga->context = $context;
+            $saga->save();
+            $this->log($saga, 'rolled_back', 'rolled_back', 'refund_failed', null, $context['refund']);
+        }
+    }
+
+    private function fireOrderFailedWebhook(Order $order, PackageBookingSaga $saga): void
+    {
+        try {
+            $this->webhookService()->dispatch('order.failed', [
+                'order_id' => (string) $order->id,
+                'order_number' => $order->order_number,
+                'total' => (float) $order->total,
+                'currency' => $order->currency,
+                'company_id' => $order->company_id,
+                'failure_reason' => $saga->failure_reason,
+                'failed_at' => now()->toIso8601String(),
+            ]);
+            $this->webhookService()->dispatch('package_saga.failed', [
+                'saga_id' => (string) $saga->id,
+                'order_id' => (string) $order->id,
+                'failure_reason' => $saga->failure_reason,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('order.failed/package_saga.failed webhook dispatch failed', [
+                'saga_id' => $saga->id,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
