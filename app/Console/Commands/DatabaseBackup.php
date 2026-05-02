@@ -145,7 +145,7 @@ class DatabaseBackup extends Command
                 'actor_type' => 'system',
                 'actor_id' => null,
                 'actor_name_snapshot' => 'db:backup',
-                'subject_type' => null,
+                'subject_type' => 'database',
                 'subject_id' => $database,
                 'action' => 'database.backup.completed',
                 'changes' => json_encode(['path' => $path, 'size_bytes' => $size]),
