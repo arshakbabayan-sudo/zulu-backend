@@ -58,8 +58,10 @@ use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\AdminCartController;
 use App\Http\Controllers\Api\AdminConnectionController;
+use App\Http\Controllers\Api\AdminInsuranceController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\CustomerCartController;
+use App\Http\Controllers\Api\CustomerInsuranceController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\StorefrontPackageController;
@@ -173,6 +175,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('seller/connections/{id}/terminate', [SellerConnectionController::class, 'terminate'])
         ->where('id', '[0-9a-f-]{36}');
     Route::get('seller/visible-suppliers', [SellerConnectionController::class, 'visibleSuppliers']);
+
+    // Customer insurance (PART 17)
+    Route::get('customer/insurance/products', [CustomerInsuranceController::class, 'listProducts']);
+    Route::post('customer/insurance/quote', [CustomerInsuranceController::class, 'quote']);
+    Route::post('customer/insurance/purchase', [CustomerInsuranceController::class, 'purchase']);
+    Route::get('customer/insurance/policies', [CustomerInsuranceController::class, 'myPolicies']);
+    Route::get('customer/insurance/policies/{id}', [CustomerInsuranceController::class, 'showPolicy'])
+        ->where('id', '[0-9a-f-]{36}');
 
     // Customer cart + checkout (PART 22)
     Route::get('customer/cart', [CustomerCartController::class, 'show']);
@@ -401,6 +411,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('contract-templates', [AdminContractTemplateController::class, 'store']);
         Route::patch('contract-templates/{template}', [AdminContractTemplateController::class, 'update'])
             ->where('template', '[0-9a-f-]{36}');
+
+        // Insurance (PART 17)
+        Route::get('insurance/products', [AdminInsuranceController::class, 'indexProducts']);
+        Route::post('insurance/products', [AdminInsuranceController::class, 'storeProduct']);
+        Route::patch('insurance/products/{id}', [AdminInsuranceController::class, 'updateProduct'])
+            ->whereNumber('id');
+        Route::get('insurance/policies', [AdminInsuranceController::class, 'indexPolicies']);
+        Route::post('insurance/policies/{id}/cancel', [AdminInsuranceController::class, 'cancelPolicy'])
+            ->where('id', '[0-9a-f-]{36}');
 
         // Cart oversight (PART 22)
         Route::get('abandoned-carts', [AdminCartController::class, 'abandoned']);
