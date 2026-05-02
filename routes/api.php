@@ -68,6 +68,7 @@ use App\Http\Controllers\Api\CustomerLoyaltyController;
 use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
+use App\Http\Controllers\Api\SellerWebhookController;
 use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TransferController;
@@ -88,6 +89,9 @@ $registerPublicDiscoveryRoutes = static function (): void {
     Route::get('search', [DiscoveryController::class, 'search'])->name('search');
     Route::get('offers/{id}', [DiscoveryController::class, 'show'])->whereNumber('id')->name('offer');
 };
+
+// Public webhook events catalog (PART 30)
+Route::get('webhooks/events', [SellerWebhookController::class, 'supportedEvents'])->middleware('throttle:api_public');
 
 // Public search helpers (PART 20)
 Route::get('search/autocomplete', [SavedSearchController::class, 'autocomplete'])->middleware('throttle:api_public');
@@ -164,6 +168,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         ->where('contract', '[0-9a-f-]{36}');
     Route::post('seller/contracts/{contract}/sign', [SellerContractController::class, 'sign'])
         ->where('contract', '[0-9a-f-]{36}');
+
+    // Seller webhooks (PART 30)
+    Route::get('seller/webhooks', [SellerWebhookController::class, 'index']);
+    Route::post('seller/webhooks', [SellerWebhookController::class, 'store']);
+    Route::delete('seller/webhooks/{id}', [SellerWebhookController::class, 'destroy'])->whereNumber('id');
+    Route::get('seller/webhooks/{id}/deliveries', [SellerWebhookController::class, 'deliveries'])->whereNumber('id');
 
     // Seller B2B partner connections (PART 18)
     Route::get('seller/connections', [SellerConnectionController::class, 'index']);
