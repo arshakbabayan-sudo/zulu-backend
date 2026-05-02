@@ -72,6 +72,7 @@ use App\Http\Controllers\Api\SellerWebhookController;
 use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TransferController;
+use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\VisaController;
 use App\Http\Middleware\DeprecateLegacyDiscoveryApi;
 use App\Services\Infrastructure\PlatformReadinessService;
@@ -161,6 +162,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('localization/ui-translations', [LocalizationController::class, 'setUiTranslations']);
 
     Route::get('account/me', [AccountController::class, 'me']);
+
+    // Two-factor authentication (PART 29)
+    Route::get('account/2fa/status', [TwoFactorController::class, 'status']);
+    Route::post('account/2fa/setup', [TwoFactorController::class, 'setup']);
+    Route::post('account/2fa/confirm', [TwoFactorController::class, 'confirm']);
+    Route::post('account/2fa/verify', [TwoFactorController::class, 'verify'])->middleware('throttle:5,1');
+    Route::post('account/2fa/disable', [TwoFactorController::class, 'disable']);
+    Route::post('account/2fa/recovery-codes/regenerate', [TwoFactorController::class, 'regenerateRecoveryCodes']);
 
     // Seller contracts (PART 05)
     Route::get('seller/contracts', [SellerContractController::class, 'index']);
