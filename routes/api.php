@@ -56,6 +56,7 @@ use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\AdminCartController;
 use App\Http\Controllers\Api\AdminConnectionController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\CustomerCartController;
@@ -400,6 +401,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('contract-templates', [AdminContractTemplateController::class, 'store']);
         Route::patch('contract-templates/{template}', [AdminContractTemplateController::class, 'update'])
             ->where('template', '[0-9a-f-]{36}');
+
+        // Cart oversight (PART 22)
+        Route::get('abandoned-carts', [AdminCartController::class, 'abandoned']);
+        Route::post('cart/release-expired-holds', [AdminCartController::class, 'releaseExpiredHolds']);
+        Route::get('cart/stats', [AdminCartController::class, 'stats']);
 
         // Package booking sagas (PART 19 — HEART)
         Route::get('package-sagas', [AdminPackageSagaController::class, 'index']);
