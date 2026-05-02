@@ -11,10 +11,12 @@ use App\Services\Commissions\CommissionService;
 use App\Services\Finance\FinanceService;
 use App\Services\Invoices\InvoiceService;
 use App\Services\Notifications\NotificationService;
+use App\Services\Loyalty\LoyaltyService;
 use App\Services\Orders\OrderService;
 use App\Services\Packages\Saga\PackageBookingOrchestrator;
 use App\Services\Payments\PaymentService;
 use App\Services\Vouchers\VoucherService;
+use App\Services\Webhooks\WebhookService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -31,11 +33,23 @@ class PackageOrderService
         private OrderService $orderService,
         private VoucherService $voucherService,
         private ?PackageBookingOrchestrator $bookingOrchestrator = null,
+        private ?LoyaltyService $loyaltyService = null,
+        private ?WebhookService $webhookService = null,
     ) {}
 
     private function bookingOrchestrator(): PackageBookingOrchestrator
     {
         return $this->bookingOrchestrator ?? app(PackageBookingOrchestrator::class);
+    }
+
+    private function loyaltyService(): LoyaltyService
+    {
+        return $this->loyaltyService ?? app(LoyaltyService::class);
+    }
+
+    private function webhookService(): WebhookService
+    {
+        return $this->webhookService ?? app(WebhookService::class);
     }
 
     public function createOrder(Package $package, User $user, array $input): Order
@@ -226,6 +240,36 @@ class PackageOrderService
                 }
             } catch (\Throwable $e) {
                 Log::warning('Package saga failed to trigger for order', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                if ($order->user_id !== null) {
+                    $userModel = User::query()->find($order->user_id);
+                    if ($userModel !== null) {
+                        $this->loyaltyService()->earnFromOrder($userModel, $order->fresh());
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Loyalty earn failed', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $this->webhookService()->dispatch('order.paid', [
+                    'order_id' => (string) $order->id,
+                    'order_number' => $order->order_number,
+                    'total' => (float) $order->total,
+                    'currency' => $order->currency,
+                    'company_id' => $order->company_id,
+                    'paid_at' => now()->toIso8601String(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('order.paid webhook dispatch failed', [
                     'order_id' => $order->id,
                     'message' => $e->getMessage(),
                 ]);
