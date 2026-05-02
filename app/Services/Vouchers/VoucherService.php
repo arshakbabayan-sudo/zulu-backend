@@ -8,6 +8,7 @@ use App\Models\OrderItem;
 use App\Models\Voucher;
 use App\Services\Audit\AuditService;
 use App\Services\Notifications\NotificationService;
+use App\Services\Webhooks\WebhookService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,11 +20,17 @@ class VoucherService
         private ?VoucherPdfService $pdfService = null,
         private ?NotificationService $notificationService = null,
         private ?AuditService $auditService = null,
+        private ?WebhookService $webhookService = null,
     ) {}
 
     private function audit(): AuditService
     {
         return $this->auditService ?? app(AuditService::class);
+    }
+
+    private function webhook(): WebhookService
+    {
+        return $this->webhookService ?? app(WebhookService::class);
     }
 
     /**
@@ -106,6 +113,7 @@ class VoucherService
             $this->renderPdfSafely($voucher);
             $this->sendIssuedMailSafely($voucher, $order);
             $this->createInAppNotificationSafely($voucher, $order);
+            $this->dispatchWebhookSafely($voucher, $order);
         });
     }
 
@@ -133,6 +141,26 @@ class VoucherService
             ]);
         } catch (\Throwable $e) {
             Log::warning('Voucher in-app notification failed', [
+                'voucher_id' => $voucher->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function dispatchWebhookSafely(Voucher $voucher, Order $order): void
+    {
+        try {
+            $this->webhook()->dispatch('voucher.issued', [
+                'voucher_id' => (string) $voucher->id,
+                'voucher_number' => $voucher->voucher_number,
+                'order_id' => (string) $voucher->order_id,
+                'order_number' => $order->order_number,
+                'service_type' => $voucher->service_type,
+                'company_id' => $order->company_id,
+                'issued_at' => $voucher->created_at?->toIso8601String() ?? now()->toIso8601String(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('voucher.issued webhook dispatch failed', [
                 'voucher_id' => $voucher->id,
                 'message' => $e->getMessage(),
             ]);

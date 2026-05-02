@@ -8,7 +8,9 @@ use App\Models\ContractTemplate;
 use App\Models\ContractVersion;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Webhooks\WebhookService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -16,11 +18,37 @@ class ContractService
 {
     public function __construct(
         private ?AuditService $auditService = null,
+        private ?WebhookService $webhookService = null,
     ) {}
 
     private function audit(): AuditService
     {
         return $this->auditService ?? app(AuditService::class);
+    }
+
+    private function webhook(): WebhookService
+    {
+        return $this->webhookService ?? app(WebhookService::class);
+    }
+
+    private function fireContractWebhook(string $event, Contract $contract, array $extra = []): void
+    {
+        try {
+            $this->webhook()->dispatch($event, array_merge([
+                'contract_id' => (string) $contract->id,
+                'contract_number' => $contract->contract_number,
+                'type' => $contract->type,
+                'status' => $contract->status,
+                'party_a_company_id' => $contract->party_a_company_id,
+                'party_b_company_id' => $contract->party_b_company_id,
+            ], $extra));
+        } catch (\Throwable $e) {
+            Log::warning('Contract webhook dispatch failed', [
+                'event' => $event,
+                'contract_id' => $contract->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -125,6 +153,8 @@ class ContractService
             'context' => ['contract_number' => $contract->contract_number],
         ]);
 
+        $this->fireContractWebhook('contract.sent', $contract->fresh());
+
         return $contract->fresh();
     }
 
@@ -172,6 +202,8 @@ class ContractService
             'changes' => ['status' => ['from' => $previousStatus, 'to' => 'terminated']],
             'context' => ['contract_number' => $contract->contract_number, 'reason' => $reason],
         ]);
+
+        $this->fireContractWebhook('contract.terminated', $contract->fresh(), ['reason' => $reason]);
 
         return $contract->fresh();
     }
@@ -244,6 +276,11 @@ class ContractService
                 'party' => $party,
                 'signature_count' => count($signatures),
             ],
+        ]);
+
+        $this->fireContractWebhook('contract.signed', $contract->fresh(), [
+            'party' => $party,
+            'signature_count' => count($signatures),
         ]);
 
         return $contract->fresh();

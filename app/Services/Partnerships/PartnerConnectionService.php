@@ -6,7 +6,9 @@ use App\Models\Company;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Webhooks\WebhookService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -21,11 +23,37 @@ class PartnerConnectionService
 {
     public function __construct(
         private ?AuditService $auditService = null,
+        private ?WebhookService $webhookService = null,
     ) {}
 
     private function audit(): AuditService
     {
         return $this->auditService ?? app(AuditService::class);
+    }
+
+    private function webhook(): WebhookService
+    {
+        return $this->webhookService ?? app(WebhookService::class);
+    }
+
+    private function fireConnectionWebhook(string $event, Connection $connection, array $extra = []): void
+    {
+        try {
+            $this->webhook()->dispatch($event, array_merge([
+                'connection_id' => (string) $connection->id,
+                'type' => $connection->type,
+                'direction' => $connection->direction,
+                'status' => $connection->status,
+                'seller_a_company_id' => $connection->seller_a_company_id,
+                'seller_b_company_id' => $connection->seller_b_company_id,
+            ], $extra));
+        } catch (\Throwable $e) {
+            Log::warning('Connection webhook dispatch failed', [
+                'event' => $event,
+                'connection_id' => $connection->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -119,7 +147,10 @@ class PartnerConnectionService
                 ],
             ]);
 
-            return $connection->fresh();
+            $fresh = $connection->fresh();
+            $this->fireConnectionWebhook('connection.proposed', $fresh);
+
+            return $fresh;
         });
     }
 
@@ -142,7 +173,10 @@ class PartnerConnectionService
             'context' => null,
         ]);
 
-        return $connection->fresh();
+        $fresh = $connection->fresh();
+        $this->fireConnectionWebhook('connection.accepted', $fresh);
+
+        return $fresh;
     }
 
     public function reject(Connection $connection, User $rejecter, ?string $reason = null): Connection
@@ -287,7 +321,10 @@ class PartnerConnectionService
             'context' => ['reason' => $reason],
         ]);
 
-        return $connection->fresh();
+        $fresh = $connection->fresh();
+        $this->fireConnectionWebhook('connection.terminated', $fresh, ['reason' => $reason]);
+
+        return $fresh;
     }
 
     /**
