@@ -58,6 +58,7 @@ use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\AdminConnectionController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
+use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\StorefrontPackageController;
@@ -171,6 +172,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('seller/connections/{id}/terminate', [SellerConnectionController::class, 'terminate'])
         ->where('id', '[0-9a-f-]{36}');
     Route::get('seller/visible-suppliers', [SellerConnectionController::class, 'visibleSuppliers']);
+
+    // Customer cart + checkout (PART 22)
+    Route::get('customer/cart', [CustomerCartController::class, 'show']);
+    Route::post('customer/cart/items', [CustomerCartController::class, 'addItem']);
+    Route::patch('customer/cart/items/{itemId}', [CustomerCartController::class, 'updateItem'])
+        ->where('itemId', '[0-9a-f-]{36}');
+    Route::delete('customer/cart/items/{itemId}', [CustomerCartController::class, 'removeItem'])
+        ->where('itemId', '[0-9a-f-]{36}');
+    Route::delete('customer/cart', [CustomerCartController::class, 'clear']);
+    Route::post('customer/cart/checkout', [CustomerCartController::class, 'checkout']);
 
     // Customer notification preferences (PART 23)
     Route::get('customer/notification-preferences', [NotificationPreferenceController::class, 'index']);
