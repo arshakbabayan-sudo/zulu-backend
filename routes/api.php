@@ -59,9 +59,11 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\AdminCartController;
 use App\Http\Controllers\Api\AdminConnectionController;
 use App\Http\Controllers\Api\AdminInsuranceController;
+use App\Http\Controllers\Api\AdminLoyaltyController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
+use App\Http\Controllers\Api\CustomerLoyaltyController;
 use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
@@ -180,6 +182,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('seller/connections/{id}/terminate', [SellerConnectionController::class, 'terminate'])
         ->where('id', '[0-9a-f-]{36}');
     Route::get('seller/visible-suppliers', [SellerConnectionController::class, 'visibleSuppliers']);
+
+    // Customer loyalty (PART 27)
+    Route::get('customer/loyalty', [CustomerLoyaltyController::class, 'show']);
+    Route::post('customer/loyalty/redeem', [CustomerLoyaltyController::class, 'redeem']);
 
     // Customer saved searches (PART 20)
     Route::get('customer/saved-searches', [SavedSearchController::class, 'index']);
@@ -424,6 +430,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('contract-templates', [AdminContractTemplateController::class, 'store']);
         Route::patch('contract-templates/{template}', [AdminContractTemplateController::class, 'update'])
             ->where('template', '[0-9a-f-]{36}');
+
+        // Loyalty (PART 27)
+        Route::get('loyalty/accounts', [AdminLoyaltyController::class, 'indexAccounts']);
+        Route::get('loyalty/accounts/{userId}/transactions', [AdminLoyaltyController::class, 'accountTransactions'])
+            ->whereNumber('userId');
+        Route::post('loyalty/accounts/{userId}/adjust', [AdminLoyaltyController::class, 'adjust'])
+            ->whereNumber('userId');
+        Route::get('loyalty/stats', [AdminLoyaltyController::class, 'stats']);
 
         // Insurance (PART 17)
         Route::get('insurance/products', [AdminInsuranceController::class, 'indexProducts']);
