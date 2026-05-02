@@ -62,6 +62,7 @@ use App\Http\Controllers\Api\AdminInsuranceController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
+use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\StorefrontPackageController;
@@ -84,6 +85,10 @@ $registerPublicDiscoveryRoutes = static function (): void {
     Route::get('search', [DiscoveryController::class, 'search'])->name('search');
     Route::get('offers/{id}', [DiscoveryController::class, 'show'])->whereNumber('id')->name('offer');
 };
+
+// Public search helpers (PART 20)
+Route::get('search/autocomplete', [SavedSearchController::class, 'autocomplete'])->middleware('throttle:api_public');
+Route::get('search/popular', [SavedSearchController::class, 'popular'])->middleware('throttle:api_public');
 
 Route::prefix('v1')->name('v1.')->group(function () use ($registerPublicDiscoveryRoutes) {
     Route::get('/health', function (PlatformReadinessService $readinessService) {
@@ -175,6 +180,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('seller/connections/{id}/terminate', [SellerConnectionController::class, 'terminate'])
         ->where('id', '[0-9a-f-]{36}');
     Route::get('seller/visible-suppliers', [SellerConnectionController::class, 'visibleSuppliers']);
+
+    // Customer saved searches (PART 20)
+    Route::get('customer/saved-searches', [SavedSearchController::class, 'index']);
+    Route::post('customer/saved-searches', [SavedSearchController::class, 'store']);
+    Route::patch('customer/saved-searches/{id}/alerts', [SavedSearchController::class, 'toggleAlerts'])
+        ->whereNumber('id');
+    Route::delete('customer/saved-searches/{id}', [SavedSearchController::class, 'destroy'])
+        ->whereNumber('id');
 
     // Customer insurance (PART 17)
     Route::get('customer/insurance/products', [CustomerInsuranceController::class, 'listProducts']);
