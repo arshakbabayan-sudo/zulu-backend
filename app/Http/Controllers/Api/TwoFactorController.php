@@ -87,6 +87,33 @@ class TwoFactorController extends Controller
         return response()->json(['success' => $ok, 'data' => ['disabled' => $ok]]);
     }
 
+    /**
+     * POST /api/account/2fa/resend
+     *
+     * Frontend-facing endpoint for the "Resend code" affordance on the 2FA
+     * verification page. Backend uses TOTP (RFC 6238) which generates a new
+     * code client-side every 30 seconds — there is nothing to "send" from
+     * the server. This endpoint returns 200 with a friendly notice so the
+     * frontend can give the user feedback without erroring.
+     *
+     * If/when email-OTP is added as a fallback, the email-send logic lands
+     * here and the response shape stays the same.
+     */
+    public function resend(Request $request): JsonResponse
+    {
+        $enabled = $this->service->isEnabled($request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'method' => 'totp',
+                'message' => $enabled
+                    ? 'Open your authenticator app for the latest code (refreshes every 30s).'
+                    : '2FA is not enabled on this account.',
+            ],
+        ]);
+    }
+
     /** POST /api/account/2fa/recovery-codes/regenerate */
     public function regenerateRecoveryCodes(Request $request): JsonResponse
     {
