@@ -12,6 +12,7 @@ use App\Services\Finance\FinanceService;
 use App\Services\Invoices\InvoiceService;
 use App\Services\Notifications\NotificationService;
 use App\Services\Orders\OrderService;
+use App\Services\Packages\Saga\PackageBookingOrchestrator;
 use App\Services\Payments\PaymentService;
 use App\Services\Vouchers\VoucherService;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -28,8 +29,14 @@ class PackageOrderService
         private NotificationService $notificationService,
         private FinanceService $financeService,
         private OrderService $orderService,
-        private VoucherService $voucherService
+        private VoucherService $voucherService,
+        private ?PackageBookingOrchestrator $bookingOrchestrator = null,
     ) {}
+
+    private function bookingOrchestrator(): PackageBookingOrchestrator
+    {
+        return $this->bookingOrchestrator ?? app(PackageBookingOrchestrator::class);
+    }
 
     public function createOrder(Package $package, User $user, array $input): Order
     {
@@ -207,6 +214,18 @@ class PackageOrderService
                 $this->financeService->createEntitlementsForOrder($order->fresh(['items']));
             } catch (\Throwable $e) {
                 Log::warning('Entitlement creation failed for order', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $hasPackageItem = $order->items()->where('item_type', 'package')->exists();
+                if ($hasPackageItem) {
+                    $this->bookingOrchestrator()->runForOrder($order->fresh(['items']));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Package saga failed to trigger for order', [
                     'order_id' => $order->id,
                     'message' => $e->getMessage(),
                 ]);
