@@ -61,6 +61,7 @@ use App\Http\Controllers\Api\AdminConnectionController;
 use App\Http\Controllers\Api\AdminInsuranceController;
 use App\Http\Controllers\Api\AdminLoyaltyController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
+use App\Http\Controllers\Api\AdminPlatformStatisticsController;
 use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
 use App\Http\Controllers\Api\CustomerLoyaltyController;
@@ -430,6 +431,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('contract-templates', [AdminContractTemplateController::class, 'store']);
         Route::patch('contract-templates/{template}', [AdminContractTemplateController::class, 'update'])
             ->where('template', '[0-9a-f-]{36}');
+
+        // Platform statistics dashboard (PART 25)
+        Route::get('statistics/dashboard', [AdminPlatformStatisticsController::class, 'dashboard']);
 
         // Loyalty (PART 27)
         Route::get('loyalty/accounts', [AdminLoyaltyController::class, 'indexAccounts']);
