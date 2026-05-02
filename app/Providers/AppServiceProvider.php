@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\Invoice;
 use App\Observers\InvoiceObserver;
+use App\Services\Packages\Saga\ComponentReserverRegistry;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -14,7 +15,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->singleton(ComponentReserverRegistry::class);
     }
 
     public function boot(): void
