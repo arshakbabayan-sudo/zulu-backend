@@ -21,6 +21,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Admin\PlatformAdminService;
+use App\Services\Approvals\ApprovalService;
 use App\Services\Approvals\CompanyApplicationApprovalService;
 use App\Services\Companies\CompanyService;
 use App\Services\Companies\SellerApplicationService;
@@ -214,6 +215,42 @@ class PlatformAdminController extends Controller
         return response()->json([
             'success' => true,
             'data' => ApprovalResource::make($fresh)->toArray($request),
+        ]);
+    }
+
+    /**
+     * POST /api/platform-admin/approvals/bulk-approve
+     *
+     * Body: { ids: number[], decision_notes?: string }
+     * Returns per-id success/failure outcome (Sprint 64, PART 21).
+     */
+    public function bulkApproveApprovals(Request $request, ApprovalService $service): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer'],
+            'decision_notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $results = $service->approveBulk(
+            array_map('intval', (array) $validated['ids']),
+            $request->user(),
+            $validated['decision_notes'] ?? null
+        );
+
+        $successCount = count(array_filter($results, fn ($r) => $r['ok']));
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'requested' => count($results),
+                'succeeded' => $successCount,
+                'results' => $results,
+            ],
         ]);
     }
 

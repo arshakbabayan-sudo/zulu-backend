@@ -433,6 +433,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('seller-applications/{id}/approve', [PlatformAdminController::class, 'approveSellerApplication'])->whereNumber('id');
         Route::post('seller-applications/{id}/reject', [PlatformAdminController::class, 'rejectSellerApplication'])->whereNumber('id');
         Route::get('approvals', [PlatformAdminController::class, 'approvals']);
+        Route::post('approvals/bulk-approve', [PlatformAdminController::class, 'bulkApproveApprovals']);
         Route::post('approvals/{approval}/approve', [PlatformAdminController::class, 'approveApproval'])->whereNumber('approval');
         Route::post('approvals/{approval}/reject', [PlatformAdminController::class, 'rejectApproval'])->whereNumber('approval');
         Route::get('package-orders', [PlatformAdminController::class, 'packageOrders']);
