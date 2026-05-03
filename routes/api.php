@@ -449,9 +449,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
             ->where('log', '[0-9a-f-]{36}');
         Route::post('audit-logs/verify-integrity', [AdminAuditLogController::class, 'verifyIntegrity']);
 
-        // Webhook oversight (PART 30, Sprint 52)
+        // Webhook oversight (PART 30, Sprint 52 + 75)
         Route::get('webhooks/subscriptions', [AdminWebhookController::class, 'subscriptions']);
         Route::get('webhooks/deliveries', [AdminWebhookController::class, 'deliveries']);
+        Route::get('webhooks/dead-letter', [AdminWebhookController::class, 'deadLetter']);
+        Route::post('webhooks/deliveries/{id}/replay', [AdminWebhookController::class, 'replayDelivery'])
+            ->whereNumber('id');
         Route::get('webhooks/stats', [AdminWebhookController::class, 'stats']);
 
         // Notification oversight (PART 23, Sprint 59)

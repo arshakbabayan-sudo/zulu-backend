@@ -94,6 +94,77 @@ class AdminWebhookController extends Controller
     }
 
     /**
+     * POST /api/platform-admin/webhooks/deliveries/{id}/replay
+     *
+     * Resets a failed delivery to pending so the next dispatcher run picks
+     * it up again. Resets attempt_count and clears error_message. The
+     * existing payload is replayed verbatim — same idempotency_key, so
+     * the receiver can deduplicate.
+     */
+    public function replayDelivery(int $id): JsonResponse
+    {
+        $delivery = WebhookDelivery::query()->find($id);
+        if ($delivery === null) {
+            return response()->json(['success' => false, 'message' => 'Delivery not found'], 404);
+        }
+
+        if ($delivery->status !== 'failed') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot replay a delivery in status '{$delivery->status}'",
+            ], 422);
+        }
+
+        $delivery->status = 'pending';
+        $delivery->attempt_count = 0;
+        $delivery->error_message = null;
+        $delivery->http_status = null;
+        $delivery->response_excerpt = null;
+        $delivery->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => $delivery,
+        ]);
+    }
+
+    /**
+     * GET /api/platform-admin/webhooks/dead-letter
+     *
+     * Convenience listing for failed deliveries (the dead-letter view).
+     */
+    public function deadLetter(Request $request): JsonResponse
+    {
+        $perPage = max(10, min((int) $request->query('per_page', 50), 200));
+
+        $query = WebhookDelivery::query()
+            ->with('subscription:id,company_id,url')
+            ->where('status', 'failed')
+            ->orderByDesc('last_attempted_at');
+
+        if ($request->filled('subscription_id')) {
+            $query->where('subscription_id', (int) $request->query('subscription_id'));
+        }
+
+        if ($request->filled('event')) {
+            $query->where('event', (string) $request->query('event'));
+        }
+
+        $rows = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows->items(),
+            'meta' => [
+                'current_page' => $rows->currentPage(),
+                'last_page' => $rows->lastPage(),
+                'total' => $rows->total(),
+                'per_page' => $rows->perPage(),
+            ],
+        ]);
+    }
+
+    /**
      * GET /api/platform-admin/webhooks/stats
      *
      * Quick stats for admin dashboard.
