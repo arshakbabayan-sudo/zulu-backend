@@ -12,6 +12,7 @@ use App\Services\Support\SupportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class SupportAdminController extends Controller
 {
@@ -88,6 +89,43 @@ class SupportAdminController extends Controller
         return response()->json([
             'success' => true,
             'data' => $this->ticketDetailPayload($ticket),
+        ]);
+    }
+
+    /**
+     * PATCH /api/support/tickets/{id}/status
+     *
+     * Admin-side status transition (open → pending → resolved → closed).
+     * Sprint 65 (PART 24).
+     */
+    public function updateStatus(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessSupportAccess($request)) {
+            return $deny;
+        }
+
+        $user = $request->user();
+        $companyId = $this->resolveSupportCompanyId($request, $user);
+
+        $scoped = SupportTicket::query()->whereKey($id);
+        if ($companyId !== null) {
+            $scoped->where('company_id', $companyId);
+        }
+
+        $ticket = $scoped->first();
+        if ($ticket === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $validated = $request->validate([
+            'status' => ['required', 'string', Rule::in(SupportTicket::STATUSES)],
+        ]);
+
+        $ticket->update(['status' => $validated['status']]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->ticketDetailPayload($ticket->fresh()),
         ]);
     }
 

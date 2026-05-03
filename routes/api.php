@@ -47,6 +47,7 @@ use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
 use App\Http\Controllers\Api\CustomerLoyaltyController;
 use App\Http\Controllers\Api\CustomerStatsController;
+use App\Http\Controllers\Api\CustomerSupportController;
 use App\Http\Controllers\Api\CustomerVoucherController;
 use App\Http\Controllers\Api\DiscoveryController;
 use App\Http\Controllers\Api\EmailVerificationController;
@@ -618,4 +619,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('support/tickets', [SupportAdminController::class, 'index']);
     Route::get('support/tickets/{id}', [SupportAdminController::class, 'show'])->whereNumber('id');
     Route::post('support/tickets/{id}/messages', [SupportAdminController::class, 'storeMessage'])->whereNumber('id');
+    Route::patch('support/tickets/{id}/status', [SupportAdminController::class, 'updateStatus'])->whereNumber('id');
+
+    // Customer support (Sprint 65, PART 24)
+    Route::get('customer/support/tickets', [CustomerSupportController::class, 'index']);
+    Route::post('customer/support/tickets', [CustomerSupportController::class, 'store']);
+    Route::get('customer/support/tickets/{id}', [CustomerSupportController::class, 'show'])->whereNumber('id');
+    Route::post('customer/support/tickets/{id}/messages', [CustomerSupportController::class, 'addMessage'])->whereNumber('id');
 });
