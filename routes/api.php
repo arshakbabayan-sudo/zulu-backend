@@ -449,6 +449,19 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
             ->where('log', '[0-9a-f-]{36}');
         Route::post('audit-logs/verify-integrity', [AdminAuditLogController::class, 'verifyIntegrity']);
 
+        // OpenAPI spec served to platform-admin (Sprint 74)
+        Route::get('openapi.json', function () {
+            $path = base_path('storage/app/openapi.json');
+            if (! file_exists($path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Spec not generated yet. Run: php artisan api:generate-openapi',
+                ], 404);
+            }
+
+            return response()->file($path, ['Content-Type' => 'application/json']);
+        });
+
         // Webhook oversight (PART 30, Sprint 52 + 75)
         Route::get('webhooks/subscriptions', [AdminWebhookController::class, 'subscriptions']);
         Route::get('webhooks/deliveries', [AdminWebhookController::class, 'deliveries']);
