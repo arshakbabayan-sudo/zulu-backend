@@ -106,6 +106,7 @@ Route::get('webhooks/events', [SellerWebhookController::class, 'supportedEvents'
 // Public search helpers (PART 20)
 Route::get('search/autocomplete', [SavedSearchController::class, 'autocomplete'])->middleware('throttle:api_public');
 Route::get('search/popular', [SavedSearchController::class, 'popular'])->middleware('throttle:api_public');
+Route::get('search/cross-suggest', [SavedSearchController::class, 'crossSuggest'])->middleware('throttle:api_public');
 
 // AI Search (PART 34 Phase 1) — natural-language → Claude parser → discovery search
 Route::post('ai/search', [AISearchController::class, 'search'])
@@ -481,6 +482,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Notification oversight (PART 23, Sprint 59)
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
+
+        // Search trends (PART 20, Sprint 68)
+        Route::get('search/trends', [SavedSearchController::class, 'trends']);
 
         // Visa application review queue (PART 16, Sprint 63)
         Route::get('visa-applications', [AdminVisaApplicationController::class, 'index']);

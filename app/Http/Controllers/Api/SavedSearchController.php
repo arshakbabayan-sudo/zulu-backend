@@ -77,4 +77,27 @@ class SavedSearchController extends Controller
 
         return response()->json(['success' => true, 'data' => $popular]);
     }
+
+    /** GET /api/search/trends?days=30 — admin */
+    public function trends(Request $request): JsonResponse
+    {
+        $days = max(1, min(365, (int) $request->query('days', 30)));
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->service->searchTrends($days),
+        ]);
+    }
+
+    /** GET /api/search/cross-suggest?q=...&days=30 */
+    public function crossSuggest(Request $request): JsonResponse
+    {
+        $q = (string) $request->query('q', '');
+        $days = max(1, min(365, (int) $request->query('days', 30)));
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->service->crossVerticalMatches($q, $days, 5),
+        ]);
+    }
 }
