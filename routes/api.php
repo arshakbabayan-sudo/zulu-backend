@@ -12,7 +12,7 @@
  * - Webhook: `POST payments/webhook` (no Sanctum).
  * - Sanctum bulk: everything from email verification through `locations/*`, `support/tickets/*`, `rollout/admin-next/screen-view` (observability), `platform-admin/banners` (seller/operator/platform-admin/operator/*).
  *
- * Unrouted legacy API code: `App\Http\Controllers\Api\Modules\UserVisaApiController` (isolated until explicitly registered).
+ * Visa applications: customer endpoints under `visa-applications/*`, admin under `platform-admin/visa-applications/*` (Sprint 63).
  */
 
 use App\Http\Controllers\Api\AccountController;
@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\AdminPlatformStatisticsController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
 use App\Http\Controllers\Api\AdminSecurityController;
+use App\Http\Controllers\Api\AdminVisaApplicationController;
 use App\Http\Controllers\Api\AdminVoucherController;
 use App\Http\Controllers\Api\AdminWebhookController;
 use App\Http\Controllers\Api\AISearchController;
@@ -59,6 +60,7 @@ use App\Http\Controllers\Api\ImportUploadController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LocalizationController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\Modules\UserVisaApiController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\OfferController;
@@ -342,6 +344,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('visas', [VisaController::class, 'index']);
     Route::get('visas/{visa}', [VisaController::class, 'show']);
     Route::post('visas', [VisaController::class, 'store'])->middleware('throttle:inventory-write');
+
+    // Customer visa applications (PART 16, Sprint 63)
+    Route::get('visa-applications', [UserVisaApiController::class, 'index']);
+    Route::post('visa-applications', [UserVisaApiController::class, 'apply'])->middleware('throttle:file-upload');
+    Route::get('visa-applications/{id}', [UserVisaApiController::class, 'show'])->whereNumber('id');
     Route::patch('visas/{visa}', [VisaController::class, 'update'])->whereNumber('visa')->middleware('throttle:inventory-write');
     Route::delete('visas/{visa}', [VisaController::class, 'destroy'])->whereNumber('visa')->middleware('throttle:inventory-write');
 
@@ -473,6 +480,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Notification oversight (PART 23, Sprint 59)
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
+
+        // Visa application review queue (PART 16, Sprint 63)
+        Route::get('visa-applications', [AdminVisaApplicationController::class, 'index']);
+        Route::get('visa-applications/stats', [AdminVisaApplicationController::class, 'stats']);
+        Route::get('visa-applications/{id}', [AdminVisaApplicationController::class, 'show'])->whereNumber('id');
+        Route::post('visa-applications/{id}/decide', [AdminVisaApplicationController::class, 'decide'])->whereNumber('id');
 
         // Security oversight (PART 29, Sprint 62)
         Route::get('security/two-factor', [AdminSecurityController::class, 'twoFactorIndex']);

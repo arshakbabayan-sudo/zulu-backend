@@ -3,18 +3,19 @@
 namespace App\Http\Controllers\Api\Modules;
 
 use App\Http\Controllers\Controller;
+use App\Models\VisaApplication;
 use App\Services\Modules\VisaApplicationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 
 /**
- * Legacy / unwired JSON handler (Phase 7 candidate).
+ * Customer-facing visa application controller (PART 16, Sprint 63).
  *
- * Not registered in `routes/api.php`. Tenant visa CRUD uses `Api\VisaController` under Sanctum; this class was intended
- * as an end-user “apply for visa” bridge — enable only after product sign-off and route registration.
- *
- * @internal
+ * Customer flow:
+ *   POST /api/visa-applications        — submit a new application
+ *   GET  /api/visa-applications        — list my applications
+ *   GET  /api/visa-applications/{id}   — show single application (must be mine)
  */
 class UserVisaApiController extends Controller
 {
@@ -22,7 +23,7 @@ class UserVisaApiController extends Controller
         private readonly VisaApplicationService $visaService
     ) {}
 
-    /** Apply for a visa (user-side API bridge; requires future route registration). */
+    /** POST /api/visa-applications — apply for a visa */
     public function apply(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -41,7 +42,6 @@ class UserVisaApiController extends Controller
             'entry_date' => ['nullable', 'date'],
             'exit_date' => ['nullable', 'date', 'after_or_equal:entry_date'],
             'admin_notes' => ['nullable', 'string', 'max:5000'],
-            // `files` is handled below to support both single + multiple uploads.
         ]);
 
         $filesInput = $request->file('files', []);
@@ -64,6 +64,54 @@ class UserVisaApiController extends Controller
             ],
             $files
         );
+
+        return response()->json([
+            'success' => true,
+            'data' => $application,
+        ], 201);
+    }
+
+    /** GET /api/visa-applications — list my own applications */
+    public function index(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $userId = is_object($user) && isset($user->id) ? (int) $user->id : 0;
+
+        if ($userId <= 0) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $applications = VisaApplication::query()
+            ->with(['visa:id,country_id,country,name,visa_type,price'])
+            ->where('user_id', $userId)
+            ->latest('id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $applications,
+        ]);
+    }
+
+    /** GET /api/visa-applications/{id} — show one of my applications */
+    public function show(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $userId = is_object($user) && isset($user->id) ? (int) $user->id : 0;
+
+        if ($userId <= 0) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $application = VisaApplication::query()
+            ->with(['visa:id,country_id,country,name,visa_type,price,description'])
+            ->where('id', $id)
+            ->where('user_id', $userId)
+            ->first();
+
+        if ($application === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
 
         return response()->json([
             'success' => true,
