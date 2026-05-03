@@ -41,3 +41,17 @@ Schedule::command('db:restore-drill --execute')
     ->monthlyOn(1, '03:30')
     ->withoutOverlapping()
     ->onOneServer();
+
+// Sprint 78 — Health check every 10 minutes (PART 31).
+// Posts Telegram alerts on DB failure / error rate spike / disk pressure /
+// webhook backlog. Cooldown 60 min per condition. No-op when
+// TELEGRAM_BOT_TOKEN is not configured.
+Schedule::command('health:check --quiet-ok')
+    ->everyTenMinutes()
+    ->withoutOverlapping();
+
+// Sprint 78 — Daily digest (Telegram) at 09:00 UTC.
+Schedule::command('health:check --digest --quiet-ok')
+    ->dailyAt('09:00')
+    ->withoutOverlapping()
+    ->onOneServer();
