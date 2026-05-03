@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\AdminLoyaltyController;
 use App\Http\Controllers\Api\AdminNotificationController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\AdminPlatformStatisticsController;
+use App\Http\Controllers\Api\AdminRbacController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
 use App\Http\Controllers\Api\AdminSecurityController;
 use App\Http\Controllers\Api\AdminVisaApplicationController;
@@ -486,6 +487,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // Search trends (PART 20, Sprint 68)
         Route::get('search/trends', [SavedSearchController::class, 'trends']);
+
+        // RBAC inventory (PART 28, Sprint 66)
+        Route::get('rbac/roles', [AdminRbacController::class, 'roles']);
+        Route::get('rbac/permissions', [AdminRbacController::class, 'permissions']);
+        Route::get('rbac/matrix', [AdminRbacController::class, 'matrix']);
+        Route::get('rbac/stats', [AdminRbacController::class, 'stats']);
 
         // Visa application review queue (PART 16, Sprint 63)
         Route::get('visa-applications', [AdminVisaApplicationController::class, 'index']);
