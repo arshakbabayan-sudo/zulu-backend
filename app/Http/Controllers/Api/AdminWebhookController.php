@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
+use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,6 +17,20 @@ use Illuminate\Http\Request;
  */
 class AdminWebhookController extends Controller
 {
+    public function __construct(
+        private AdminAccessService $adminAccessService,
+    ) {}
+
+    private function denyUnlessPlatformAdmin(Request $request): ?JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        return null;
+    }
+
     /**
      * GET /api/platform-admin/webhooks/subscriptions
      *
@@ -26,6 +41,10 @@ class AdminWebhookController extends Controller
      */
     public function subscriptions(Request $request): JsonResponse
     {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
         $query = WebhookSubscription::query()
             ->with('company:id,name')
             ->orderByDesc('created_at');
@@ -40,7 +59,8 @@ class AdminWebhookController extends Controller
         }
 
         if ($request->filled('status')) {
-            $query->where('status', (string) $request->query('status'));
+            $isActive = strtolower((string) $request->query('status')) === 'active';
+            $query->where('active', $isActive);
         }
 
         $rows = $query->limit(200)->get();
@@ -61,6 +81,10 @@ class AdminWebhookController extends Controller
      */
     public function deliveries(Request $request): JsonResponse
     {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
         $perPage = max(10, min((int) $request->query('per_page', 50), 200));
 
         $query = WebhookDelivery::query()
@@ -101,8 +125,12 @@ class AdminWebhookController extends Controller
      * existing payload is replayed verbatim — same idempotency_key, so
      * the receiver can deduplicate.
      */
-    public function replayDelivery(int $id): JsonResponse
+    public function replayDelivery(Request $request, int $id): JsonResponse
     {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
         $delivery = WebhookDelivery::query()->find($id);
         if ($delivery === null) {
             return response()->json(['success' => false, 'message' => 'Delivery not found'], 404);
@@ -135,6 +163,10 @@ class AdminWebhookController extends Controller
      */
     public function deadLetter(Request $request): JsonResponse
     {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
         $perPage = max(10, min((int) $request->query('per_page', 50), 200));
 
         $query = WebhookDelivery::query()
@@ -169,11 +201,15 @@ class AdminWebhookController extends Controller
      *
      * Quick stats for admin dashboard.
      */
-    public function stats(): JsonResponse
+    public function stats(Request $request): JsonResponse
     {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
         $stats = [
             'total_subscriptions' => WebhookSubscription::count(),
-            'active_subscriptions' => WebhookSubscription::where('status', 'active')->count(),
+            'active_subscriptions' => WebhookSubscription::where('active', true)->count(),
             'deliveries_total' => WebhookDelivery::count(),
             'deliveries_success' => WebhookDelivery::where('status', 'success')->count(),
             'deliveries_failed' => WebhookDelivery::where('status', 'failed')->count(),
