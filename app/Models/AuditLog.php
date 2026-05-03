@@ -29,7 +29,10 @@ class AuditLog extends Model
         'api',
         'security',
         'system',
+        'error',
     ];
+
+    public const ERROR_SEVERITIES = ['info', 'warning', 'error', 'critical'];
 
     public const ACTOR_TYPES = ['user', 'system', 'api_client'];
 

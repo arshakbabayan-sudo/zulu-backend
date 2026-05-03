@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\CustomerLoyaltyController;
 use App\Http\Controllers\Api\CustomerVoucherController;
 use App\Http\Controllers\Api\DiscoveryController;
 use App\Http\Controllers\Api\EmailVerificationController;
+use App\Http\Controllers\Api\ErrorReportController;
 use App\Http\Controllers\Api\ExcursionController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FlightController;
@@ -105,6 +106,10 @@ Route::get('search/popular', [SavedSearchController::class, 'popular'])->middlew
 // AI Search (PART 34 Phase 1) — natural-language → Claude parser → discovery search
 Route::post('ai/search', [AISearchController::class, 'search'])
     ->middleware('throttle:10,1');
+
+// Self-hosted frontend error capture (PART 31, Sprint 67)
+Route::post('errors/report', [ErrorReportController::class, 'store'])
+    ->middleware('throttle:30,1');
 
 Route::prefix('v1')->name('v1.')->group(function () use ($registerPublicDiscoveryRoutes) {
     Route::get('/health', function (PlatformReadinessService $readinessService) {

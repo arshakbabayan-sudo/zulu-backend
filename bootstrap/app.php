@@ -6,6 +6,7 @@ use App\Console\Commands\ImportUiTranslationsCsv;
 use App\Console\Commands\PruneExpiredTokens;
 use App\Console\Commands\PruneOrphanOffers;
 use App\Http\Middleware\ResolveLanguage;
+use App\Services\ErrorReporting\ErrorReportService;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
@@ -51,6 +52,34 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Self-hosted error capture (PART 31, Sprint 67) — write to audit_logs.category=error
+        // for any unhandled non-HTTP exception. We skip ValidationException, Auth, NotFound, etc.
+        // since those are user-facing 4xx, not platform faults.
+        $exceptions->reportable(function (Throwable $e): void {
+            // Skip noise: HTTP 4xx, validation, auth.
+            if ($e instanceof ValidationException) {
+                return;
+            }
+            if ($e instanceof AuthenticationException) {
+                return;
+            }
+            if ($e instanceof ModelNotFoundException) {
+                return;
+            }
+            if ($e instanceof NotFoundHttpException) {
+                return;
+            }
+            if ($e instanceof MethodNotAllowedHttpException) {
+                return;
+            }
+            if ($e instanceof HttpExceptionInterface && $e->getStatusCode() < 500) {
+                return;
+            }
+
+            $service = app(ErrorReportService::class);
+            $service->captureException($e, request());
+        });
+
         $exceptions->render(function (ValidationException $e, $request) {
             if ($request->expectsJson() || $request->is('api/*')) {
                 return response()->json([
