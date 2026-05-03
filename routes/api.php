@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\AdminInsuranceController;
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
 use App\Http\Controllers\Api\AdminLoyaltyController;
+use App\Http\Controllers\Api\AdminNotificationController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\AdminPlatformStatisticsController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
@@ -442,6 +443,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('webhooks/subscriptions', [AdminWebhookController::class, 'subscriptions']);
         Route::get('webhooks/deliveries', [AdminWebhookController::class, 'deliveries']);
         Route::get('webhooks/stats', [AdminWebhookController::class, 'stats']);
+
+        // Notification oversight (PART 23, Sprint 59)
+        Route::get('notifications', [AdminNotificationController::class, 'index']);
+        Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
 
         // Contracts (PART 05)
         Route::get('contracts', [AdminContractController::class, 'index']);
