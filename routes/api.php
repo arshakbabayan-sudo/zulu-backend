@@ -470,6 +470,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // Platform statistics dashboard (PART 25)
         Route::get('statistics/dashboard', [AdminPlatformStatisticsController::class, 'dashboard']);
+        Route::get('statistics/revenue-series', [AdminPlatformStatisticsController::class, 'revenueSeries']);
+        Route::get('statistics/orders-series', [AdminPlatformStatisticsController::class, 'ordersSeries']);
+        Route::get('statistics/sellers', [AdminPlatformStatisticsController::class, 'topSellers']);
+        Route::get('statistics/sellers/{companyId}', [AdminPlatformStatisticsController::class, 'sellerDetail'])
+            ->whereNumber('companyId');
 
         // Loyalty (PART 27)
         Route::get('loyalty/accounts', [AdminLoyaltyController::class, 'indexAccounts']);

@@ -197,6 +197,120 @@ class PlatformStatisticsService
     }
 
     /**
+     * Revenue + order count per day over the last N days.
+     * Returns oldest-first list, with zero rows for days that had no paid orders.
+     *
+     * @return list<array{date: string, revenue: float, orders: int}>
+     */
+    public function revenueTimeSeries(int $days = 30): array
+    {
+        $days = max(1, min(365, $days));
+        $cutoff = CarbonImmutable::now()->startOfDay()->subDays($days - 1);
+
+        $rows = Order::query()
+            ->selectRaw("date_trunc('day', created_at) as bucket, count(*) as orders, sum(total) as revenue")
+            ->whereIn('status', ['paid', 'confirmed'])
+            ->where('created_at', '>=', $cutoff)
+            ->groupBy('bucket')
+            ->orderBy('bucket')
+            ->get()
+            ->keyBy(fn ($r) => CarbonImmutable::parse($r->bucket)->toDateString());
+
+        $series = [];
+        for ($i = 0; $i < $days; $i++) {
+            $date = $cutoff->addDays($i)->toDateString();
+            $row = $rows->get($date);
+            $series[] = [
+                'date' => $date,
+                'revenue' => $row ? (float) $row->revenue : 0.0,
+                'orders' => $row ? (int) $row->orders : 0,
+            ];
+        }
+
+        return $series;
+    }
+
+    /**
+     * Order count per day per status, oldest-first.
+     *
+     * @return list<array{date: string, total: int, by_status: array<string,int>}>
+     */
+    public function ordersTimeSeries(int $days = 30): array
+    {
+        $days = max(1, min(365, $days));
+        $cutoff = CarbonImmutable::now()->startOfDay()->subDays($days - 1);
+
+        $rows = Order::query()
+            ->selectRaw("date_trunc('day', created_at) as bucket, status, count(*) as count")
+            ->where('created_at', '>=', $cutoff)
+            ->groupBy('bucket', 'status')
+            ->orderBy('bucket')
+            ->get();
+
+        $byDate = [];
+        foreach ($rows as $r) {
+            $date = CarbonImmutable::parse($r->bucket)->toDateString();
+            $byDate[$date][$r->status] = (int) $r->count;
+        }
+
+        $series = [];
+        for ($i = 0; $i < $days; $i++) {
+            $date = $cutoff->addDays($i)->toDateString();
+            $statusMap = $byDate[$date] ?? [];
+            $series[] = [
+                'date' => $date,
+                'total' => array_sum($statusMap),
+                'by_status' => $statusMap,
+            ];
+        }
+
+        return $series;
+    }
+
+    /**
+     * Per-seller drill-down: revenue, order count, top services, voucher count.
+     *
+     * @return array<string, mixed>
+     */
+    public function perSellerStats(int $companyId, int $days = 30): array
+    {
+        $cutoff = CarbonImmutable::now()->subDays($days);
+
+        $orders = Order::query()
+            ->where('company_id', $companyId)
+            ->where('created_at', '>=', $cutoff);
+
+        $paid = (clone $orders)->whereIn('status', ['paid', 'confirmed']);
+
+        return [
+            'company_id' => $companyId,
+            'window_days' => $days,
+            'total_orders' => (int) (clone $orders)->count(),
+            'paid_orders' => (int) (clone $paid)->count(),
+            'total_revenue' => (float) (clone $paid)->sum('total'),
+            'avg_order_value' => (float) ((clone $paid)->avg('total') ?? 0),
+            'orders_by_status' => (clone $orders)
+                ->selectRaw('status, count(*) as count')
+                ->groupBy('status')
+                ->pluck('count', 'status'),
+            'vouchers_issued' => Voucher::query()
+                ->where('issuer_company_id', $companyId)
+                ->where('created_at', '>=', $cutoff)
+                ->count(),
+        ];
+    }
+
+    /**
+     * Public top-seller list (used by both admin dashboard + per-seller drill-down).
+     *
+     * @return list<array{company_id: int, name: ?string, revenue: float, orders: int}>
+     */
+    public function topSellers(int $limit = 10, int $days = 30): array
+    {
+        return $this->topSellersByRevenue($limit, CarbonImmutable::now()->subDays($days));
+    }
+
+    /**
      * @return array<int, array{company_id: int, name: ?string, revenue: float, orders: int}>
      */
     private function topSellersByRevenue(int $limit, CarbonImmutable $cutoff): array
