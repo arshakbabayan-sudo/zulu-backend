@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\AdminNotificationController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\AdminPlatformStatisticsController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
+use App\Http\Controllers\Api\AdminSecurityController;
 use App\Http\Controllers\Api\AdminVoucherController;
 use App\Http\Controllers\Api\AdminWebhookController;
 use App\Http\Controllers\Api\AISearchController;
@@ -447,6 +448,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Notification oversight (PART 23, Sprint 59)
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
+
+        // Security oversight (PART 29, Sprint 62)
+        Route::get('security/two-factor', [AdminSecurityController::class, 'twoFactorIndex']);
+        Route::get('security/stats', [AdminSecurityController::class, 'stats']);
+        Route::post('security/users/{userId}/force-disable-2fa', [AdminSecurityController::class, 'forceDisableTwoFactor'])
+            ->whereNumber('userId');
+        Route::post('security/users/{userId}/force-logout', [AdminSecurityController::class, 'forceLogout'])
+            ->whereNumber('userId');
 
         // Contracts (PART 05)
         Route::get('contracts', [AdminContractController::class, 'index']);
