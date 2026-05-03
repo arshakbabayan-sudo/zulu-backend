@@ -33,3 +33,11 @@ Schedule::command('db:backup --disk='.env('DB_BACKUP_DISK', 'local').' --keep='.
     ->dailyAt('02:30')
     ->withoutOverlapping()
     ->onOneServer();
+
+// Sprint 77 — Monthly backup-restore drill (PART 32). Replays the most recent
+// gzipped dump into a scratch database (zulu_drill) and verifies row presence.
+// Drops the scratch DB at the end. Runs on the 1st of each month at 03:30 UTC.
+Schedule::command('db:restore-drill --execute')
+    ->monthlyOn(1, '03:30')
+    ->withoutOverlapping()
+    ->onOneServer();
