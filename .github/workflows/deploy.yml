@@ -30,14 +30,35 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.HETZNER_HOST }}
           SSH_USER: ${{ secrets.HETZNER_USER }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" 'bash -se' <<'REMOTE_EOF'
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes \
+            -o SendEnv=TG_BOT_TOKEN,TG_CHAT_ID \
+            "$SSH_USER@$SSH_HOST" \
+            "TG_BOT_TOKEN='$TG_BOT_TOKEN' TG_CHAT_ID='$TG_CHAT_ID' bash -se" <<'REMOTE_EOF'
             set -euo pipefail
             cd /var/www/zulu-backend
 
             echo "=== Pull latest from origin/main ==="
             git fetch origin main
             git reset --hard origin/main
+
+            echo "=== Sync TELEGRAM env vars (Sprint 78) ==="
+            if [ -n "${TG_BOT_TOKEN:-}" ]; then
+              if grep -q '^TELEGRAM_BOT_TOKEN=' .env; then
+                sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=${TG_BOT_TOKEN}|" .env
+              else
+                printf '\nTELEGRAM_BOT_TOKEN=%s\n' "$TG_BOT_TOKEN" >> .env
+              fi
+            fi
+            if [ -n "${TG_CHAT_ID:-}" ]; then
+              if grep -q '^TELEGRAM_CHAT_ID=' .env; then
+                sed -i "s|^TELEGRAM_CHAT_ID=.*|TELEGRAM_CHAT_ID=${TG_CHAT_ID}|" .env
+              else
+                printf 'TELEGRAM_CHAT_ID=%s\n' "$TG_CHAT_ID" >> .env
+              fi
+            fi
 
             echo "=== Composer install (production) ==="
             COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
