@@ -45,6 +45,7 @@ use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
 use App\Http\Controllers\Api\CustomerLoyaltyController;
+use App\Http\Controllers\Api\CustomerStatsController;
 use App\Http\Controllers\Api\CustomerVoucherController;
 use App\Http\Controllers\Api\DiscoveryController;
 use App\Http\Controllers\Api\EmailVerificationController;
@@ -220,6 +221,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Customer loyalty (PART 27)
     Route::get('customer/loyalty', [CustomerLoyaltyController::class, 'show']);
     Route::post('customer/loyalty/redeem', [CustomerLoyaltyController::class, 'redeem']);
+
+    // Customer personal statistics (PART 25, Sprint 71)
+    Route::get('customer/stats', [CustomerStatsController::class, 'show']);
 
     // Customer saved searches (PART 20)
     Route::get('customer/saved-searches', [SavedSearchController::class, 'index']);
