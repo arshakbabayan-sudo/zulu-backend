@@ -129,9 +129,25 @@ class RbacBootstrapSeeder extends Seeder
         }
 
         $allIds = array_map(fn (Permission $p) => $p->id, $permissionModels);
+
+        // Company-scoped roles must NOT inherit platform.* or super-admin escalator
+        // permissions. AdminAccessService treats super_admin / platform.admin /
+        // platform.manage as full-platform unlock and the platform.* set as
+        // platform_admin unlock — granting them here turned every approved
+        // operator into a de-facto super admin (e2e finding 2026-05-04).
+        $companyScopedNames = array_filter(
+            array_keys($permissionModels),
+            fn (string $n) => ! str_starts_with($n, 'platform.')
+                && ! in_array($n, ['super_admin', 'localization.manage'], true)
+        );
+        $companyScopedIds = array_map(
+            fn (string $n) => $permissionModels[$n]->id,
+            array_values($companyScopedNames)
+        );
+
         $roles['super_admin']->permissions()->sync($allIds);
-        $roles['company_admin']->permissions()->sync($allIds);
-        $roles['operator_admin']->permissions()->sync($allIds);
+        $roles['company_admin']->permissions()->sync($companyScopedIds);
+        $roles['operator_admin']->permissions()->sync($companyScopedIds);
 
         $platformPermissionIds = array_map(
             fn (string $n) => $permissionModels[$n]->id,
