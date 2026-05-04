@@ -14,7 +14,7 @@ class UserResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = $this->resource;
-        $user->loadMissing('memberships.role.permissions', 'companies');
+        $user->loadMissing('memberships.role.permissions', 'companies.sellerPermissions');
 
         $adminAccess = app(AdminAccessService::class);
         $isSuperAdmin = $adminAccess->isSuperAdmin($user);
@@ -42,6 +42,21 @@ class UserResource extends JsonResource
         $activeCompanyId = $sortedCompanies->isEmpty()
             ? null
             : (int) $sortedCompanies->first()->id;
+
+        $sellerServiceTypesByCompany = [];
+        foreach ($sortedCompanies as $company) {
+            $types = $company->sellerPermissions
+                ->where('status', 'active')
+                ->pluck('service_type')
+                ->unique()
+                ->values()
+                ->all();
+            sort($types);
+            $sellerServiceTypesByCompany[(int) $company->id] = $types;
+        }
+        $activeSellerServiceTypes = $activeCompanyId !== null
+            ? ($sellerServiceTypesByCompany[$activeCompanyId] ?? [])
+            : [];
 
         $canonicalRole = $adminAccess->canonicalRoleForUser($user);
         $canonicalRoles = array_values(array_unique(array_map(
@@ -72,12 +87,14 @@ class UserResource extends JsonResource
                 ->map(fn ($c) => [
                     'id' => (int) $c->id,
                     'name' => $c->name,
+                    'seller_service_types' => $sellerServiceTypesByCompany[(int) $c->id] ?? [],
                 ])
                 ->all(),
             'context' => [
                 'world' => $canonicalRole,
                 'canonical_role' => $canonicalRole,
                 'active_company_id' => $activeCompanyId,
+                'active_seller_service_types' => $activeSellerServiceTypes,
                 'is_super_admin' => $isSuperAdmin,
                 'is_platform_admin' => $isPlatformAdmin,
                 'operator_statistics_platform_scope' => $operatorStatisticsPlatformScope,
