@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
+use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
 use App\Services\Webhooks\WebhookService;
 use Illuminate\Http\JsonResponse;
@@ -105,6 +106,42 @@ class SellerWebhookController extends Controller
         $deliveries = $sub->deliveries()->orderByDesc('created_at')->limit(100)->get();
 
         return response()->json(['success' => true, 'data' => $deliveries]);
+    }
+
+    /**
+     * POST /api/seller/webhooks/{id}/deliveries/{deliveryId}/retry
+     *
+     * Manually retry a single failed delivery. The webhook subscription must
+     * belong to one of the user's companies. WebhookService::attempt() does
+     * the actual HTTP call and updates the delivery row with the new attempt.
+     */
+    public function retryDelivery(Request $request, int $id, int $deliveryId): JsonResponse
+    {
+        $companyId = $this->userCompanyId($request);
+        if ($companyId === null) {
+            return response()->json(['success' => false, 'message' => 'No company'], 403);
+        }
+
+        $sub = WebhookSubscription::query()
+            ->where('company_id', $companyId)
+            ->find($id);
+        if ($sub === null) {
+            return response()->json(['success' => false, 'message' => 'Webhook not found'], 404);
+        }
+
+        $delivery = WebhookDelivery::query()
+            ->where('webhook_subscription_id', $sub->id)
+            ->find($deliveryId);
+        if ($delivery === null) {
+            return response()->json(['success' => false, 'message' => 'Delivery not found'], 404);
+        }
+
+        $updated = $this->service->attempt($delivery);
+
+        return response()->json([
+            'success' => true,
+            'data' => $updated->fresh(),
+        ]);
     }
 
     /** GET /api/webhooks/events — public list of supported events */

@@ -104,6 +104,23 @@ $registerPublicDiscoveryRoutes = static function (): void {
 // Public webhook events catalog (PART 30)
 Route::get('webhooks/events', [SellerWebhookController::class, 'supportedEvents'])->middleware('throttle:api_public');
 
+// Public OpenAPI spec (Sprint 74). The actual endpoints below remain auth-gated;
+// publishing the spec just lets integrators see the surface and generate clients.
+Route::get('openapi.json', function () {
+    $path = base_path('storage/app/openapi.json');
+    if (! file_exists($path)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Spec not generated yet. Run: php artisan api:generate-openapi',
+        ], 404);
+    }
+
+    return response()->file($path, [
+        'Content-Type' => 'application/json',
+        'Cache-Control' => 'public, max-age=3600',
+    ]);
+})->middleware('throttle:api_public');
+
 // Public search helpers (PART 20)
 Route::get('search/autocomplete', [SavedSearchController::class, 'autocomplete'])->middleware('throttle:api_public');
 Route::get('search/popular', [SavedSearchController::class, 'popular'])->middleware('throttle:api_public');
@@ -204,6 +221,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('seller/webhooks', [SellerWebhookController::class, 'store']);
     Route::delete('seller/webhooks/{id}', [SellerWebhookController::class, 'destroy'])->whereNumber('id');
     Route::get('seller/webhooks/{id}/deliveries', [SellerWebhookController::class, 'deliveries'])->whereNumber('id');
+    Route::post('seller/webhooks/{id}/deliveries/{deliveryId}/retry', [SellerWebhookController::class, 'retryDelivery'])
+        ->whereNumber('id')->whereNumber('deliveryId');
 
     // Seller B2B partner connections (PART 18)
     Route::get('seller/connections', [SellerConnectionController::class, 'index']);
