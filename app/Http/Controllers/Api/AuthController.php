@@ -18,6 +18,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
+            'remember_me' => ['sometimes', 'boolean'],
         ]);
 
         $user = User::query()->where('email', $validated['email'])->first();
@@ -36,12 +37,21 @@ class AuthController extends Controller
             ], 401);
         }
 
-        $token = $user->createToken('api')->plainTextToken;
+        // Remember me: extend token lifetime to 30 days vs default 1 day.
+        // Sanctum's third arg to createToken() accepts an explicit expiry
+        // and overrides config('sanctum.expiration').
+        $rememberMe = (bool) ($validated['remember_me'] ?? false);
+        $expiresAt = $rememberMe
+            ? now()->addDays(30)
+            : now()->addDay();
+
+        $token = $user->createToken('api', ['*'], $expiresAt)->plainTextToken;
 
         return response()->json([
             'success' => true,
             'data' => [
                 'token' => $token,
+                'expires_at' => $expiresAt->toIso8601String(),
                 'user' => UserResource::make($user)->toArray($request),
             ],
         ]);

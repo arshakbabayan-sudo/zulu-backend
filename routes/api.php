@@ -190,6 +190,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('account/2fa/resend', [TwoFactorController::class, 'resend'])->middleware('throttle:3,1');
     Route::post('account/2fa/disable', [TwoFactorController::class, 'disable']);
     Route::post('account/2fa/recovery-codes/regenerate', [TwoFactorController::class, 'regenerateRecoveryCodes']);
+    Route::get('account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodesStatus']);
 
     // Seller contracts (PART 05)
     Route::get('seller/contracts', [SellerContractController::class, 'index']);

@@ -150,6 +150,32 @@ class TwoFactorService
         return $codes;
     }
 
+    /**
+     * Returns metadata about the user's recovery codes — count remaining and
+     * when they were last issued. Does NOT return the codes themselves: stored
+     * codes are hashed (one-way), so retrieval is impossible by design. The
+     * client should treat this as a status check; if count is zero or stale,
+     * they should call POST `regenerate` (which returns new codes once).
+     *
+     * @return array{enabled: bool, count: int, last_generated_at: string|null}
+     */
+    public function getRecoveryCodesMeta(User $user): array
+    {
+        $tf = $this->record($user);
+        if ($tf === null || ! $tf->isEnabled()) {
+            return ['enabled' => false, 'count' => 0, 'last_generated_at' => null];
+        }
+
+        $codes = $tf->recovery_codes_encrypted ?? [];
+        $count = is_array($codes) ? count($codes) : 0;
+
+        return [
+            'enabled' => true,
+            'count' => $count,
+            'last_generated_at' => $tf->updated_at?->toIso8601String(),
+        ];
+    }
+
     public function isEnabled(User $user): bool
     {
         $tf = $this->record($user);

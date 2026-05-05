@@ -4,6 +4,7 @@ namespace App\Services\Approvals;
 
 use App\Models\Approval;
 use App\Models\User;
+use App\Services\Audit\AuditService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -11,7 +12,8 @@ use Illuminate\Validation\ValidationException;
 class ApprovalService
 {
     public function __construct(
-        private NotificationService $notificationService
+        private NotificationService $notificationService,
+        private AuditService $auditService,
     ) {}
 
     /**
@@ -29,7 +31,7 @@ class ApprovalService
     /**
      * Approve the request and notify the requester.
      */
-    public function approve(Approval $approval, User $actor, ?string $notes = null): Approval
+    public function approve(Approval $approval, User $actor, ?string $notes = null, ?string $bulkBatchId = null): Approval
     {
         if (! in_array($approval->status, ['pending', 'under_review'], true)) {
             throw ValidationException::withMessages([
@@ -46,6 +48,29 @@ class ApprovalService
         $approval->decision_notes = $notes;
 
         $approval->save();
+
+        // Per-item audit log entry. For bulk operations $bulkBatchId is set
+        // so all items in the same bulk-approve call share a correlation id.
+        $this->auditService->log([
+            'category' => 'approval',
+            'action' => 'approved',
+            'subject_type' => 'Approval',
+            'subject_id' => (string) $approval->id,
+            'actor' => $actor,
+            'changes' => [
+                'after' => [
+                    'status' => 'approved',
+                    'approved_by' => $actor->id,
+                    'approved_at' => (string) $approval->approved_at,
+                    'decision_notes' => $notes,
+                ],
+            ],
+            'context' => array_filter([
+                'entity_type' => $approval->entity_type,
+                'entity_id' => $approval->entity_id,
+                'bulk_batch_id' => $bulkBatchId,
+            ]),
+        ]);
 
         $this->notifyRequester($approval, 'Your request has been approved.');
 
@@ -98,6 +123,9 @@ class ApprovalService
      */
     public function approveBulk(array $ids, User $actor, ?string $notes = null): array
     {
+        // Correlate all per-item audit rows belonging to the same bulk action.
+        $bulkBatchId = (string) \Illuminate\Support\Str::uuid();
+
         $results = [];
         foreach ($ids as $id) {
             $approval = Approval::query()->find($id);
@@ -107,7 +135,7 @@ class ApprovalService
                 continue;
             }
             try {
-                $this->approve($approval, $actor, $notes);
+                $this->approve($approval, $actor, $notes, $bulkBatchId);
                 $results[] = ['id' => (int) $id, 'ok' => true];
             } catch (\Throwable $e) {
                 $results[] = ['id' => (int) $id, 'ok' => false, 'message' => $e->getMessage()];

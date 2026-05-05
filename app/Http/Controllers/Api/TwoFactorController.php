@@ -128,4 +128,20 @@ class TwoFactorController extends Controller
             'data' => ['recovery_codes' => $codes],
         ]);
     }
+
+    /**
+     * GET /api/account/2fa/recovery-codes
+     *
+     * Returns metadata only (count, last_generated_at) — never the codes
+     * themselves. Codes are stored hashed and cannot be retrieved after
+     * the initial setup() / regenerate() response. Use this to display
+     * "You have N recovery codes generated on D" in the security UI.
+     */
+    public function recoveryCodesStatus(Request $request): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $this->service->getRecoveryCodesMeta($request->user()),
+        ]);
+    }
 }
