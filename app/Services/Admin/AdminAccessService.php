@@ -113,6 +113,18 @@ class AdminAccessService
             return self::ROLE_PLATFORM_ADMIN;
         }
 
+        // Pure agent (no operator-tier role) — display as agent so the UI
+        // doesn't mislabel them as operator_admin.
+        $roleNames = $user->memberships
+            ->map(fn ($m) => $m->role?->name)
+            ->filter()
+            ->all();
+        if ($roleNames !== [] && ! array_intersect($roleNames, [self::ROLE_OPERATOR_ADMIN, 'company_admin', 'company_operator'])) {
+            if (in_array('agent', $roleNames, true)) {
+                return 'agent';
+            }
+        }
+
         return self::ROLE_OPERATOR_ADMIN;
     }
 

@@ -158,12 +158,15 @@ class RbacBootstrapSeeder extends Seeder
         );
         $roles['platform_admin']->permissions()->sync($platformPermissionIds);
 
-        $viewOnly = array_filter(
+        // Agent: view-only on commerce data (catalog, offers, bookings).
+        // Explicitly excludes platform.* permissions, which would otherwise
+        // promote agents to platform_admin status via AdminAccessService.
+        $agentView = array_filter(
             array_keys($permissionModels),
-            fn (string $n) => str_ends_with($n, '.view')
+            fn (string $n) => str_ends_with($n, '.view') && ! str_starts_with($n, 'platform.')
         );
         $roles['agent']->permissions()->sync(
-            array_map(fn (string $n) => $permissionModels[$n]->id, $viewOnly)
+            array_map(fn (string $n) => $permissionModels[$n]->id, $agentView)
         );
 
         $company = Company::query()->firstOrCreate(
