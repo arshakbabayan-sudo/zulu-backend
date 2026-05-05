@@ -86,9 +86,22 @@ class AppServiceProvider extends ServiceProvider
 
         ResetPassword::createUrlUsing(function (object $notifiable, string $token) {
             $email = urlencode($notifiable->getEmailForPasswordReset());
-            $frontendUrl = rtrim((string) config('app.frontend_url', config('app.url')), '/');
 
-            return "{$frontendUrl}/reset-password?token={$token}&email={$email}";
+            // Route admin/operator users to admin.zulu.am, customers to zulu.am.
+            $isAdminAudience = false;
+            if ($notifiable instanceof \App\Models\User) {
+                $adminAccess = app(\App\Services\Admin\AdminAccessService::class);
+                $isAdminAudience = $adminAccess->isSuperAdmin($notifiable)
+                    || $adminAccess->isPlatformAdmin($notifiable)
+                    || $adminAccess->isOperatorAdmin($notifiable, null);
+            }
+
+            $base = $isAdminAudience
+                ? config('app.admin_url')
+                : config('app.frontend_url', config('app.url'));
+            $base = rtrim((string) $base, '/');
+
+            return "{$base}/reset-password?token={$token}&email={$email}";
         });
 
     }

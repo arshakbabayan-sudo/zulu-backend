@@ -56,6 +56,7 @@ return [
 
     // Public web app origin (Next.js frontend) used for user-facing links.
     'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost')),
+    'admin_url' => env('ADMIN_URL', env('FRONTEND_URL', env('APP_URL', 'http://localhost'))),
 
     /*
     |--------------------------------------------------------------------------
