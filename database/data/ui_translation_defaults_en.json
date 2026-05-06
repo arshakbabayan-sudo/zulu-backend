@@ -1519,13 +1519,13 @@
     "home.search.check_in": "Check-in",
     "home.search.check_out": "Check-out",
     "home.search.children": "Children",
-    "home.search.cta.cars": "Search cars",
-    "home.search.cta.default": "Search",
-    "home.search.cta.excursions": "Search excursions",
+    "home.search.cta.cars": "Find cars",
+    "home.search.cta.default": "Find",
+    "home.search.cta.excursions": "Find",
     "home.search.cta.flights": "Show flights",
-    "home.search.cta.packages": "Search packages",
-    "home.search.cta.stays": "Search stays",
-    "home.search.cta.transfers": "Search transfers",
+    "home.search.cta.packages": "Find",
+    "home.search.cta.stays": "Find a hotel",
+    "home.search.cta.transfers": "Find transfer",
     "home.search.date": "Date",
     "home.search.depart_date": "Depart date",
     "home.search.destination": "Destination",
@@ -1744,5 +1744,6 @@
     "transfer.filter.search_filters": "Search & filters",
     "transfer.filter.special_placeholder": "Child seat, extra luggage…",
     "transfer.filter.special_requirements": "Special requirements",
-    "transfer.filter.vehicle_category": "Vehicle category"
+    "transfer.filter.vehicle_category": "Vehicle category",
+    "home.search.cta.find_hotel": "Find a hotel"
 }

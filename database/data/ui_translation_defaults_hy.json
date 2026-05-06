@@ -1519,13 +1519,13 @@
     "home.search.check_in": "Մուտք (check-in)",
     "home.search.check_out": "Ելք (check-out)",
     "home.search.children": "Երեխաներ",
-    "home.search.cta.cars": "Փնտրել մեքենաներ",
-    "home.search.cta.default": "Որոնել",
-    "home.search.cta.excursions": "Փնտրել էքսկուրսիաներ",
-    "home.search.cta.flights": "Ցույց տալ թռիչքները",
-    "home.search.cta.packages": "Փնտրել փաթեթներ",
-    "home.search.cta.stays": "Փնտրել կացություն",
-    "home.search.cta.transfers": "Փնտրել տրանսֆերներ",
+    "home.search.cta.cars": "Գտնել մեքենա",
+    "home.search.cta.default": "Գտնել",
+    "home.search.cta.excursions": "Գտնել",
+    "home.search.cta.flights": "Ցույց տալ ավիատոմսերը",
+    "home.search.cta.packages": "Գտնել",
+    "home.search.cta.stays": "Գտնել հյուրանոց",
+    "home.search.cta.transfers": "Գտնել փոխադրում",
     "home.search.date": "Ամսաթիվ",
     "home.search.depart_date": "Մեկնման ամսաթիվ",
     "home.search.destination": "Ուղղություն",
@@ -1744,5 +1744,6 @@
     "transfer.filter.search_filters": "Որոնում և ֆիլտրեր",
     "transfer.filter.special_placeholder": "Մանկական նստատեղ, լրացուցիչ ուղեբեռ…",
     "transfer.filter.special_requirements": "Հատուկ պահանջներ",
-    "transfer.filter.vehicle_category": "Տրանսպորտային միջոցի կատեգորիա"
+    "transfer.filter.vehicle_category": "Տրանսպորտային միջոցի կատեգորիա",
+    "home.search.cta.find_hotel": "Գտնել հյուրանոց"
 }

@@ -1519,13 +1519,13 @@
     "home.search.check_in": "Дата заезда",
     "home.search.check_out": "Дата выезда",
     "home.search.children": "Дети",
-    "home.search.cta.cars": "Поиск автомобилей",
-    "home.search.cta.default": "Поиск",
-    "home.search.cta.excursions": "Поиск экскурсий",
+    "home.search.cta.cars": "Найти авто",
+    "home.search.cta.default": "Найти",
+    "home.search.cta.excursions": "Найти",
     "home.search.cta.flights": "Показать рейсы",
-    "home.search.cta.packages": "Поиск пакетов",
-    "home.search.cta.stays": "Поиск проживания",
-    "home.search.cta.transfers": "Поиск трансферов",
+    "home.search.cta.packages": "Найти",
+    "home.search.cta.stays": "Найти отель",
+    "home.search.cta.transfers": "Найти трансфер",
     "home.search.date": "Дата",
     "home.search.depart_date": "Дата вылета",
     "home.search.destination": "Направление",
@@ -1744,5 +1744,6 @@
     "transfer.filter.search_filters": "Поиск и фильтры",
     "transfer.filter.special_placeholder": "Детское кресло, дополнительный багаж…",
     "transfer.filter.special_requirements": "Особые требования",
-    "transfer.filter.vehicle_category": "Категория транспорта"
+    "transfer.filter.vehicle_category": "Категория транспорта",
+    "home.search.cta.find_hotel": "Найти отель"
 }
