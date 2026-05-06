@@ -126,6 +126,10 @@ Route::get('search/autocomplete', [SavedSearchController::class, 'autocomplete']
 Route::get('search/popular', [SavedSearchController::class, 'popular'])->middleware('throttle:api_public');
 Route::get('search/cross-suggest', [SavedSearchController::class, 'crossSuggest'])->middleware('throttle:api_public');
 
+// Public location type-ahead — feeds the customer search blocks (header,
+// HomeSearch, per-module search pages). No auth required.
+Route::get('locations/search', [AdminLocationController::class, 'searchPublic'])->middleware('throttle:api_public');
+
 // AI Search (PART 34 Phase 1) — natural-language → Claude parser → discovery search
 Route::post('ai/search', [AISearchController::class, 'search'])
     ->middleware('throttle:10,1');

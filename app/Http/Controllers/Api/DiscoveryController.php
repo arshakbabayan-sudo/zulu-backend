@@ -41,6 +41,12 @@ class DiscoveryController extends Controller
             'from_location' => ['sometimes', 'nullable', 'string'],
             'to_location' => ['sometimes', 'nullable', 'string'],
             'destination' => ['sometimes', 'nullable', 'string'],
+            // Structured location filter (preferred). Resolves through the
+            // location tree: a country id matches all hotels/cars/etc. whose
+            // location_id is anywhere in the country's subtree.
+            'location_id' => ['sometimes', 'nullable', 'integer', 'exists:locations,id'],
+            'from_location_id' => ['sometimes', 'nullable', 'integer', 'exists:locations,id'],
+            'to_location_id' => ['sometimes', 'nullable', 'integer', 'exists:locations,id'],
             'start_date' => ['sometimes', 'nullable', 'string'],
             'end_date' => ['sometimes', 'nullable', 'string'],
             'adults' => ['sometimes', 'nullable', 'integer', 'min:0'],
@@ -63,6 +69,9 @@ class DiscoveryController extends Controller
             'from_location' => $validated['from_location'] ?? null,
             'to_location' => $validated['to_location'] ?? null,
             'destination' => $validated['destination'] ?? null,
+            'location_id' => $validated['location_id'] ?? null,
+            'from_location_id' => $validated['from_location_id'] ?? null,
+            'to_location_id' => $validated['to_location_id'] ?? null,
             'start_date' => $validated['start_date'] ?? null,
             'end_date' => $validated['end_date'] ?? null,
             'adults' => $validated['adults'] ?? null,

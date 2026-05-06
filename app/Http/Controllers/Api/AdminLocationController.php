@@ -199,6 +199,88 @@ class AdminLocationController extends Controller
         ]);
     }
 
+    /**
+     * Public type-ahead search for the customer-facing site.
+     * GET /api/locations/search?q=ye&types=country,region,city&limit=10
+     */
+    public function searchPublic(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:1', 'max:80'],
+            'types' => ['sometimes', 'nullable', 'string'],
+            'limit' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        $q = trim($validated['q']);
+        $limit = (int) ($validated['limit'] ?? 12);
+
+        $allowedTypes = ['country', 'region', 'city'];
+        $types = $allowedTypes;
+        if (!empty($validated['types'])) {
+            $requested = array_filter(array_map('trim', explode(',', $validated['types'])));
+            $types = array_values(array_intersect($allowedTypes, $requested));
+            if (empty($types)) {
+                $types = $allowedTypes;
+            }
+        }
+
+        // Prefix match first, then contains
+        $like = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q);
+
+        $rows = Location::query()
+            ->whereIn('type', $types)
+            ->where('is_active', true)
+            ->where(function ($w) use ($like) {
+                $w->where('name', 'ilike', $like.'%')
+                  ->orWhere('name', 'ilike', '%'.$like.'%');
+            })
+            ->orderByRaw("CASE WHEN name ILIKE ? THEN 0 ELSE 1 END", [$like.'%'])
+            ->orderByRaw("CASE type WHEN 'country' THEN 1 WHEN 'region' THEN 2 WHEN 'city' THEN 3 ELSE 4 END")
+            ->orderBy('name')
+            ->limit($limit)
+            ->get(['id', 'name', 'type', 'parent_id', 'country_code', 'flag_emoji', 'depth', 'path']);
+
+        // Attach a friendly hint label (e.g. "Yerevan, Armenia")
+        $countryNames = [];
+        if (!empty($rows)) {
+            $countryIds = $rows->pluck('path')
+                ->map(fn ($p) => is_string($p) ? explode('/', trim($p, '/'))[0] ?? null : null)
+                ->filter()
+                ->unique()
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            if (!empty($countryIds)) {
+                $countryNames = Location::query()
+                    ->whereIn('id', $countryIds)
+                    ->pluck('name', 'id')
+                    ->all();
+            }
+        }
+
+        $payload = $rows->map(function ($row) use ($countryNames) {
+            $countryName = null;
+            if ($row->type !== 'country' && is_string($row->path)) {
+                $rootId = (int) (explode('/', trim($row->path, '/'))[0] ?? 0);
+                $countryName = $countryNames[$rootId] ?? null;
+            }
+            return [
+                'id' => $row->id,
+                'name' => $row->name,
+                'type' => $row->type,
+                'country_code' => $row->country_code,
+                'flag_emoji' => $row->flag_emoji,
+                'parent_id' => $row->parent_id,
+                'country_name' => $countryName,
+                'label' => $countryName ? "{$row->name}, {$countryName}" : $row->name,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $payload,
+        ]);
+    }
+
     public function regions(Request $request, ?int $countryId = null): JsonResponse
     {
         if ($deny = $this->denyUnlessSuperAdmin($request)) {

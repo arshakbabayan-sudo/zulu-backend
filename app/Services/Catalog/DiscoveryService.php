@@ -288,6 +288,22 @@ class DiscoveryService
         $to = $this->nullableString($input['to_location'] ?? null);
         $destination = $this->nullableString($input['destination'] ?? null);
 
+        // Structured location_id (resolved from the customer-side autocomplete).
+        // Applied alongside the text-based destination/from/to filters so legacy
+        // content (with no location_id) still matches via text.
+        $locationId = $this->nullableInt($input['location_id'] ?? null);
+        $fromLocationId = $this->nullableInt($input['from_location_id'] ?? null);
+        $toLocationId = $this->nullableInt($input['to_location_id'] ?? null);
+        if ($locationId !== null || $fromLocationId !== null || $toLocationId !== null) {
+            $this->applyStructuredLocationFilter(
+                $query,
+                $moduleType,
+                $locationId,
+                $fromLocationId,
+                $toLocationId
+            );
+        }
+
         $isDirect = $input['is_direct'] ?? null;
         $hasBaggage = $input['has_baggage'] ?? null;
         $cabinClass = $this->nullableString($input['cabin_class'] ?? null);
@@ -1442,9 +1458,98 @@ class DiscoveryService
         return (string) $value;
     }
 
+    private function nullableInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '' || $value === false) {
+            return null;
+        }
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+        if (is_numeric($value)) {
+            $cast = (int) $value;
+            return $cast > 0 ? $cast : null;
+        }
+        return null;
+    }
+
     private function likeWrap(string $term): string
     {
         return '%'.addcslashes($term, '%_\\').'%';
+    }
+
+    /**
+     * Apply the structured location_id filter across all relevant modules.
+     *
+     * For each location_id, every module's relationship is filtered using its
+     * forLocation() scope (which expands to the full subtree). Modules whose
+     * content has no location_id assigned still pass through text filters
+     * applied later in the same query.
+     */
+    private function applyStructuredLocationFilter(
+        Builder $query,
+        ?string $moduleType,
+        ?int $locationId,
+        ?int $fromLocationId,
+        ?int $toLocationId
+    ): void {
+        // For from/to-specific filters we currently fall back to the generic
+        // location_id semantics: the autocomplete on the customer side picks
+        // ONE location, so a flight from Yerevan to Moscow is communicated as
+        // from_location_id=Yerevan, to_location_id=Moscow.
+        $primary = $locationId ?? $fromLocationId ?? $toLocationId;
+        if ($primary === null) {
+            return;
+        }
+
+        if ($moduleType === 'hotel') {
+            $query->whereHas('hotel', fn ($q) => $q->forLocation($primary));
+            return;
+        }
+        if ($moduleType === 'car') {
+            $query->whereHas('car', fn ($q) => $q->forLocation($primary));
+            return;
+        }
+        if ($moduleType === 'excursion') {
+            $query->whereHas('excursion', fn ($q) => $q->forLocation($primary));
+            return;
+        }
+        if ($moduleType === 'visa') {
+            $query->whereHas('visa', fn ($q) => $q->forLocation($primary));
+            return;
+        }
+        if ($moduleType === 'flight') {
+            // Flight has only one location_id column. If both from + to ids
+            // are supplied, prefer to_location_id (destination) — that's
+            // what most flight searches actually filter by.
+            $flightId = $toLocationId ?? $fromLocationId ?? $locationId;
+            $query->whereHas('flight', fn ($q) => $q->forLocation($flightId));
+            return;
+        }
+        if ($moduleType === 'transfer') {
+            // Transfer.forLocation() already handles origin OR destination.
+            // If from and to are both given, filter on both.
+            if ($fromLocationId !== null && $toLocationId !== null) {
+                $query->whereHas('transfer', function ($q) use ($fromLocationId, $toLocationId) {
+                    $ids = ['from' => $fromLocationId, 'to' => $toLocationId];
+                    $q->forLocation($ids['from'])->forLocation($ids['to']);
+                });
+                return;
+            }
+            $query->whereHas('transfer', fn ($q) => $q->forLocation($primary));
+            return;
+        }
+
+        // Cross-module ($moduleType === null): match offers where ANY relevant
+        // module-content row has a location_id in the subtree.
+        $query->where(function (Builder $w) use ($primary, $fromLocationId, $toLocationId) {
+            $w->orWhereHas('hotel', fn ($q) => $q->forLocation($primary))
+              ->orWhereHas('car', fn ($q) => $q->forLocation($primary))
+              ->orWhereHas('excursion', fn ($q) => $q->forLocation($primary))
+              ->orWhereHas('visa', fn ($q) => $q->forLocation($primary))
+              ->orWhereHas('flight', fn ($q) => $q->forLocation($toLocationId ?? $primary))
+              ->orWhereHas('transfer', fn ($q) => $q->forLocation($primary));
+        });
     }
 
     private function parseBooleanInput(mixed $value): ?bool
