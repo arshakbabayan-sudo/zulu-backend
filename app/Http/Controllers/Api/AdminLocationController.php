@@ -240,38 +240,34 @@ class AdminLocationController extends Controller
             ->limit($limit)
             ->get(['id', 'name', 'type', 'parent_id', 'country_code', 'flag_emoji', 'depth', 'path']);
 
-        // Attach a friendly hint label (e.g. "Yerevan, Armenia")
-        $countryNames = [];
-        if (!empty($rows)) {
-            $countryIds = $rows->pluck('path')
-                ->map(fn ($p) => is_string($p) ? explode('/', trim($p, '/'))[0] ?? null : null)
-                ->filter()
-                ->unique()
-                ->map(fn ($id) => (int) $id)
-                ->all();
-            if (!empty($countryIds)) {
-                $countryNames = Location::query()
-                    ->whereIn('id', $countryIds)
-                    ->pluck('name', 'id')
-                    ->all();
+        // Attach friendly hint label (e.g. "Yerevan, Armenia") + flag.
+        // Region/city rows store country_code but not flag_emoji — that lives
+        // only on the country root, so we look it up.
+        $countryByCode = [];
+        if ($rows->isNotEmpty()) {
+            $codes = $rows->pluck('country_code')->filter()->unique()->all();
+            if (!empty($codes)) {
+                $countryByCode = Location::query()
+                    ->where('type', 'country')
+                    ->whereIn('country_code', $codes)
+                    ->get(['country_code', 'name', 'flag_emoji'])
+                    ->keyBy('country_code');
             }
         }
 
-        $payload = $rows->map(function ($row) use ($countryNames) {
-            $countryName = null;
-            if ($row->type !== 'country' && is_string($row->path)) {
-                $rootId = (int) (explode('/', trim($row->path, '/'))[0] ?? 0);
-                $countryName = $countryNames[$rootId] ?? null;
-            }
+        $payload = $rows->map(function ($row) use ($countryByCode) {
+            $country = $row->country_code ? ($countryByCode[$row->country_code] ?? null) : null;
+            $countryName = $country?->name;
+            $flag = $row->flag_emoji ?: ($country?->flag_emoji);
             return [
                 'id' => $row->id,
                 'name' => $row->name,
                 'type' => $row->type,
                 'country_code' => $row->country_code,
-                'flag_emoji' => $row->flag_emoji,
+                'flag_emoji' => $flag,
                 'parent_id' => $row->parent_id,
-                'country_name' => $countryName,
-                'label' => $countryName ? "{$row->name}, {$countryName}" : $row->name,
+                'country_name' => $row->type === 'country' ? null : $countryName,
+                'label' => ($row->type !== 'country' && $countryName) ? "{$row->name}, {$countryName}" : $row->name,
             ];
         });
 
