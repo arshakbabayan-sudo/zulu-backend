@@ -46,6 +46,8 @@ class Flight extends Model
         'arrival_country',
         'arrival_city',
         'location_id',
+        'departure_location_id',
+        'arrival_location_id',
         'arrival_airport',
         'departure_airport_code',
         'arrival_airport_code',
@@ -247,6 +249,40 @@ class Flight extends Model
             return $query->whereRaw('0 = 1');
         }
 
-        return $query->whereIn($query->getModel()->getTable().'.location_id', $ids);
+        $table = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $q) use ($table, $ids): void {
+            $q->whereIn($table.'.location_id', $ids)
+                ->orWhereIn($table.'.departure_location_id', $ids)
+                ->orWhereIn($table.'.arrival_location_id', $ids);
+        });
+    }
+
+    /** Match flights whose DEPARTURE is in the subtree of the given location. */
+    public function scopeForDepartureLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+        return $query->whereIn($query->getModel()->getTable().'.departure_location_id', $ids);
+    }
+
+    /** Match flights whose ARRIVAL is in the subtree of the given location. */
+    public function scopeForArrivalLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+        return $query->whereIn($query->getModel()->getTable().'.arrival_location_id', $ids);
     }
 }

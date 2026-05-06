@@ -1563,12 +1563,25 @@ class DiscoveryService
             $query->whereHas('visa', fn ($q) => $q->forLocation($primary));
             return;
         }
+        if ($moduleType === 'package') {
+            $query->whereHas('package', fn ($q) => $q->forLocation($primary));
+            return;
+        }
         if ($moduleType === 'flight') {
-            // Flight has only one location_id column. If both from + to ids
-            // are supplied, prefer to_location_id (destination) — that's
-            // what most flight searches actually filter by.
-            $flightId = $toLocationId ?? $fromLocationId ?? $locationId;
-            $query->whereHas('flight', fn ($q) => $q->forLocation($flightId));
+            // Flight has departure_location_id + arrival_location_id (added
+            // 2026-05-06). When both from + to ids are supplied, filter on
+            // both endpoints.
+            $query->whereHas('flight', function ($q) use ($fromLocationId, $toLocationId, $primary) {
+                if ($fromLocationId !== null) {
+                    $q->forDepartureLocation($fromLocationId);
+                }
+                if ($toLocationId !== null) {
+                    $q->forArrivalLocation($toLocationId);
+                }
+                if ($fromLocationId === null && $toLocationId === null) {
+                    $q->forLocation($primary);
+                }
+            });
             return;
         }
         if ($moduleType === 'transfer') {
@@ -1592,7 +1605,12 @@ class DiscoveryService
               ->orWhereHas('car', fn ($q) => $q->forLocation($primary))
               ->orWhereHas('excursion', fn ($q) => $q->forLocation($primary))
               ->orWhereHas('visa', fn ($q) => $q->forLocation($primary))
-              ->orWhereHas('flight', fn ($q) => $q->forLocation($toLocationId ?? $primary))
+              ->orWhereHas('package', fn ($q) => $q->forLocation($primary))
+              ->orWhereHas('flight', function ($q) use ($fromLocationId, $toLocationId, $primary) {
+                  if ($fromLocationId !== null) $q->forDepartureLocation($fromLocationId);
+                  elseif ($toLocationId !== null) $q->forArrivalLocation($toLocationId);
+                  else $q->forLocation($primary);
+              })
               ->orWhereHas('transfer', fn ($q) => $q->forLocation($primary));
         });
     }

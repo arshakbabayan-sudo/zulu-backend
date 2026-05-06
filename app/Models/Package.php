@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\HasTranslations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,7 @@ class Package extends Model
         'package_subtitle',
         'destination_country',
         'destination_city',
+        'destination_location_id',
         'duration_days',
         'min_nights',
         'adults_count',
@@ -97,5 +99,22 @@ class Package extends Model
     public function getTranslatableEntityType(): string
     {
         return 'package';
+    }
+
+    /**
+     * Filter packages whose destination location is in the subtree of the
+     * given Location id (mirrors Hotel/Car/Excursion/Visa/Transfer scopes).
+     */
+    public function scopeForLocation(Builder $query, int|string|null $locationId): Builder
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : 0;
+        if ($id <= 0) {
+            return $query;
+        }
+        $ids = Location::subtreeLocationIds($id);
+        if ($ids === []) {
+            return $query->whereRaw('0 = 1');
+        }
+        return $query->whereIn($query->getModel()->getTable().'.destination_location_id', $ids);
     }
 }

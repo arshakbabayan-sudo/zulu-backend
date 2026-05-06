@@ -852,6 +852,8 @@ class FlightService
         return [
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
             'location_id' => ['required', 'integer', Rule::exists('locations', 'id')],
+            'departure_location_id' => ['nullable', 'integer', Rule::exists('locations', 'id')],
+            'arrival_location_id' => ['nullable', 'integer', Rule::exists('locations', 'id')],
             'flight_code_internal' => ['required', 'string', 'max:191'],
             'service_type' => ['required', 'string', Rule::in(Flight::SERVICE_TYPES)],
             'departure_airport' => ['required', 'string', 'max:191'],
