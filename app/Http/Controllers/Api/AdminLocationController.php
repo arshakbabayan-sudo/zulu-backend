@@ -155,7 +155,7 @@ class AdminLocationController extends Controller
             $query->where('parent_id', (int) $parentId);
         }
 
-        $rows = $query->get(['id', 'name', 'type', 'parent_id', 'path', 'depth']);
+        $rows = $query->get(['id', 'name', 'type', 'parent_id', 'path', 'depth', 'country_code', 'flag_emoji']);
 
         return response()->json([
             'success' => true,
@@ -178,6 +178,8 @@ class AdminLocationController extends Controller
             'name' => $row->name,
             'type' => $row->type,
             'parent_id' => $row->parent_id,
+            'country_code' => $row->country_code,
+            'flag_emoji' => $row->flag_emoji,
         ])->all();
 
         return response()->json([
@@ -189,6 +191,8 @@ class AdminLocationController extends Controller
                 'parent_id' => $location->parent_id,
                 'path' => $location->path,
                 'depth' => $location->depth,
+                'country_code' => $location->country_code,
+                'flag_emoji' => $location->flag_emoji,
                 'full_path_name' => $location->fullPathName(),
                 'ancestors' => $ancestors,
             ],
