@@ -468,10 +468,25 @@ class DiscoveryService
             }
 
             if ($destination !== null) {
+                // Hotels table has no city/country text columns — those moved
+                // into the locations FK. Match against text fields that DO
+                // exist + the location tree by name (so "Yerevan" hits hotels
+                // with location_id pointing at any Yerevan node).
                 $like = $this->likeWrap($destination);
-                $q->where(function (Builder $hq) use ($like): void {
-                    $hq->where('city', 'like', $like)
-                        ->orWhere('country', 'like', $like);
+                $matchingLocationIds = \App\Models\Location::query()
+                    ->where(function ($w) use ($like) {
+                        $w->where('name', 'ilike', $like);
+                    })
+                    ->limit(50)
+                    ->pluck('id')
+                    ->all();
+                $q->where(function (Builder $hq) use ($like, $matchingLocationIds): void {
+                    $hq->where('hotel_name', 'ilike', $like)
+                        ->orWhere('district_or_area', 'ilike', $like)
+                        ->orWhere('full_address', 'ilike', $like);
+                    if (!empty($matchingLocationIds)) {
+                        $hq->orWhereIn('location_id', $matchingLocationIds);
+                    }
                 });
             }
             $q->where('availability_status', 'available');
@@ -1161,21 +1176,38 @@ class DiscoveryService
         }
 
         $like = $this->likeWrap($country);
-        $query->where(function (Builder $q) use ($moduleType, $like): void {
-            if ($moduleType === 'hotel') {
-                $q->whereHas('hotel', fn (Builder $hq) => $hq->where('country', 'like', $like));
+        // Hotels no longer have a "country" text column — resolve to location_ids
+        $hotelLocIds = \App\Models\Location::query()
+            ->where('type', 'country')
+            ->where('name', 'ilike', $like)
+            ->pluck('id')
+            ->flatMap(fn ($id) => \App\Models\Location::subtreeLocationIds((int) $id))
+            ->unique()
+            ->values()
+            ->all();
 
+        $query->where(function (Builder $q) use ($moduleType, $like, $hotelLocIds): void {
+            if ($moduleType === 'hotel') {
+                if (!empty($hotelLocIds)) {
+                    $q->whereHas('hotel', fn (Builder $hq) => $hq->whereIn('location_id', $hotelLocIds));
+                } else {
+                    $q->whereRaw('0 = 1');
+                }
                 return;
             }
 
             if ($moduleType === 'package') {
                 $q->whereHas('package', fn (Builder $pq) => $pq->where('destination_country', 'like', $like));
-
                 return;
             }
 
-            $q->where(function (Builder $hq) use ($like): void {
-                $hq->where('type', 'hotel')->whereHas('hotel', fn (Builder $hotel) => $hotel->where('country', 'like', $like));
+            $q->where(function (Builder $hq) use ($hotelLocIds): void {
+                $hq->where('type', 'hotel');
+                if (!empty($hotelLocIds)) {
+                    $hq->whereHas('hotel', fn (Builder $hotel) => $hotel->whereIn('location_id', $hotelLocIds));
+                } else {
+                    $hq->whereRaw('0 = 1');
+                }
             })->orWhere(function (Builder $pq) use ($like): void {
                 $pq->where('type', 'package')->whereHas('package', fn (Builder $package) => $package->where('destination_country', 'like', $like));
             });
@@ -1189,21 +1221,34 @@ class DiscoveryService
         }
 
         $like = $this->likeWrap($city);
-        $query->where(function (Builder $q) use ($moduleType, $like): void {
-            if ($moduleType === 'hotel') {
-                $q->whereHas('hotel', fn (Builder $hq) => $hq->where('city', 'like', $like));
+        $hotelLocIds = \App\Models\Location::query()
+            ->whereIn('type', ['city', 'region'])
+            ->where('name', 'ilike', $like)
+            ->pluck('id')
+            ->all();
 
+        $query->where(function (Builder $q) use ($moduleType, $like, $hotelLocIds): void {
+            if ($moduleType === 'hotel') {
+                if (!empty($hotelLocIds)) {
+                    $q->whereHas('hotel', fn (Builder $hq) => $hq->whereIn('location_id', $hotelLocIds));
+                } else {
+                    $q->whereRaw('0 = 1');
+                }
                 return;
             }
 
             if ($moduleType === 'package') {
                 $q->whereHas('package', fn (Builder $pq) => $pq->where('destination_city', 'like', $like));
-
                 return;
             }
 
-            $q->where(function (Builder $hq) use ($like): void {
-                $hq->where('type', 'hotel')->whereHas('hotel', fn (Builder $hotel) => $hotel->where('city', 'like', $like));
+            $q->where(function (Builder $hq) use ($hotelLocIds): void {
+                $hq->where('type', 'hotel');
+                if (!empty($hotelLocIds)) {
+                    $hq->whereHas('hotel', fn (Builder $hotel) => $hotel->whereIn('location_id', $hotelLocIds));
+                } else {
+                    $hq->whereRaw('0 = 1');
+                }
             })->orWhere(function (Builder $pq) use ($like): void {
                 $pq->where('type', 'package')->whereHas('package', fn (Builder $package) => $package->where('destination_city', 'like', $like));
             });
