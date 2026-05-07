@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Hotel;
 use App\Services\Availability\AvailabilityNormalizerService;
@@ -16,6 +17,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class HotelListResource extends JsonResource
 {
+    use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
     /**
@@ -58,27 +60,11 @@ class HotelListResource extends JsonResource
             'rooms' => $this->relationLoaded('rooms') ? $this->rooms->count() : null,
         ]);
 
-        // City/country/region were dropped from the hotels table when the
-        // location_id FK was added — derive them from the location subtree.
-        // Walks: city (loc itself if leaf) → region (parent) → country (root).
-        $city = null;
-        $region = null;
-        $country = null;
-        $loc = $this->relationLoaded('location') ? $this->location : ($this->location_id ? $this->location()->first() : null);
-        if ($loc) {
-            // Walk parent_id chain directly — Location::ancestors() relies on
-            // a numeric `path` column which our seeder writes as slugs, so
-            // the country root gets dropped for cities/regions.
-            $cursor = $loc;
-            $hops = 0;
-            while ($cursor !== null && $hops < 6) {
-                if ($cursor->type === 'city' && $city === null) $city = $cursor->name;
-                elseif ($cursor->type === 'region' && $region === null) $region = $cursor->name;
-                elseif ($cursor->type === 'country' && $country === null) $country = $cursor->name;
-                $cursor = $cursor->parent_id ? \App\Models\Location::find($cursor->parent_id) : null;
-                $hops++;
-            }
-        }
+        $loc = $this->relationLoaded('location') ? $this->getRelation('location') : ($this->location_id ? $this->location()->first() : null);
+        $labels = $this->deriveLocationLabels($loc);
+        $city = $labels['city'];
+        $region = $labels['region'];
+        $country = $labels['country'];
 
         return [
             'id' => $this->id,

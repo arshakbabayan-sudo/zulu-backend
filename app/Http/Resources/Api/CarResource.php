@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Car;
 use App\Services\Availability\AvailabilityNormalizerService;
@@ -17,6 +18,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class CarResource extends JsonResource
 {
+    use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
     /**
@@ -39,13 +41,20 @@ class CarResource extends JsonResource
             is_array($this->advanced_options) ? $this->advanced_options : null
         );
 
+        $loc = $this->relationLoaded('location') ? $this->getRelation('location') : ($this->location_id ? $this->location()->first() : null);
+        $labels = $this->deriveLocationLabels($loc);
+        $pickup = $labels['city'] ?? $labels['region'] ?? $labels['country'];
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'location_id' => $this->location_id,
             'company_id' => $this->whenLoaded('offer', fn () => $this->offer !== null ? (int) $this->offer->company_id : null),
-            'pickup_location' => $this->pickup_location,
-            'dropoff_location' => $this->dropoff_location,
+            'country' => $labels['country'],
+            'region' => $labels['region'],
+            'city' => $labels['city'],
+            'pickup_location' => $pickup,
+            'dropoff_location' => $pickup,
             'vehicle_class' => $this->vehicle_class,
             'vehicle_type' => $this->vehicle_type,
             'brand' => $this->brand,

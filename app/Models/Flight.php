@@ -45,10 +45,10 @@ class Flight extends Model
         'departure_airport',
         'arrival_country',
         'arrival_city',
+        'arrival_airport',
         'location_id',
         'departure_location_id',
         'arrival_location_id',
-        'arrival_airport',
         'departure_airport_code',
         'arrival_airport_code',
         'departure_terminal',
@@ -150,6 +150,16 @@ class Flight extends Model
         return $this->belongsTo(Location::class, 'location_id');
     }
 
+    public function departureLocation(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'departure_location_id');
+    }
+
+    public function arrivalLocation(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'arrival_location_id');
+    }
+
     public function cabins(): HasMany
     {
         return $this->hasMany(FlightCabin::class)->orderBy('id');
@@ -176,6 +186,9 @@ class Flight extends Model
      */
     public function toOfferEmbedArray(): array
     {
+        $departureLabels = $this->resolveLocationLabels($this->departure_location_id, 'departureLocation');
+        $arrivalLabels = $this->resolveLocationLabels($this->arrival_location_id, 'arrivalLocation');
+
         return [
             'flight_code_internal' => $this->flight_code_internal,
             'appears_in_web' => $this->appears_in_web,
@@ -183,11 +196,13 @@ class Flight extends Model
             'appears_in_zulu_admin' => $this->appears_in_zulu_admin,
             'service_type' => $this->service_type,
             'company_id' => $this->company_id,
-            'departure_country' => $this->departure_country,
-            'departure_city' => $this->departure_city,
+            'departure_location_id' => $this->departure_location_id,
+            'arrival_location_id' => $this->arrival_location_id,
+            'departure_country' => $departureLabels['country'] ?? ($this->attributes['departure_country'] ?? null),
+            'departure_city' => $departureLabels['city'] ?? ($this->attributes['departure_city'] ?? null),
             'departure_airport' => $this->departure_airport,
-            'arrival_country' => $this->arrival_country,
-            'arrival_city' => $this->arrival_city,
+            'arrival_country' => $arrivalLabels['country'] ?? ($this->attributes['arrival_country'] ?? null),
+            'arrival_city' => $arrivalLabels['city'] ?? ($this->attributes['arrival_city'] ?? null),
             'arrival_airport' => $this->arrival_airport,
             'departure_airport_code' => $this->departure_airport_code,
             'arrival_airport_code' => $this->arrival_airport_code,
@@ -237,6 +252,37 @@ class Flight extends Model
         ];
     }
 
+    /**
+     * Walk a location's parent chain to resolve {city, region, country} labels.
+     * Used to keep legacy flat-string fields populated from the location_id FK.
+     *
+     * @return array{city: ?string, region: ?string, country: ?string}
+     */
+    private function resolveLocationLabels(?int $locationId, string $relation): array
+    {
+        $labels = ['city' => null, 'region' => null, 'country' => null];
+        if ($locationId === null) {
+            return $labels;
+        }
+
+        $loc = $this->relationLoaded($relation) ? $this->getRelation($relation) : Location::find($locationId);
+        $cursor = $loc;
+        $hops = 0;
+        while ($cursor !== null && $hops < 6) {
+            if ($cursor->type === Location::TYPE_CITY && $labels['city'] === null) {
+                $labels['city'] = $cursor->name;
+            } elseif ($cursor->type === Location::TYPE_REGION && $labels['region'] === null) {
+                $labels['region'] = $cursor->name;
+            } elseif ($cursor->type === Location::TYPE_COUNTRY && $labels['country'] === null) {
+                $labels['country'] = $cursor->name;
+            }
+            $cursor = $cursor->parent_id ? Location::find($cursor->parent_id) : null;
+            $hops++;
+        }
+
+        return $labels;
+    }
+
     public function scopeForLocation(Builder $query, int|string|null $locationId): Builder
     {
         $id = is_numeric($locationId) ? (int) $locationId : 0;
@@ -269,6 +315,7 @@ class Flight extends Model
         if ($ids === []) {
             return $query->whereRaw('0 = 1');
         }
+
         return $query->whereIn($query->getModel()->getTable().'.departure_location_id', $ids);
     }
 
@@ -283,6 +330,7 @@ class Flight extends Model
         if ($ids === []) {
             return $query->whereRaw('0 = 1');
         }
+
         return $query->whereIn($query->getModel()->getTable().'.arrival_location_id', $ids);
     }
 }

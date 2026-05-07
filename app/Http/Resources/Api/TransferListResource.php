@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Transfer;
 use App\Services\Availability\AvailabilityNormalizerService;
@@ -16,6 +17,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class TransferListResource extends JsonResource
 {
+    use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
     /**
@@ -31,6 +33,11 @@ class TransferListResource extends JsonResource
             'capacity' => $this->maximum_passengers,
         ]);
 
+        $origin = $this->relationLoaded('originLocation') ? $this->getRelation('originLocation') : ($this->origin_location_id ? $this->originLocation()->first() : null);
+        $destination = $this->relationLoaded('destinationLocation') ? $this->getRelation('destinationLocation') : ($this->destination_location_id ? $this->destinationLocation()->first() : null);
+        $originLabels = $this->deriveLocationLabels($origin);
+        $destinationLabels = $this->deriveLocationLabels($destination);
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
@@ -41,14 +48,14 @@ class TransferListResource extends JsonResource
             'appears_in_zulu_admin' => (bool) $this->appears_in_zulu_admin,
             'transfer_title' => $this->getTranslated('title', $lang, $this->transfer_title) ?? $this->transfer_title,
             'transfer_type' => $this->transfer_type,
-            'pickup_country' => $this->pickup_country,
+            'pickup_country' => $originLabels['country'],
             'origin_location_id' => $this->origin_location_id,
-            'pickup_city' => $this->pickup_city,
+            'pickup_city' => $originLabels['city'],
             'pickup_point_type' => $this->pickup_point_type,
             'pickup_point_name' => $this->pickup_point_name,
-            'dropoff_country' => $this->dropoff_country,
+            'dropoff_country' => $destinationLabels['country'],
             'destination_location_id' => $this->destination_location_id,
-            'dropoff_city' => $this->dropoff_city,
+            'dropoff_city' => $destinationLabels['city'],
             'dropoff_point_type' => $this->dropoff_point_type,
             'dropoff_point_name' => $this->dropoff_point_name,
             'pickup_latitude' => $this->pickup_latitude !== null ? (float) $this->pickup_latitude : null,

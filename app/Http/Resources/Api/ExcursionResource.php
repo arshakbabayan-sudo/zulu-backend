@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Excursion;
 use Illuminate\Http\Request;
@@ -12,6 +13,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class ExcursionResource extends JsonResource
 {
+    use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
     /**
@@ -20,6 +22,9 @@ class ExcursionResource extends JsonResource
     public function toArray(Request $request): array
     {
         $lang = $this->apiLang($request);
+        $loc = $this->relationLoaded('location') ? $this->getRelation('location') : ($this->location_id ? $this->location()->first() : null);
+        $labels = $this->deriveLocationLabels($loc);
+        $locationLabel = $labels['city'] ?? $labels['region'] ?? $labels['country'];
 
         return [
             'id' => $this->id,
@@ -29,10 +34,11 @@ class ExcursionResource extends JsonResource
             'title' => $this->whenLoaded('offer', fn () => $this->offer !== null ? ($this->offer->getTranslated('title', $lang) ?? $this->offer->title) : null),
             'price' => $this->whenLoaded('offer', fn () => $this->offer?->price !== null ? (float) $this->offer->price : null),
             'currency' => $this->whenLoaded('offer', fn () => $this->offer?->currency),
-            'location' => $this->location,
+            'location' => $locationLabel,
             'location_id' => $this->location_id,
-            'country' => $this->country,
-            'city' => $this->city,
+            'country' => $labels['country'],
+            'region' => $labels['region'],
+            'city' => $labels['city'],
             'general_category' => $this->general_category,
             'category' => $this->category,
             'excursion_type' => $this->excursion_type,

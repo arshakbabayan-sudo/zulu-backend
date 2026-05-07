@@ -425,7 +425,7 @@ class FlightService
         $this->applyAppearanceContextConstraints($query, $filters['appearance_context'] ?? null);
         $this->applyDefaultFlightListOrdering($query);
 
-        return $query->with(['offer', 'company'])->get();
+        return $query->with(['offer', 'company', 'departureLocation', 'arrivalLocation'])->get();
     }
 
     /**
@@ -439,7 +439,7 @@ class FlightService
         $this->applyAppearanceContextConstraints($query, $filters['appearance_context'] ?? null);
         $this->applyDefaultFlightListOrdering($query);
 
-        return $query->with(['offer', 'company'])->paginate($perPage);
+        return $query->with(['offer', 'company', 'departureLocation', 'arrivalLocation'])->paginate($perPage);
     }
 
     /**

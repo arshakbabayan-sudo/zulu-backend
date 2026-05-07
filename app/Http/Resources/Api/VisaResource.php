@@ -2,12 +2,14 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class VisaResource extends JsonResource
 {
+    use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
     /**
@@ -18,14 +20,15 @@ class VisaResource extends JsonResource
         $lang = $this->apiLang($request);
         $offer = $this->whenLoaded('offer', fn () => $this->offer);
         $offerPrice = $offer?->price ?? null;
+        $loc = $this->relationLoaded('location') ? $this->getRelation('location') : ($this->location_id ? $this->location()->first() : null);
+        $labels = $this->deriveLocationLabels($loc);
 
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $offer?->company_id ?? null,
-            'country' => $this->country,
+            'country' => $labels['country'],
             'location_id' => $this->location_id,
-            'country_id' => $this->country_id,
             'visa_type' => $this->visa_type,
             'processing_days' => $this->processing_days,
             'name' => $this->getTranslated('title', $lang, $this->name) ?? $this->name,

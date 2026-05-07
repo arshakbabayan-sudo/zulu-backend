@@ -49,8 +49,8 @@ class FlightResource extends JsonResource
             // Backward-compatible aliases for older admin/front clients.
             'flight_number' => $this->flight_code_internal,
             'airline' => $this->company?->name,
-            'origin' => $this->departure_city,
-            'destination' => $this->arrival_city,
+            'origin' => $base['departure_city'] ?? null,
+            'destination' => $base['arrival_city'] ?? null,
         ], $base, [
             'cabins' => $this->whenLoaded('cabins', fn () => $this->resource->cabinsForApiResponse()),
             'offer' => $this->whenLoaded('offer', fn () => [

@@ -413,7 +413,7 @@ class CarService
         $this->applyListingFilters($query, $filters);
         $this->applyDefaultListOrdering($query);
 
-        return $query->with(['offer'])->get();
+        return $query->with(['offer', 'location'])->get();
     }
 
     /**
@@ -426,7 +426,7 @@ class CarService
         $this->applyListingFilters($query, $filters);
         $this->applyDefaultListOrdering($query);
 
-        return $query->with(['offer'])->paginate($perPage);
+        return $query->with(['offer', 'location'])->paginate($perPage);
     }
 
     /**
@@ -440,7 +440,7 @@ class CarService
 
         return $this->baseTenantCarQuery($companyIds)
             ->whereKey($id)
-            ->with(['offer'])
+            ->with(['offer', 'location'])
             ->first();
     }
 
@@ -451,7 +451,7 @@ class CarService
             ->whereHas('offer', function (Builder $q): void {
                 $q->where('type', 'car');
             })
-            ->with(['offer'])
+            ->with(['offer', 'location'])
             ->first();
     }
 

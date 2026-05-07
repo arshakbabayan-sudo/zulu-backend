@@ -100,7 +100,7 @@ class VisaService
         }
 
         $query = Visa::query()
-            ->with('offer')
+            ->with(['offer', 'location'])
             ->whereHas('offer', function ($q) use ($companyIds) {
                 $q->whereIn('company_id', $companyIds);
             })
@@ -121,7 +121,7 @@ class VisaService
         }
 
         $query = Visa::query()
-            ->with('offer')
+            ->with(['offer', 'location'])
             ->whereHas('offer', function ($q) use ($companyIds) {
                 $q->whereIn('company_id', $companyIds);
             })
