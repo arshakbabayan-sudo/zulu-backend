@@ -66,11 +66,17 @@ class HotelListResource extends JsonResource
         $country = null;
         $loc = $this->relationLoaded('location') ? $this->location : ($this->location_id ? $this->location()->first() : null);
         if ($loc) {
-            $chain = $loc->ancestors()->push($loc);
-            foreach ($chain as $node) {
-                if ($node->type === 'city') $city = $node->name;
-                elseif ($node->type === 'region') $region = $node->name;
-                elseif ($node->type === 'country') $country = $node->name;
+            // Walk parent_id chain directly — Location::ancestors() relies on
+            // a numeric `path` column which our seeder writes as slugs, so
+            // the country root gets dropped for cities/regions.
+            $cursor = $loc;
+            $hops = 0;
+            while ($cursor !== null && $hops < 6) {
+                if ($cursor->type === 'city' && $city === null) $city = $cursor->name;
+                elseif ($cursor->type === 'region' && $region === null) $region = $cursor->name;
+                elseif ($cursor->type === 'country' && $country === null) $country = $cursor->name;
+                $cursor = $cursor->parent_id ? \App\Models\Location::find($cursor->parent_id) : null;
+                $hops++;
             }
         }
 
