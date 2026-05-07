@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\OfferResource;
 use App\Models\Offer;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Offers\OfferReviewService;
 use App\Services\Offers\OfferService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -168,6 +169,98 @@ class OfferController extends Controller
         return response()->json([
             'success' => true,
             'data' => OfferResource::make($offerService->archive($offer))->toArray($request),
+        ]);
+    }
+
+    /**
+     * Operator submits a draft (or rejected) offer for super-admin review.
+     *
+     * @group Offers
+     */
+    public function submitForReview(Request $request, OfferReviewService $reviewService, Offer $offer): JsonResponse
+    {
+        if ($response = $this->ensureCommerceAccess($request, (int) $offer->company_id, 'offers.publish')) {
+            return $response;
+        }
+
+        $reviewService->submitForReview($offer, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => OfferResource::make($offer->fresh())->toArray($request),
+        ]);
+    }
+
+    /**
+     * Super admin queue: offers pending review.
+     *
+     * @group Offers
+     */
+    public function pendingReviewQueue(Request $request, OfferReviewService $reviewService): JsonResponse
+    {
+        if (! $this->adminAccessService->isSuperAdmin($request->user())) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $filters = [
+            'type' => $request->query('type'),
+            'company_id' => $request->query('company_id'),
+            'q' => $request->query('q'),
+        ];
+        $perPage = (int) ($request->query('per_page', 20));
+        $paginator = $reviewService->pendingReviewQueue($filters, $perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $paginator->items(),
+            'meta' => [
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+            ],
+        ]);
+    }
+
+    /**
+     * Super admin approves a pending_review offer → published.
+     *
+     * @group Offers
+     */
+    public function approve(Request $request, OfferReviewService $reviewService, Offer $offer): JsonResponse
+    {
+        if (! $this->adminAccessService->isSuperAdmin($request->user())) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $reviewService->approve($offer, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => OfferResource::make($offer->fresh())->toArray($request),
+        ]);
+    }
+
+    /**
+     * Super admin rejects a pending_review offer (reason required).
+     *
+     * @group Offers
+     */
+    public function reject(Request $request, OfferReviewService $reviewService, Offer $offer): JsonResponse
+    {
+        if (! $this->adminAccessService->isSuperAdmin($request->user())) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+        ]);
+
+        $reviewService->reject($offer, $request->user(), $validated['reason']);
+
+        return response()->json([
+            'success' => true,
+            'data' => OfferResource::make($offer->fresh())->toArray($request),
         ]);
     }
 

@@ -30,13 +30,28 @@ class Offer extends Model
 
     public const STATUS_DRAFT = 'draft';
 
+    public const STATUS_PENDING_REVIEW = 'pending_review';
+
     public const STATUS_ACTIVE = 'active';
 
     public const STATUS_INACTIVE = 'inactive';
 
     public const STATUS_PUBLISHED = 'published';
 
+    public const STATUS_REJECTED = 'rejected';
+
     public const STATUS_ARCHIVED = 'archived';
+
+    /** All valid status values. */
+    public const STATUSES = [
+        self::STATUS_DRAFT,
+        self::STATUS_PENDING_REVIEW,
+        self::STATUS_ACTIVE,
+        self::STATUS_INACTIVE,
+        self::STATUS_PUBLISHED,
+        self::STATUS_REJECTED,
+        self::STATUS_ARCHIVED,
+    ];
 
     protected $fillable = [
         'company_id',
@@ -45,6 +60,15 @@ class Offer extends Model
         'price',
         'currency',
         'status',
+        'submitted_for_review_at',
+        'reviewed_at',
+        'reviewed_by',
+        'rejection_reason',
+    ];
+
+    protected $casts = [
+        'submitted_for_review_at' => 'datetime',
+        'reviewed_at' => 'datetime',
     ];
 
     protected $appends = ['b2b_price', 'b2c_price'];

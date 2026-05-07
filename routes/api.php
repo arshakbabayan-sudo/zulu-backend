@@ -337,6 +337,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('offers', [OfferController::class, 'store'])->middleware('throttle:inventory-write');
     Route::post('offers/{offer}/publish', [OfferController::class, 'publish'])->middleware('throttle:inventory-write');
     Route::post('offers/{offer}/archive', [OfferController::class, 'archive'])->middleware('throttle:inventory-write');
+    // Review-gate workflow (Option 2 — quality control before customer-side visibility)
+    Route::post('offers/{offer}/submit-for-review', [OfferController::class, 'submitForReview'])->middleware('throttle:inventory-write');
+    Route::get('admin/offers/pending-review', [OfferController::class, 'pendingReviewQueue']);
+    Route::post('admin/offers/{offer}/approve', [OfferController::class, 'approve'])->middleware('throttle:inventory-write');
+    Route::post('admin/offers/{offer}/reject', [OfferController::class, 'reject'])->middleware('throttle:inventory-write');
 
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show']);
