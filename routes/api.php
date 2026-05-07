@@ -323,6 +323,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('companies/{company}/seller-permissions', [CompanyController::class, 'sellerPermissions'])->whereNumber('company');
     Route::post('companies/{company}/seller-permissions', [CompanyController::class, 'grantSellerPermission'])->whereNumber('company');
     Route::delete('companies/{company}/seller-permissions/{serviceType}', [CompanyController::class, 'revokeSellerPermission'])->whereNumber('company');
+    // Multi-country seller permissions (super admin grants per-country licenses)
+    Route::get('companies/{company}/country-permissions', [CompanyController::class, 'countryPermissions'])->whereNumber('company');
+    Route::patch('companies/{company}/country-permissions', [CompanyController::class, 'syncCountryPermissions'])->whereNumber('company');
     Route::get('companies/{company}/contract', [CompanyController::class, 'downloadContract'])->whereNumber('company');
     Route::post('companies/{company}/seller-applications', [CompanyController::class, 'submitSellerApplication'])->whereNumber('company');
     Route::get('companies/{company}/seller-applications', [CompanyController::class, 'listSellerApplications'])->whereNumber('company');

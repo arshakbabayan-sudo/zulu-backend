@@ -40,6 +40,8 @@ class FlightResource extends JsonResource
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'location_id' => $this->location_id,
+            'departure_location_id' => $this->departure_location_id,
+            'arrival_location_id' => $this->arrival_location_id,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'pricing' => $pricing,

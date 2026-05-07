@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\CompanyResource;
 use App\Http\Resources\Api\CompanyUserResource;
 use App\Models\Company;
+use App\Models\CompanyCountryPermission;
 use App\Models\CompanySellerPermission;
 use App\Models\Role;
 use App\Models\User;
@@ -456,6 +457,86 @@ class CompanyController extends Controller
             'success' => true,
             'data' => null,
         ]);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Country permissions (multi-country seller licenses)
+    // ──────────────────────────────────────────────────────────────────
+
+    public function countryPermissions(Request $request, Company $company): JsonResponse
+    {
+        $user = $request->user();
+        $canView = $this->companyAccessService->canAccessCompany($user, $company, 'seller_permissions.view');
+        if (! $canView) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $rows = CompanyCountryPermission::query()
+            ->where('company_id', $company->id)
+            ->orderBy('country_name')
+            ->get()
+            ->map(fn (CompanyCountryPermission $p) => [
+                'id' => $p->id,
+                'country_code' => $p->country_code,
+                'country_name' => $p->country_name,
+                'status' => $p->status,
+                'granted_at' => $p->granted_at?->toIso8601String(),
+                'notes' => $p->notes,
+            ])
+            ->all();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                // Always include the company's home country as an implicit grant
+                // so the UI shows it as the always-allowed baseline.
+                'home_country' => $company->country,
+                'permissions' => $rows,
+            ],
+        ]);
+    }
+
+    public function syncCountryPermissions(Request $request, Company $company): JsonResponse
+    {
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'countries' => ['required', 'array'],
+            'countries.*.country_code' => ['required', 'string', 'max:8'],
+            'countries.*.country_name' => ['required', 'string', 'max:64'],
+        ]);
+
+        $now = now();
+        $userId = $request->user()->id;
+
+        // Set the desired set; revoke anything not in it.
+        $desiredCodes = [];
+        foreach ($validated['countries'] as $row) {
+            $code = strtoupper(trim($row['country_code']));
+            $name = trim($row['country_name']);
+            $desiredCodes[] = $code;
+
+            CompanyCountryPermission::query()->updateOrCreate(
+                ['company_id' => $company->id, 'country_code' => $code],
+                [
+                    'country_name' => $name,
+                    'status' => CompanyCountryPermission::STATUS_ACTIVE,
+                    'granted_by' => $userId,
+                    'granted_at' => $now,
+                ]
+            );
+        }
+
+        // Revoke any active rows not in the desired set.
+        CompanyCountryPermission::query()
+            ->where('company_id', $company->id)
+            ->where('status', CompanyCountryPermission::STATUS_ACTIVE)
+            ->when(!empty($desiredCodes), fn ($q) => $q->whereNotIn('country_code', $desiredCodes))
+            ->update(['status' => CompanyCountryPermission::STATUS_REVOKED]);
+
+        return $this->countryPermissions($request, $company);
     }
 
     private function denyUnlessSuperAdmin(Request $request): ?JsonResponse
