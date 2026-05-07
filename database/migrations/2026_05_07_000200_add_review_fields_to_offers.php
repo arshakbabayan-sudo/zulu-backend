@@ -37,14 +37,13 @@ return new class extends Migration
                 $table->text('rejection_reason')->nullable()->after('reviewed_by');
             }
 
-            $table->index('status');
+            // status index already present from prior migrations (offers_status_index)
         });
     }
 
     public function down(): void
     {
         Schema::table('offers', function (Blueprint $table) {
-            $table->dropIndex(['status']);
             if (Schema::hasColumn('offers', 'rejection_reason')) {
                 $table->dropColumn('rejection_reason');
             }
