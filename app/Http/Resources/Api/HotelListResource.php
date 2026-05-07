@@ -58,6 +58,22 @@ class HotelListResource extends JsonResource
             'rooms' => $this->relationLoaded('rooms') ? $this->rooms->count() : null,
         ]);
 
+        // City/country/region were dropped from the hotels table when the
+        // location_id FK was added — derive them from the location subtree.
+        // Walks: city (loc itself if leaf) → region (parent) → country (root).
+        $city = null;
+        $region = null;
+        $country = null;
+        $loc = $this->relationLoaded('location') ? $this->location : ($this->location_id ? $this->location()->first() : null);
+        if ($loc) {
+            $chain = $loc->ancestors()->push($loc);
+            foreach ($chain as $node) {
+                if ($node->type === 'city') $city = $node->name;
+                elseif ($node->type === 'region') $region = $node->name;
+                elseif ($node->type === 'country') $country = $node->name;
+            }
+        }
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
@@ -66,10 +82,10 @@ class HotelListResource extends JsonResource
             'property_type' => $this->property_type,
             'hotel_type' => $this->hotel_type,
             'star_rating' => $this->star_rating,
-            'country' => $this->country,
+            'country' => $country,
             'location_id' => $this->location_id,
-            'region_or_state' => $this->region_or_state,
-            'city' => $this->city,
+            'region_or_state' => $region,
+            'city' => $city,
             'district_or_area' => $this->district_or_area,
             'full_address' => $this->full_address,
             'latitude' => $this->latitude !== null ? (float) $this->latitude : null,

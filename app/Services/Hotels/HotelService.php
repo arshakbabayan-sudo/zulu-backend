@@ -408,7 +408,7 @@ class HotelService
         $this->applyDefaultHotelListOrdering($query);
 
         $paginator = $query->paginate($perPage);
-        $paginator->getCollection()->load(['offer', 'rooms.pricings']);
+        $paginator->getCollection()->load(['offer', 'rooms.pricings', 'location']);
 
         return $paginator;
     }
