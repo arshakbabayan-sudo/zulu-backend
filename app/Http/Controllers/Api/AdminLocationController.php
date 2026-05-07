@@ -206,12 +206,14 @@ class AdminLocationController extends Controller
     public function searchPublic(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'q' => ['required', 'string', 'min:1', 'max:80'],
+            // q is optional when `types` is provided — lets clients ask
+            // "list all countries" without inventing a placeholder query.
+            'q' => ['sometimes', 'nullable', 'string', 'max:80'],
             'types' => ['sometimes', 'nullable', 'string'],
-            'limit' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:50'],
+            'limit' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:200'],
         ]);
 
-        $q = trim($validated['q']);
+        $q = trim($validated['q'] ?? '');
         $limit = (int) ($validated['limit'] ?? 12);
 
         $allowedTypes = ['country', 'region', 'city'];
@@ -227,14 +229,18 @@ class AdminLocationController extends Controller
         // Prefix match first, then contains
         $like = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q);
 
-        $rows = Location::query()
+        $base = Location::query()
             ->whereIn('type', $types)
-            ->where('is_active', true)
-            ->where(function ($w) use ($like) {
+            ->where('is_active', true);
+
+        if ($q !== '') {
+            $base->where(function ($w) use ($like) {
                 $w->where('name', 'ilike', $like.'%')
                   ->orWhere('name', 'ilike', '%'.$like.'%');
-            })
-            ->orderByRaw("CASE WHEN name ILIKE ? THEN 0 ELSE 1 END", [$like.'%'])
+            })->orderByRaw("CASE WHEN name ILIKE ? THEN 0 ELSE 1 END", [$like.'%']);
+        }
+
+        $rows = $base
             ->orderByRaw("CASE type WHEN 'country' THEN 1 WHEN 'region' THEN 2 WHEN 'city' THEN 3 ELSE 4 END")
             ->orderBy('name')
             ->limit($limit)
