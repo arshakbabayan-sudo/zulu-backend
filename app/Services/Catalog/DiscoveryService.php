@@ -4,6 +4,7 @@ namespace App\Services\Catalog;
 
 use App\Models\Hotel;
 use App\Models\HotelRoom;
+use App\Models\Location;
 use App\Models\Offer;
 use App\Models\Review;
 use App\Models\ServiceConnection;
@@ -355,13 +356,16 @@ class DiscoveryService
         ?string $cabinClass,
         mixed $isPackageEligible
     ): void {
-        $flightFilter = function (Builder $q) use ($from, $to, $isDirect, $hasBaggage, $cabinClass, $isPackageEligible, $moduleType): void {
+        $fromIds = $from !== null ? $this->resolveLocationIdsByName($from) : null;
+        $toIds = $to !== null ? $this->resolveLocationIdsByName($to) : null;
+
+        $flightFilter = function (Builder $q) use ($fromIds, $toIds, $isDirect, $hasBaggage, $cabinClass, $isPackageEligible, $moduleType): void {
             $q->where('appears_in_web', true);
-            if ($from !== null) {
-                $q->where('departure_city', 'like', $this->likeWrap($from));
+            if ($fromIds !== null) {
+                $q->whereIn('departure_location_id', $fromIds);
             }
-            if ($to !== null) {
-                $q->where('arrival_city', 'like', $this->likeWrap($to));
+            if ($toIds !== null) {
+                $q->whereIn('arrival_location_id', $toIds);
             }
             if ($cabinClass !== null) {
                 $q->where('cabin_class', $cabinClass);
@@ -473,7 +477,7 @@ class DiscoveryService
                 // exist + the location tree by name (so "Yerevan" hits hotels
                 // with location_id pointing at any Yerevan node).
                 $like = $this->likeWrap($destination);
-                $matchingLocationIds = \App\Models\Location::query()
+                $matchingLocationIds = Location::query()
                     ->where(function ($w) use ($like) {
                         $w->where('name', 'ilike', $like);
                     })
@@ -484,7 +488,7 @@ class DiscoveryService
                     $hq->where('hotel_name', 'ilike', $like)
                         ->orWhere('district_or_area', 'ilike', $like)
                         ->orWhere('full_address', 'ilike', $like);
-                    if (!empty($matchingLocationIds)) {
+                    if (! empty($matchingLocationIds)) {
                         $hq->orWhereIn('location_id', $matchingLocationIds);
                     }
                 });
@@ -561,7 +565,10 @@ class DiscoveryService
             }
         }
 
-        $transferFilter = function (Builder $q) use ($from, $to, $vehicleType, $privateOnly, $isPackageEligible, $moduleType, $applyTransferVisibilityControls, $allowedTransferIds): void {
+        $fromIds = $from !== null ? $this->resolveLocationIdsByName($from) : null;
+        $toIds = $to !== null ? $this->resolveLocationIdsByName($to) : null;
+
+        $transferFilter = function (Builder $q) use ($fromIds, $toIds, $vehicleType, $privateOnly, $isPackageEligible, $moduleType, $applyTransferVisibilityControls, $allowedTransferIds): void {
             if ($applyTransferVisibilityControls) {
                 // Public discovery context.
                 $this->offerVisibilityService->applyVisibilityFilter($q, 'web');
@@ -572,11 +579,11 @@ class DiscoveryService
                 $q->whereIn($q->getModel()->getTable().'.id', $allowedTransferIds);
             }
 
-            if ($from !== null) {
-                $q->where('pickup_city', 'like', $this->likeWrap($from));
+            if ($fromIds !== null) {
+                $q->whereIn('origin_location_id', $fromIds);
             }
-            if ($to !== null) {
-                $q->where('dropoff_city', 'like', $this->likeWrap($to));
+            if ($toIds !== null) {
+                $q->whereIn('destination_location_id', $toIds);
             }
             if ($vehicleType !== null) {
                 $q->where('vehicle_category', $vehicleType);
@@ -1177,33 +1184,35 @@ class DiscoveryService
 
         $like = $this->likeWrap($country);
         // Hotels no longer have a "country" text column — resolve to location_ids
-        $hotelLocIds = \App\Models\Location::query()
+        $hotelLocIds = Location::query()
             ->where('type', 'country')
             ->where('name', 'ilike', $like)
             ->pluck('id')
-            ->flatMap(fn ($id) => \App\Models\Location::subtreeLocationIds((int) $id))
+            ->flatMap(fn ($id) => Location::subtreeLocationIds((int) $id))
             ->unique()
             ->values()
             ->all();
 
         $query->where(function (Builder $q) use ($moduleType, $like, $hotelLocIds): void {
             if ($moduleType === 'hotel') {
-                if (!empty($hotelLocIds)) {
+                if (! empty($hotelLocIds)) {
                     $q->whereHas('hotel', fn (Builder $hq) => $hq->whereIn('location_id', $hotelLocIds));
                 } else {
                     $q->whereRaw('0 = 1');
                 }
+
                 return;
             }
 
             if ($moduleType === 'package') {
                 $q->whereHas('package', fn (Builder $pq) => $pq->where('destination_country', 'like', $like));
+
                 return;
             }
 
             $q->where(function (Builder $hq) use ($hotelLocIds): void {
                 $hq->where('type', 'hotel');
-                if (!empty($hotelLocIds)) {
+                if (! empty($hotelLocIds)) {
                     $hq->whereHas('hotel', fn (Builder $hotel) => $hotel->whereIn('location_id', $hotelLocIds));
                 } else {
                     $hq->whereRaw('0 = 1');
@@ -1221,7 +1230,7 @@ class DiscoveryService
         }
 
         $like = $this->likeWrap($city);
-        $hotelLocIds = \App\Models\Location::query()
+        $hotelLocIds = Location::query()
             ->whereIn('type', ['city', 'region'])
             ->where('name', 'ilike', $like)
             ->pluck('id')
@@ -1229,22 +1238,24 @@ class DiscoveryService
 
         $query->where(function (Builder $q) use ($moduleType, $like, $hotelLocIds): void {
             if ($moduleType === 'hotel') {
-                if (!empty($hotelLocIds)) {
+                if (! empty($hotelLocIds)) {
                     $q->whereHas('hotel', fn (Builder $hq) => $hq->whereIn('location_id', $hotelLocIds));
                 } else {
                     $q->whereRaw('0 = 1');
                 }
+
                 return;
             }
 
             if ($moduleType === 'package') {
                 $q->whereHas('package', fn (Builder $pq) => $pq->where('destination_city', 'like', $like));
+
                 return;
             }
 
             $q->where(function (Builder $hq) use ($hotelLocIds): void {
                 $hq->where('type', 'hotel');
-                if (!empty($hotelLocIds)) {
+                if (! empty($hotelLocIds)) {
                     $hq->whereHas('hotel', fn (Builder $hotel) => $hotel->whereIn('location_id', $hotelLocIds));
                 } else {
                     $hq->whereRaw('0 = 1');
@@ -1513,14 +1524,51 @@ class DiscoveryService
         }
         if (is_numeric($value)) {
             $cast = (int) $value;
+
             return $cast > 0 ? $cast : null;
         }
+
         return null;
     }
 
     private function likeWrap(string $term): string
     {
         return '%'.addcslashes($term, '%_\\').'%';
+    }
+
+    /**
+     * Resolve a free-text city/region/country name to a list of location ids
+     * (the matched node and its full subtree). Returns [-1] when nothing
+     * matches, so the calling whereIn() returns no rows.
+     *
+     * @return list<int>
+     */
+    private function resolveLocationIdsByName(string $name): array
+    {
+        $trimmed = trim($name);
+        if ($trimmed === '') {
+            return [-1];
+        }
+
+        $matches = Location::query()
+            ->where('name', 'like', $this->likeWrap($trimmed))
+            ->limit(20)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        if ($matches === []) {
+            return [-1];
+        }
+
+        $ids = [];
+        foreach ($matches as $matchId) {
+            foreach (Location::subtreeLocationIds($matchId) as $subId) {
+                $ids[$subId] = true;
+            }
+        }
+
+        return array_keys($ids) === [] ? [-1] : array_keys($ids);
     }
 
     /**
@@ -1549,22 +1597,27 @@ class DiscoveryService
 
         if ($moduleType === 'hotel') {
             $query->whereHas('hotel', fn ($q) => $q->forLocation($primary));
+
             return;
         }
         if ($moduleType === 'car') {
             $query->whereHas('car', fn ($q) => $q->forLocation($primary));
+
             return;
         }
         if ($moduleType === 'excursion') {
             $query->whereHas('excursion', fn ($q) => $q->forLocation($primary));
+
             return;
         }
         if ($moduleType === 'visa') {
             $query->whereHas('visa', fn ($q) => $q->forLocation($primary));
+
             return;
         }
         if ($moduleType === 'package') {
             $query->whereHas('package', fn ($q) => $q->forLocation($primary));
+
             return;
         }
         if ($moduleType === 'flight') {
@@ -1582,6 +1635,7 @@ class DiscoveryService
                     $q->forLocation($primary);
                 }
             });
+
             return;
         }
         if ($moduleType === 'transfer') {
@@ -1592,9 +1646,11 @@ class DiscoveryService
                     $ids = ['from' => $fromLocationId, 'to' => $toLocationId];
                     $q->forLocation($ids['from'])->forLocation($ids['to']);
                 });
+
                 return;
             }
             $query->whereHas('transfer', fn ($q) => $q->forLocation($primary));
+
             return;
         }
 
@@ -1602,16 +1658,20 @@ class DiscoveryService
         // module-content row has a location_id in the subtree.
         $query->where(function (Builder $w) use ($primary, $fromLocationId, $toLocationId) {
             $w->orWhereHas('hotel', fn ($q) => $q->forLocation($primary))
-              ->orWhereHas('car', fn ($q) => $q->forLocation($primary))
-              ->orWhereHas('excursion', fn ($q) => $q->forLocation($primary))
-              ->orWhereHas('visa', fn ($q) => $q->forLocation($primary))
-              ->orWhereHas('package', fn ($q) => $q->forLocation($primary))
-              ->orWhereHas('flight', function ($q) use ($fromLocationId, $toLocationId, $primary) {
-                  if ($fromLocationId !== null) $q->forDepartureLocation($fromLocationId);
-                  elseif ($toLocationId !== null) $q->forArrivalLocation($toLocationId);
-                  else $q->forLocation($primary);
-              })
-              ->orWhereHas('transfer', fn ($q) => $q->forLocation($primary));
+                ->orWhereHas('car', fn ($q) => $q->forLocation($primary))
+                ->orWhereHas('excursion', fn ($q) => $q->forLocation($primary))
+                ->orWhereHas('visa', fn ($q) => $q->forLocation($primary))
+                ->orWhereHas('package', fn ($q) => $q->forLocation($primary))
+                ->orWhereHas('flight', function ($q) use ($fromLocationId, $toLocationId, $primary) {
+                    if ($fromLocationId !== null) {
+                        $q->forDepartureLocation($fromLocationId);
+                    } elseif ($toLocationId !== null) {
+                        $q->forArrivalLocation($toLocationId);
+                    } else {
+                        $q->forLocation($primary);
+                    }
+                })
+                ->orWhereHas('transfer', fn ($q) => $q->forLocation($primary));
         });
     }
 

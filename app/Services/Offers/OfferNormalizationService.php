@@ -6,6 +6,7 @@ use App\Models\Car;
 use App\Models\Excursion;
 use App\Models\Flight;
 use App\Models\Hotel;
+use App\Models\Location;
 use App\Models\Offer;
 use App\Models\Package;
 use App\Models\Transfer;
@@ -97,15 +98,17 @@ class OfferNormalizationService
         $f = $offer->flight;
 
         $base = $this->baseFromOffer($offer, 'flight', $retailAsMainPrice, $lang);
+        $departureLabels = $this->locationLabelsFor($f->departure_location_id);
+        $arrivalLabels = $this->locationLabelsFor($f->arrival_location_id);
         $base['from_location'] = $this->formatFlightEndpoint(
             $f->departure_airport,
             $f->departure_airport_code,
-            $f->departure_city
+            ($f->getAttributes()['departure_city'] ?? null) ?: $departureLabels['city']
         );
         $base['to_location'] = $this->formatFlightEndpoint(
             $f->arrival_airport,
             $f->arrival_airport_code,
-            $f->arrival_city
+            ($f->getAttributes()['arrival_city'] ?? null) ?: $arrivalLabels['city']
         );
         $base['start_datetime'] = $this->toIso8601($f->departure_at);
         $base['end_datetime'] = $this->toIso8601($f->arrival_at);
@@ -143,7 +146,10 @@ class OfferNormalizationService
         $base['main_image'] = $h->main_image;
         $base['rating'] = $h->review_score;
         $base['review_count'] = $h->review_count;
-        $base['destination_location'] = $this->formatHotelDestination($h->city, $h->country);
+        $hotelLabels = $this->locationLabelsFor($h->location_id);
+        $hotelCity = ($h->getAttributes()['city'] ?? null) ?: $hotelLabels['city'];
+        $hotelCountry = ($h->getAttributes()['country'] ?? null) ?: $hotelLabels['country'];
+        $base['destination_location'] = $this->formatHotelDestination($hotelCity, $hotelCountry);
         $base['capacity_type'] = 'room';
         $base['price_type'] = 'per_room';
         $base['availability_status'] = $h->availability_status;
@@ -170,15 +176,18 @@ class OfferNormalizationService
         $t = $offer->transfer;
 
         $base = $this->baseFromOffer($offer, 'transfer', $retailAsMainPrice, $lang);
+        $originLabels = $this->locationLabelsFor($t->origin_location_id);
+        $destinationLabels = $this->locationLabelsFor($t->destination_location_id);
+        $tAttrs = $t->getAttributes();
         $base['from_location'] = $this->formatTransferEndpoint(
             $t->pickup_point_name,
-            $t->pickup_city,
-            $t->pickup_country
+            ($tAttrs['pickup_city'] ?? null) ?: $originLabels['city'],
+            ($tAttrs['pickup_country'] ?? null) ?: $originLabels['country']
         );
         $base['to_location'] = $this->formatTransferEndpoint(
             $t->dropoff_point_name,
-            $t->dropoff_city,
-            $t->dropoff_country
+            ($tAttrs['dropoff_city'] ?? null) ?: $destinationLabels['city'],
+            ($tAttrs['dropoff_country'] ?? null) ?: $destinationLabels['country']
         );
         $base['start_datetime'] = $this->transferStartDatetime($t);
         $base['duration'] = $t->estimated_duration_minutes;
@@ -209,8 +218,12 @@ class OfferNormalizationService
         $c = $offer->car;
 
         $base = $this->baseFromOffer($offer, 'car', $retailAsMainPrice, $lang);
-        $base['from_location'] = $this->nullableNonEmptyString($c->pickup_location);
-        $base['to_location'] = $this->nullableNonEmptyString($c->dropoff_location);
+        $carLabels = $this->locationLabelsFor($c->location_id);
+        $carDerived = $carLabels['city'] ?? $carLabels['country'];
+        $base['from_location'] = $this->nullableNonEmptyString($c->getAttributes()['pickup_location'] ?? null)
+            ?? $carDerived;
+        $base['to_location'] = $this->nullableNonEmptyString($c->getAttributes()['dropoff_location'] ?? null)
+            ?? $carDerived;
         $base['vehicle_type'] = $this->nullableNonEmptyString($c->vehicle_class);
         $base['advanced_options'] = app(CarAdvancedOptionsNormalizer::class)->forApi(
             is_array($c->advanced_options) ? $c->advanced_options : null
@@ -344,6 +357,35 @@ class OfferNormalizationService
         }
 
         return $ordered;
+    }
+
+    /**
+     * Walk a location's parent chain to extract {city, country} labels. Used to
+     * keep normalized from_location / to_location populated from location_id FK
+     * after legacy text columns were dropped.
+     *
+     * @return array{city: ?string, country: ?string}
+     */
+    private function locationLabelsFor(?int $locationId): array
+    {
+        $labels = ['city' => null, 'country' => null];
+        if ($locationId === null) {
+            return $labels;
+        }
+
+        $cursor = Location::find($locationId);
+        $hops = 0;
+        while ($cursor !== null && $hops < 6) {
+            if ($cursor->type === Location::TYPE_CITY && $labels['city'] === null) {
+                $labels['city'] = $cursor->name;
+            } elseif ($cursor->type === Location::TYPE_COUNTRY && $labels['country'] === null) {
+                $labels['country'] = $cursor->name;
+            }
+            $cursor = $cursor->parent_id ? Location::find($cursor->parent_id) : null;
+            $hops++;
+        }
+
+        return $labels;
     }
 
     private function formatFlightEndpoint(?string $airport, ?string $code, ?string $city): ?string

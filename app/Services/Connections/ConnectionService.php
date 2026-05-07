@@ -6,6 +6,7 @@ use App\Events\ConnectionAccepted;
 use App\Events\ConnectionRejected;
 use App\Models\Flight;
 use App\Models\Hotel;
+use App\Models\Location;
 use App\Models\ServiceConnection;
 use App\Models\Transfer;
 use App\Models\User;
@@ -326,21 +327,21 @@ class ConnectionService
                 return [];
             }
 
-            return collect([$flight->departure_city, $flight->arrival_city])
-                ->filter(fn ($city): bool => is_string($city) && trim($city) !== '')
-                ->map(fn (string $city): string => trim($city))
-                ->unique(fn (string $city): string => mb_strtolower($city))
-                ->values()
-                ->all();
+            return $this->normalizeCityList([
+                ($flight->getAttributes()['departure_city'] ?? null) ?: $this->cityFromLocationId($flight->departure_location_id),
+                ($flight->getAttributes()['arrival_city'] ?? null) ?: $this->cityFromLocationId($flight->arrival_location_id),
+            ]);
         }
 
         if ($type === 'hotel') {
             $hotel = Hotel::query()->find($id);
-            if ($hotel === null || ! is_string($hotel->city) || trim($hotel->city) === '') {
+            if ($hotel === null) {
                 return [];
             }
 
-            return [trim($hotel->city)];
+            $city = $this->cityFromLocationId($hotel->location_id);
+
+            return $this->normalizeCityList([$city]);
         }
 
         if ($type === 'transfer') {
@@ -349,15 +350,46 @@ class ConnectionService
                 return [];
             }
 
-            return collect([$transfer->pickup_city, $transfer->dropoff_city])
-                ->filter(fn ($city): bool => is_string($city) && trim($city) !== '')
-                ->map(fn (string $city): string => trim($city))
-                ->unique(fn (string $city): string => mb_strtolower($city))
-                ->values()
-                ->all();
+            return $this->normalizeCityList([
+                $this->cityFromLocationId($transfer->origin_location_id),
+                $this->cityFromLocationId($transfer->destination_location_id),
+            ]);
         }
 
         return [];
+    }
+
+    private function cityFromLocationId(?int $locationId): ?string
+    {
+        if ($locationId === null) {
+            return null;
+        }
+
+        $cursor = Location::find($locationId);
+        $hops = 0;
+        while ($cursor !== null && $hops < 6) {
+            if ($cursor->type === Location::TYPE_CITY) {
+                return $cursor->name;
+            }
+            $cursor = $cursor->parent_id ? Location::find($cursor->parent_id) : null;
+            $hops++;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<mixed>  $cities
+     * @return list<string>
+     */
+    private function normalizeCityList(array $cities): array
+    {
+        return collect($cities)
+            ->filter(fn ($city): bool => is_string($city) && trim($city) !== '')
+            ->map(fn (string $city): string => trim($city))
+            ->unique(fn (string $city): string => mb_strtolower($city))
+            ->values()
+            ->all();
     }
 
     /**

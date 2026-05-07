@@ -376,7 +376,8 @@ class OfferNormalizationServiceTest extends TestCase
         $this->assertSame('per_room', $n['price_type']);
         $this->assertSame('room', $n['capacity_type']);
         $this->assertSame('stay', $n['package_role']);
-        $this->assertNull($n['destination_location']);
+        // destination_location now derives from location_id (yerevan_city → "Yerevan, Armenia")
+        $this->assertSame('Yerevan, Armenia', $n['destination_location']);
         $this->assertNull($n['subtitle']);
         $this->assertNull($n['stars']);
         $this->assertNull($n['rating']);
