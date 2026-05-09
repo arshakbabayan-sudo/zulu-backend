@@ -218,7 +218,7 @@ class AdminLocationController extends Controller
 
         $allowedTypes = ['country', 'region', 'city'];
         $types = $allowedTypes;
-        if (!empty($validated['types'])) {
+        if (! empty($validated['types'])) {
             $requested = array_filter(array_map('trim', explode(',', $validated['types'])));
             $types = array_values(array_intersect($allowedTypes, $requested));
             if (empty($types)) {
@@ -236,8 +236,8 @@ class AdminLocationController extends Controller
         if ($q !== '') {
             $base->where(function ($w) use ($like) {
                 $w->where('name', 'ilike', $like.'%')
-                  ->orWhere('name', 'ilike', '%'.$like.'%');
-            })->orderByRaw("CASE WHEN name ILIKE ? THEN 0 ELSE 1 END", [$like.'%']);
+                    ->orWhere('name', 'ilike', '%'.$like.'%');
+            })->orderByRaw('CASE WHEN name ILIKE ? THEN 0 ELSE 1 END', [$like.'%']);
         }
 
         $rows = $base
@@ -252,7 +252,7 @@ class AdminLocationController extends Controller
         $countryByCode = [];
         if ($rows->isNotEmpty()) {
             $codes = $rows->pluck('country_code')->filter()->unique()->all();
-            if (!empty($codes)) {
+            if (! empty($codes)) {
                 $countryByCode = Location::query()
                     ->where('type', 'country')
                     ->whereIn('country_code', $codes)
@@ -265,6 +265,7 @@ class AdminLocationController extends Controller
             $country = $row->country_code ? ($countryByCode[$row->country_code] ?? null) : null;
             $countryName = $country?->name;
             $flag = $row->flag_emoji ?: ($country?->flag_emoji);
+
             return [
                 'id' => $row->id,
                 'name' => $row->name,

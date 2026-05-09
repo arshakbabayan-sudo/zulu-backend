@@ -213,7 +213,7 @@ class WorldExtensionSeeder extends Seeder
             'name' => $name,
         ]);
 
-        if (!$loc->exists) {
+        if (! $loc->exists) {
             $loc->slug = Str::slug($name);
             $loc->parent_id = null;
             $loc->depth = 0;
@@ -235,7 +235,7 @@ class WorldExtensionSeeder extends Seeder
             'parent_id' => $country->id,
         ]);
 
-        if (!$loc->exists) {
+        if (! $loc->exists) {
             $loc->slug = Str::slug($country->name.'-'.$name);
             $loc->depth = 1; // direct child of country (no intermediate region)
             $loc->path = $country->path.'/'.$loc->id; // path patched after save
@@ -245,7 +245,7 @@ class WorldExtensionSeeder extends Seeder
         $loc->save();
 
         // Patch path with own id once we have it (firstOrNew didn't know id yet).
-        if (!str_ends_with($loc->path ?? '', '/'.$loc->id)) {
+        if (! str_ends_with($loc->path ?? '', '/'.$loc->id)) {
             $loc->path = $country->path.'/'.$loc->id;
             $loc->save();
         }

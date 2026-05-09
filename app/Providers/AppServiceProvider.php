@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use App\Models\Invoice;
+use App\Models\User;
 use App\Observers\InvoiceObserver;
+use App\Services\Admin\AdminAccessService;
 use App\Services\Packages\Saga\ComponentReserverRegistry;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -89,8 +91,8 @@ class AppServiceProvider extends ServiceProvider
 
             // Route admin/operator users to admin.zulu.am, customers to zulu.am.
             $isAdminAudience = false;
-            if ($notifiable instanceof \App\Models\User) {
-                $adminAccess = app(\App\Services\Admin\AdminAccessService::class);
+            if ($notifiable instanceof User) {
+                $adminAccess = app(AdminAccessService::class);
                 $isAdminAudience = $adminAccess->isSuperAdmin($notifiable)
                     || $adminAccess->isPlatformAdmin($notifiable)
                     || $adminAccess->isOperatorAdmin($notifiable, null);

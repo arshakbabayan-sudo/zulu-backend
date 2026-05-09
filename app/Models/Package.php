@@ -115,6 +115,7 @@ class Package extends Model
         if ($ids === []) {
             return $query->whereRaw('0 = 1');
         }
+
         return $query->whereIn($query->getModel()->getTable().'.destination_location_id', $ids);
     }
 }

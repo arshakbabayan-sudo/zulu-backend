@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ApprovalService
@@ -124,7 +125,7 @@ class ApprovalService
     public function approveBulk(array $ids, User $actor, ?string $notes = null): array
     {
         // Correlate all per-item audit rows belonging to the same bulk action.
-        $bulkBatchId = (string) \Illuminate\Support\Str::uuid();
+        $bulkBatchId = (string) Str::uuid();
 
         $results = [];
         foreach ($ids as $id) {

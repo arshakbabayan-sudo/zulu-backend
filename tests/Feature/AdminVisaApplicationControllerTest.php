@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\Notification;
-use App\Models\User;
 use App\Models\Company;
+use App\Models\Notification;
 use App\Models\Offer;
+use App\Models\User;
 use App\Models\Visa;
 use App\Models\VisaApplication;
 use Database\Seeders\RbacBootstrapSeeder;

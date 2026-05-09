@@ -468,13 +468,16 @@ class WorldLocationSeeder extends Seeder
         $node->depth = 0;
         $node->code = $iso2;
         $node->country_code = $iso2;
-        if ($flag !== null) $node->flag_emoji = $flag;
+        if ($flag !== null) {
+            $node->flag_emoji = $flag;
+        }
         $node->is_active = true;
         $node->save();
         if ($node->path === null) {
             $node->path = (string) $node->id;
             $node->save();
         }
+
         return $node->fresh();
     }
 
@@ -494,6 +497,7 @@ class WorldLocationSeeder extends Seeder
             $node->path = trim((string) $parent->path, '/').'/'.$node->id;
             $node->save();
         }
+
         return $node->fresh();
     }
 
@@ -513,6 +517,7 @@ class WorldLocationSeeder extends Seeder
             $node->path = trim((string) $parent->path, '/').'/'.$node->id;
             $node->save();
         }
+
         return $node->fresh();
     }
 }

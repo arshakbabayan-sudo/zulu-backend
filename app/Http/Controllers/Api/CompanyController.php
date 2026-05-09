@@ -533,7 +533,7 @@ class CompanyController extends Controller
         CompanyCountryPermission::query()
             ->where('company_id', $company->id)
             ->where('status', CompanyCountryPermission::STATUS_ACTIVE)
-            ->when(!empty($desiredCodes), fn ($q) => $q->whereNotIn('country_code', $desiredCodes))
+            ->when(! empty($desiredCodes), fn ($q) => $q->whereNotIn('country_code', $desiredCodes))
             ->update(['status' => CompanyCountryPermission::STATUS_REVOKED]);
 
         return $this->countryPermissions($request, $company);

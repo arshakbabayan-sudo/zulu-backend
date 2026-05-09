@@ -53,7 +53,7 @@ class GeoRestrictionService
             ->where('status', CompanyCountryPermission::STATUS_ACTIVE)
             ->where(function ($q) use ($serviceCountryLc) {
                 $q->whereRaw('LOWER(country_name) = ?', [$serviceCountryLc])
-                  ->orWhereRaw('LOWER(country_code) = ?', [$serviceCountryLc]);
+                    ->orWhereRaw('LOWER(country_code) = ?', [$serviceCountryLc]);
             })
             ->exists();
 

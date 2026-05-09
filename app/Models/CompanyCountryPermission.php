@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CompanyCountryPermission extends Model
 {
     public const STATUS_ACTIVE = 'active';
+
     public const STATUS_REVOKED = 'revoked';
 
     public const STATUSES = [

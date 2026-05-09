@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Infrastructure\GeoRestrictionService;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -8,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
  * Multi-country seller permissions.
  *
  * Until now `companies.country` was a single value compared 1:1 against
- * the service country in {@see App\Services\Infrastructure\GeoRestrictionService}.
+ * the service country in {@see GeoRestrictionService}.
  * That blocked legitimate operators with multi-country licenses (e.g.
  * an Armenia-registered tour operator who also has rights to sell
  * Russia / UAE packages).
