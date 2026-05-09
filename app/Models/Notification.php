@@ -32,6 +32,8 @@ class Notification extends Model
         'voucher.reissued',
         'account.welcome',
         'account.password_reset',
+        'offer.approved',
+        'offer.rejected',
     ];
 
     /** @var list<string> */

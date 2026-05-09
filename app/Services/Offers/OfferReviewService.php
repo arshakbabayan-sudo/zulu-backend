@@ -4,7 +4,9 @@ namespace App\Services\Offers;
 
 use App\Models\Offer;
 use App\Models\User;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -23,6 +25,8 @@ use Illuminate\Validation\ValidationException;
  */
 class OfferReviewService
 {
+    public function __construct(private readonly NotificationService $notifications) {}
+
     /** Operator submits a draft offer for super-admin review. */
     public function submitForReview(Offer $offer, User $operator): Offer
     {
@@ -57,7 +61,10 @@ class OfferReviewService
         $offer->rejection_reason = null;
         $offer->save();
 
-        return $offer->fresh();
+        $fresh = $offer->fresh();
+        $this->notifyCompanyUsers($fresh, 'offer.approved');
+
+        return $fresh;
     }
 
     /** Super admin rejects a pending_review offer → rejected (reason required). */
@@ -80,7 +87,61 @@ class OfferReviewService
         $offer->rejection_reason = trim($reason);
         $offer->save();
 
-        return $offer->fresh();
+        $fresh = $offer->fresh();
+        $this->notifyCompanyUsers($fresh, 'offer.rejected');
+
+        return $fresh;
+    }
+
+    /**
+     * Send in-app + email notification to every user belonging to the offer's
+     * company. Failures are logged but never bubble up: the review-decision
+     * itself has already been persisted, so a downstream notification glitch
+     * must not roll it back.
+     */
+    private function notifyCompanyUsers(Offer $offer, string $eventType): void
+    {
+        if ($offer->company_id === null) {
+            return;
+        }
+
+        $title = $eventType === 'offer.approved'
+            ? 'Your listing was approved'
+            : 'Your listing was rejected';
+
+        $offerLabel = $offer->title !== null && $offer->title !== ''
+            ? '"'.$offer->title.'"'
+            : "#{$offer->id}";
+
+        $message = $eventType === 'offer.approved'
+            ? "Your {$offer->type} listing {$offerLabel} has been approved by the platform team and is now live for customers."
+            : "Your {$offer->type} listing {$offerLabel} was rejected. Reason: {$offer->rejection_reason}";
+
+        $userIds = User::query()
+            ->whereHas('companies', fn ($q) => $q->where('companies.id', $offer->company_id))
+            ->pluck('id');
+
+        foreach ($userIds as $userId) {
+            try {
+                $this->notifications->createForEventWithEmail([
+                    'user_id' => (int) $userId,
+                    'event_type' => $eventType,
+                    'title' => $title,
+                    'message' => $message,
+                    'subject_type' => Offer::class,
+                    'subject_id' => $offer->id,
+                    'related_company_id' => $offer->company_id,
+                    'priority' => $eventType === 'offer.rejected' ? 'high' : 'normal',
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Offer review notification failed', [
+                    'offer_id' => $offer->id,
+                    'event_type' => $eventType,
+                    'user_id' => $userId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
