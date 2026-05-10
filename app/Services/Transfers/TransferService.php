@@ -663,6 +663,8 @@ class TransferService
             'bookable' => ['boolean'],
             'is_package_eligible' => ['boolean'],
             'status' => ['required', 'string', 'max:32'],
+            'main_image' => ['nullable', 'string', 'max:2048'],
+            'short_description' => ['nullable', 'string'],
         ];
     }
 

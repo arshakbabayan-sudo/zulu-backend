@@ -908,6 +908,8 @@ class FlightService
             'appears_in_admin' => ['required', 'boolean'],
             'appears_in_zulu_admin' => ['required', 'boolean'],
             'status' => ['required', 'string', Rule::in(Flight::STATUSES)],
+            'main_image' => ['nullable', 'string', 'max:2048'],
+            'short_description' => ['nullable', 'string'],
         ];
     }
 

@@ -533,6 +533,8 @@ class PackageService
             'is_bookable' => ['boolean'],
             'is_package_eligible' => ['boolean'],
             'status' => ['string', 'max:32', 'in:'.implode(',', Package::STATUSES)],
+            'main_image' => ['nullable', 'string', 'max:2048'],
+            'short_description' => ['nullable', 'string'],
         ];
     }
 
@@ -560,6 +562,8 @@ class PackageService
             'is_bookable' => ['sometimes', 'boolean'],
             'is_package_eligible' => ['sometimes', 'boolean'],
             'status' => ['sometimes', 'string', 'max:32', 'in:'.implode(',', Package::STATUSES)],
+            'main_image' => ['sometimes', 'nullable', 'string', 'max:2048'],
+            'short_description' => ['sometimes', 'nullable', 'string'],
         ];
     }
 }

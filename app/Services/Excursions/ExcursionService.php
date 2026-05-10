@@ -141,6 +141,8 @@ class ExcursionService
             'appears_in_web' => array_merge($opt, ['boolean']),
             'appears_in_admin' => array_merge($opt, ['boolean']),
             'appears_in_zulu_admin' => array_merge($opt, ['boolean']),
+            'main_image' => array_merge($opt, ['string', 'max:2048']),
+            'short_description' => array_merge($opt, ['string']),
         ];
     }
 
