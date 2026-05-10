@@ -535,6 +535,8 @@ class PackageService
             'status' => ['string', 'max:32', 'in:'.implode(',', Package::STATUSES)],
             'main_image' => ['nullable', 'string', 'max:2048'],
             'short_description' => ['nullable', 'string'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
         ];
     }
 
@@ -564,6 +566,8 @@ class PackageService
             'status' => ['sometimes', 'string', 'max:32', 'in:'.implode(',', Package::STATUSES)],
             'main_image' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'short_description' => ['sometimes', 'nullable', 'string'],
+            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
         ];
     }
 }

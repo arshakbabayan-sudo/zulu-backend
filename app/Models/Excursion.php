@@ -45,6 +45,8 @@ class Excursion extends Model
         'appears_in_zulu_admin',
         'short_description',
         'main_image',
+        'latitude',
+        'longitude',
     ];
 
     /**

@@ -143,6 +143,8 @@ class ExcursionService
             'appears_in_zulu_admin' => array_merge($opt, ['boolean']),
             'main_image' => array_merge($opt, ['string', 'max:2048']),
             'short_description' => array_merge($opt, ['string']),
+            'latitude' => array_merge($opt, ['numeric', 'between:-90,90']),
+            'longitude' => array_merge($opt, ['numeric', 'between:-180,180']),
         ];
     }
 

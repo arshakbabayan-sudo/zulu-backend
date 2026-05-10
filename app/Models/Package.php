@@ -49,6 +49,8 @@ class Package extends Model
         'status',
         'short_description',
         'main_image',
+        'latitude',
+        'longitude',
     ];
 
     protected function casts(): array

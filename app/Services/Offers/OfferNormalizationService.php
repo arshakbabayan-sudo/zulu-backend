@@ -225,6 +225,8 @@ class OfferNormalizationService
         $base['package_role'] = 'transfer';
         $base['main_image'] = $t->main_image;
         $base['subtitle'] = $this->nullableNonEmptyString($t->short_description) ?? $base['subtitle'];
+        $base['latitude'] = $t->pickup_latitude !== null ? (float) $t->pickup_latitude : null;
+        $base['longitude'] = $t->pickup_longitude !== null ? (float) $t->pickup_longitude : null;
 
         return $this->assertKeyOrder($base);
     }
@@ -253,6 +255,8 @@ class OfferNormalizationService
         );
         $base['main_image'] = $c->main_image;
         $base['subtitle'] = $this->nullableNonEmptyString($c->short_description) ?? $base['subtitle'];
+        $base['latitude'] = $c->latitude !== null ? (float) $c->latitude : null;
+        $base['longitude'] = $c->longitude !== null ? (float) $c->longitude : null;
 
         return $this->assertKeyOrder($base);
     }
@@ -274,6 +278,8 @@ class OfferNormalizationService
         $base['max_passengers'] = $e->group_size;
         $base['main_image'] = $e->main_image;
         $base['subtitle'] = $this->nullableNonEmptyString($e->short_description) ?? $base['subtitle'];
+        $base['latitude'] = $e->latitude !== null ? (float) $e->latitude : null;
+        $base['longitude'] = $e->longitude !== null ? (float) $e->longitude : null;
 
         return $this->assertKeyOrder($base);
     }
@@ -304,6 +310,8 @@ class OfferNormalizationService
         if ($base['subtitle'] === null && $p->short_description !== null && $p->short_description !== '') {
             $base['subtitle'] = $p->short_description;
         }
+        $base['latitude'] = $p->latitude !== null ? (float) $p->latitude : null;
+        $base['longitude'] = $p->longitude !== null ? (float) $p->longitude : null;
 
         return $this->assertKeyOrder($base);
     }
