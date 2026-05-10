@@ -47,6 +47,8 @@ class Package extends Model
         'is_featured',
         'component_count',
         'status',
+        'short_description',
+        'main_image',
     ];
 
     protected function casts(): array

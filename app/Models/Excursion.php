@@ -43,6 +43,8 @@ class Excursion extends Model
         'appears_in_web',
         'appears_in_admin',
         'appears_in_zulu_admin',
+        'short_description',
+        'main_image',
     ];
 
     /**

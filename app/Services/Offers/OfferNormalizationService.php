@@ -130,6 +130,8 @@ class OfferNormalizationService
         $base['cabins'] = $f->relationLoaded('cabins')
             ? $f->cabinsForApiResponse()
             : null;
+        $base['main_image'] = $f->main_image;
+        $base['subtitle'] = $this->nullableNonEmptyString($f->short_description) ?? $base['subtitle'];
 
         return $this->assertKeyOrder($base);
     }
@@ -221,6 +223,8 @@ class OfferNormalizationService
         $base['vehicle_type'] = $t->vehicle_category;
         $base['is_package_eligible'] = $t->is_package_eligible;
         $base['package_role'] = 'transfer';
+        $base['main_image'] = $t->main_image;
+        $base['subtitle'] = $this->nullableNonEmptyString($t->short_description) ?? $base['subtitle'];
 
         return $this->assertKeyOrder($base);
     }
@@ -247,6 +251,8 @@ class OfferNormalizationService
         $base['advanced_options'] = app(CarAdvancedOptionsNormalizer::class)->forApi(
             is_array($c->advanced_options) ? $c->advanced_options : null
         );
+        $base['main_image'] = $c->main_image;
+        $base['subtitle'] = $this->nullableNonEmptyString($c->short_description) ?? $base['subtitle'];
 
         return $this->assertKeyOrder($base);
     }
@@ -266,6 +272,8 @@ class OfferNormalizationService
         $base['destination_location'] = $this->nullableNonEmptyString($e->location);
         $base['duration'] = $this->nullableNonEmptyString($e->duration);
         $base['max_passengers'] = $e->group_size;
+        $base['main_image'] = $e->main_image;
+        $base['subtitle'] = $this->nullableNonEmptyString($e->short_description) ?? $base['subtitle'];
 
         return $this->assertKeyOrder($base);
     }
@@ -292,6 +300,10 @@ class OfferNormalizationService
         $base['duration'] = $p->duration_days;
         $base['is_package_eligible'] = true;
         $base['package_role'] = 'package';
+        $base['main_image'] = $p->main_image;
+        if ($base['subtitle'] === null && $p->short_description !== null && $p->short_description !== '') {
+            $base['subtitle'] = $p->short_description;
+        }
 
         return $this->assertKeyOrder($base);
     }

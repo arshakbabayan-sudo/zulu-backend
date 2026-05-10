@@ -106,6 +106,8 @@ class Transfer extends Model
         'is_package_eligible',
         'appears_in_packages',
         'status',
+        'short_description',
+        'main_image',
     ];
 
     protected function casts(): array
