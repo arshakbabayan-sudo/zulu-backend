@@ -63,6 +63,10 @@ class OfferNormalizationService
         'package_role',
         'advanced_options',
         'cabins',
+        'review_label',
+        'latitude',
+        'longitude',
+        'amenities',
     ];
 
     /**
@@ -158,6 +162,21 @@ class OfferNormalizationService
         $base['refundable_type'] = $h->cancellation_policy_type;
         $base['meal_type'] = $h->meal_type;
         $base['stars'] = $h->star_rating;
+        $base['review_label'] = $h->review_label;
+        $base['latitude'] = $h->latitude !== null ? (float) $h->latitude : null;
+        $base['longitude'] = $h->longitude !== null ? (float) $h->longitude : null;
+        $base['amenities'] = [
+            'free_wifi' => (bool) $h->free_wifi,
+            'parking' => (bool) $h->parking,
+            'airport_shuttle' => (bool) $h->airport_shuttle,
+            'indoor_pool' => (bool) $h->indoor_pool,
+            'outdoor_pool' => (bool) $h->outdoor_pool,
+            'room_service' => (bool) $h->room_service,
+            'front_desk_24h' => (bool) $h->front_desk_24h,
+            'child_friendly' => (bool) $h->child_friendly,
+            'accessibility_support' => (bool) $h->accessibility_support,
+            'pets_allowed' => (bool) $h->pets_allowed,
+        ];
         $base['is_package_eligible'] = $h->is_package_eligible;
         $base['package_role'] = 'stay';
 
