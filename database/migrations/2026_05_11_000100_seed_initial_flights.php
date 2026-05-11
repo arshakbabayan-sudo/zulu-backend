@@ -237,11 +237,12 @@ return new class extends Migration
                 'company_id' => $companyId,
                 'flight_code_internal' => $r['code'],
                 'service_type' => $r['service_type'],
-                'departure_country' => $r['from_country'],
+                // Country columns were dropped in the 2026-04 location-cleanup —
+                // departure_city / arrival_city stay as denormalized labels and
+                // departure_location_id / arrival_location_id carry the FK truth.
                 'departure_city' => $r['from_city'],
                 'departure_airport' => $r['from_airport'],
                 'departure_airport_code' => $r['from'],
-                'arrival_country' => $r['to_country'],
                 'arrival_city' => $r['to_city'],
                 'arrival_airport' => $r['to_airport'],
                 'arrival_airport_code' => $r['to'],
