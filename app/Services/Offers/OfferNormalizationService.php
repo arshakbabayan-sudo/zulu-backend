@@ -67,6 +67,10 @@ class OfferNormalizationService
         'fuel_type',
         'suitcases',
         'small_bag',
+        'excursion_overview',
+        'excursion_type',
+        'excursion_category',
+        'excursion_language',
         'is_package_eligible',
         'package_role',
         'advanced_options',
@@ -294,8 +298,15 @@ class OfferNormalizationService
         $base['destination_location'] = $this->nullableNonEmptyString($e->location);
         $base['duration'] = $this->nullableNonEmptyString($e->duration);
         $base['max_passengers'] = $e->group_size;
+        $base['capacity_type'] = 'group';
         $base['main_image'] = $e->main_image;
         $base['subtitle'] = $this->nullableNonEmptyString($e->short_description) ?? $base['subtitle'];
+        $base['start_datetime'] = $e->starts_at !== null ? $e->starts_at->toIso8601String() : null;
+        $base['end_datetime'] = $e->ends_at !== null ? $e->ends_at->toIso8601String() : null;
+        $base['excursion_overview'] = $this->nullableNonEmptyString($e->overview);
+        $base['excursion_type'] = $this->nullableNonEmptyString($e->excursion_type);
+        $base['excursion_category'] = $this->nullableNonEmptyString($e->general_category);
+        $base['excursion_language'] = $this->nullableNonEmptyString($e->language);
         $base['latitude'] = $e->latitude !== null ? (float) $e->latitude : null;
         $base['longitude'] = $e->longitude !== null ? (float) $e->longitude : null;
 
