@@ -176,6 +176,15 @@ class OfferNormalizationServiceTest extends TestCase
             'pickup_location' => 'EVN Airport',
             'dropoff_location' => 'City center',
             'vehicle_class' => 'economy',
+            'brand' => 'Toyota',
+            'model' => 'Corolla',
+            'year' => 2024,
+            'category' => 'Economy',
+            'transmission_type' => 'automatic',
+            'fuel_type' => 'petrol',
+            'seats' => 5,
+            'suitcases' => 2,
+            'small_bag' => 2,
         ]);
 
         $offer->load('car');
@@ -186,12 +195,21 @@ class OfferNormalizationServiceTest extends TestCase
         $this->assertSame('EVN Airport', $n['from_location']);
         $this->assertSame('City center', $n['to_location']);
         $this->assertSame('economy', $n['vehicle_type']);
+        $this->assertSame('Toyota', $n['vehicle_brand']);
+        $this->assertSame('Corolla', $n['vehicle_model']);
+        $this->assertSame(2024, $n['vehicle_year']);
+        $this->assertSame('Economy', $n['vehicle_category']);
+        $this->assertSame('automatic', $n['transmission_type']);
+        $this->assertSame('petrol', $n['fuel_type']);
+        $this->assertSame(5, $n['max_passengers']);
+        $this->assertSame('vehicle', $n['capacity_type']);
+        $this->assertSame(2, $n['suitcases']);
+        $this->assertSame(2, $n['small_bag']);
         $this->assertIsArray($n['advanced_options']);
         $this->assertSame(1, $n['advanced_options']['v']);
         $this->assertFalse($n['advanced_options']['child_seats']['available']);
         $this->assertSame([], $n['advanced_options']['services']);
         $this->assertSame(80, $n['price']);
-        $this->assertNull($n['capacity_type']);
         $this->assertNull($n['price_type']);
         $this->assertNull($n['package_role']);
         $this->assertNull($n['start_datetime']);

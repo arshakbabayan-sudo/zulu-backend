@@ -59,6 +59,14 @@ class OfferNormalizationService
         'meal_type',
         'stars',
         'vehicle_type',
+        'vehicle_brand',
+        'vehicle_model',
+        'vehicle_year',
+        'vehicle_category',
+        'transmission_type',
+        'fuel_type',
+        'suitcases',
+        'small_bag',
         'is_package_eligible',
         'package_role',
         'advanced_options',
@@ -250,6 +258,16 @@ class OfferNormalizationService
         $base['to_location'] = $this->nullableNonEmptyString($c->getAttributes()['dropoff_location'] ?? null)
             ?? $carDerived;
         $base['vehicle_type'] = $this->nullableNonEmptyString($c->vehicle_class);
+        $base['vehicle_brand'] = $this->nullableNonEmptyString($c->brand);
+        $base['vehicle_model'] = $this->nullableNonEmptyString($c->model);
+        $base['vehicle_year'] = $c->year !== null ? (int) $c->year : null;
+        $base['vehicle_category'] = $this->nullableNonEmptyString($c->category);
+        $base['transmission_type'] = $this->nullableNonEmptyString($c->transmission_type);
+        $base['fuel_type'] = $this->nullableNonEmptyString($c->fuel_type);
+        $base['max_passengers'] = $c->seats !== null ? (int) $c->seats : null;
+        $base['capacity_type'] = 'vehicle';
+        $base['suitcases'] = $c->suitcases !== null ? (int) $c->suitcases : null;
+        $base['small_bag'] = $c->small_bag !== null ? (int) $c->small_bag : null;
         $base['advanced_options'] = app(CarAdvancedOptionsNormalizer::class)->forApi(
             is_array($c->advanced_options) ? $c->advanced_options : null
         );
