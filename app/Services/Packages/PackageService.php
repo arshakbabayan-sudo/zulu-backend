@@ -395,8 +395,20 @@ class PackageService
      */
     public function findPublicForStorefront(int|string $id): ?Package
     {
-        return Package::query()
+        $byPackageId = Package::query()
             ->whereKey($id)
+            ->where('status', 'active')
+            ->where('is_public', true)
+            ->with(['offer', 'components.offer'])
+            ->first();
+        if ($byPackageId !== null) {
+            return $byPackageId;
+        }
+
+        // Storefront discovery returns offer_id, so /packages/{offer_id} URLs are
+        // common from the result list. Fall back to a lookup by parent offer id.
+        return Package::query()
+            ->where('offer_id', $id)
             ->where('status', 'active')
             ->where('is_public', true)
             ->with(['offer', 'components.offer'])
