@@ -563,6 +563,7 @@ class PackageService
             'is_public' => ['sometimes', 'boolean'],
             'is_bookable' => ['sometimes', 'boolean'],
             'is_package_eligible' => ['sometimes', 'boolean'],
+            'is_featured' => ['sometimes', 'boolean'],
             'status' => ['sometimes', 'string', 'max:32', 'in:'.implode(',', Package::STATUSES)],
             'main_image' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'short_description' => ['sometimes', 'nullable', 'string'],
