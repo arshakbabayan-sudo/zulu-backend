@@ -227,7 +227,9 @@ return new class extends Migration
                 'title' => "{$r['airline']} · {$r['from']} → {$r['to']} ({$r['code']})",
                 'price' => $r['economy'],
                 'currency' => 'USD',
-                'status' => 'active',
+                // DiscoveryService filters `Offer::STATUS_PUBLISHED` — anything
+                // else stays hidden from the public site search.
+                'status' => 'published',
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
