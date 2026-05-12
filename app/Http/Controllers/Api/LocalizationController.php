@@ -78,6 +78,7 @@ class LocalizationController extends Controller
                 'entity_id' => (int) $validated['entity_id'],
                 'language_code' => $lang,
                 'translations' => $translations,
+                'available_fields' => ContentTranslation::TRANSLATABLE_FIELDS,
             ],
         ]);
     }
