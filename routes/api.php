@@ -58,6 +58,7 @@ use App\Http\Controllers\Api\ErrorReportController;
 use App\Http\Controllers\Api\ExcursionController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FlightController;
+use App\Http\Controllers\Api\HeroTabsController;
 use App\Http\Controllers\Api\HotelController;
 use App\Http\Controllers\Api\ImportSessionController;
 use App\Http\Controllers\Api\ImportUploadController;
@@ -193,6 +194,9 @@ Route::get('pages/{slug}', [PublicPageController::class, 'show']);
 // Newsletter subscribe (public, rate-limited to deter abuse)
 Route::post('newsletter/subscribe', [NewsletterController::class, 'subscribe'])
     ->middleware('throttle:newsletter');
+
+// Hero search-tab catalog (public read; admin write)
+Route::get('hero-tabs', [HeroTabsController::class, 'show'])->middleware('throttle:api_public');
 
 // Backward-compatible alias: same handlers as v1/discovery/*; DeprecateLegacyDiscoveryApi adds Link / optional Sunset.
 Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDiscoveryApi::class])->name('discovery.legacy.')->group($registerPublicDiscoveryRoutes);
@@ -546,6 +550,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Notification oversight (PART 23, Sprint 59)
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
+
+        // Hero search-tab catalog write (home-page CMS Phase 2 Step 2.4)
+        Route::patch('site-settings/hero-tabs', [HeroTabsController::class, 'update']);
 
         // Newsletter subscriber management (home-page CMS Phase 2 Step 2.2)
         Route::get('newsletter/subscriptions', [AdminNewsletterController::class, 'index']);
