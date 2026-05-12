@@ -3,210 +3,137 @@
 namespace App\Services\Payments;
 
 use App\Models\Payment;
-use App\Models\PaymentLog;
+use App\Services\Payments\Gateways\ArcaGateway;
+use App\Services\Payments\Gateways\IdramGateway;
+use App\Services\Payments\Gateways\PaymentGatewayInterface;
+use App\Services\Payments\Gateways\StripeGateway;
 use Illuminate\Support\Facades\Log;
-use Stripe\Event;
-use Stripe\Exception\ApiErrorException;
-use Stripe\Exception\SignatureVerificationException;
-use Stripe\StripeClient;
-use Stripe\Webhook;
 
+/**
+ * Router/facade in front of the per-gateway drivers (Stripe / ArCa /
+ * Idram). The public API is unchanged from the original single-driver
+ * service so existing callers don't need to be touched.
+ *
+ * Driver selection is config-based (`PAYMENT_DRIVER` env). For
+ * multi-driver setups where the frontend picks per-checkout, callers
+ * can override via `usingDriver(string)`.
+ */
 class PaymentGatewayService
 {
     /** @var list<string> */
-    private const SUPPORTED_DRIVERS = ['stripe'];
+    public const SUPPORTED_DRIVERS = ['stripe', 'arca', 'idram'];
 
-    private string $driver;
-
-    private ?StripeClient $stripe = null;
+    private ?PaymentGatewayInterface $gateway = null;
 
     private ?string $configurationError = null;
+
+    private string $driver;
 
     public function __construct()
     {
         $configuredDriver = config('payment.driver');
         $this->driver = is_string($configuredDriver) ? strtolower(trim($configuredDriver)) : '';
-
-        if ($this->driver === '') {
-            $this->configurationError = 'Payment driver is not configured. Set PAYMENT_DRIVER=stripe.';
-
-            return;
-        }
-
-        if (! in_array($this->driver, self::SUPPORTED_DRIVERS, true)) {
-            $this->configurationError = 'Unsupported payment driver "'.$this->driver.'". Supported drivers: stripe.';
-
-            return;
-        }
-
-        $stripeSecret = trim((string) config('payment.stripe.secret', ''));
-        if ($stripeSecret === '') {
-            $this->configurationError = 'Stripe is selected but STRIPE_SECRET is missing.';
-
-            return;
-        }
-
-        $this->stripe = new StripeClient($stripeSecret);
+        $this->resolve($this->driver);
     }
 
     /**
-     * Create a Stripe PaymentIntent.
-     *
-     * @return array{success: true, client_secret: string, payment_intent_id: string}|array{success: false, error: string}
+     * Override the active driver for a single call (e.g. when the
+     * frontend tells the backend "this customer chose ArCa"). Returns
+     * a clone with the requested driver so the default state survives.
+     */
+    public function usingDriver(string $driver): self
+    {
+        $clone = clone $this;
+        $clone->driver = strtolower(trim($driver));
+        $clone->resolve($clone->driver);
+
+        return $clone;
+    }
+
+    public function activeDriver(): string
+    {
+        return $this->driver;
+    }
+
+    public function isConfigured(): bool
+    {
+        return $this->configurationError === null && $this->gateway !== null && $this->gateway->isConfigured();
+    }
+
+    public function configurationError(): ?string
+    {
+        if ($this->configurationError !== null) {
+            return $this->configurationError;
+        }
+
+        return $this->gateway?->configurationError();
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @return array{success: true, gateway: string, client_secret?: string, redirect_url?: string, gateway_reference: string}|array{success: false, error: string}
      */
     public function createPaymentIntent(Payment $payment, array $metadata = []): array
     {
-        $configurationGuard = $this->configurationGuard();
-        if ($configurationGuard !== null) {
-            return $configurationGuard;
+        $guard = $this->configurationGuard();
+        if ($guard !== null) {
+            return $guard;
         }
 
-        $amount = (int) round((float) $payment->amount * 100);
-        $currency = strtolower($payment->currency ?? config('payment.stripe.currency', 'usd'));
-
-        try {
-            $intent = $this->stripe->paymentIntents->create([
-                'amount' => $amount,
-                'currency' => $currency,
-                'metadata' => array_merge(['payment_id' => $payment->id], $metadata),
-            ]);
-
-            PaymentLog::query()->create([
-                'payment_id' => $payment->id,
-                'event_type' => 'intent.created',
-                'gateway' => 'stripe',
-                'gateway_reference' => $intent->id,
-                'amount' => $payment->amount,
-                'currency' => $currency,
-                'status' => $intent->status,
-                'response_payload' => $intent->toArray(),
-            ]);
-
-            $payment->reference_code = $intent->id;
-            $payment->save();
-
-            return [
-                'success' => true,
-                'client_secret' => $intent->client_secret,
-                'payment_intent_id' => $intent->id,
-            ];
-        } catch (ApiErrorException $e) {
-            PaymentLog::query()->create([
-                'payment_id' => $payment->id,
-                'event_type' => 'intent.failed',
-                'gateway' => 'stripe',
-                'error_message' => $e->getMessage(),
-            ]);
-            Log::error('Stripe createPaymentIntent failed', ['error' => $e->getMessage(), 'payment_id' => $payment->id]);
-
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
+        return $this->gateway->createPaymentIntent($payment, $metadata);
     }
 
     /**
-     * Retrieve a PaymentIntent and verify it is succeeded.
-     *
-     * @return array{success: true, status: string}|array{success: false, error: string}|array{success: false, status: string, error: string}
+     * @return array{success: true, status: string}|array{success: false, status?: string, error: string}
      */
     public function confirmPaymentIntent(Payment $payment, string $paymentIntentId): array
     {
-        $configurationGuard = $this->configurationGuard();
-        if ($configurationGuard !== null) {
-            return $configurationGuard;
+        $guard = $this->configurationGuard();
+        if ($guard !== null) {
+            return $guard;
         }
 
-        try {
-            $intent = $this->stripe->paymentIntents->retrieve($paymentIntentId);
-
-            PaymentLog::query()->create([
-                'payment_id' => $payment->id,
-                'event_type' => 'intent.retrieved',
-                'gateway' => 'stripe',
-                'gateway_reference' => $intent->id,
-                'status' => $intent->status,
-                'response_payload' => $intent->toArray(),
-            ]);
-
-            if ($intent->status === 'succeeded') {
-                return ['success' => true, 'status' => 'succeeded'];
-            }
-
-            return ['success' => false, 'status' => $intent->status, 'error' => 'Payment not succeeded'];
-        } catch (ApiErrorException $e) {
-            Log::error('Stripe confirmPaymentIntent failed', ['error' => $e->getMessage()]);
-
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
+        return $this->gateway->confirmPaymentIntent($payment, $paymentIntentId);
     }
 
     /**
-     * Issue a refund for a PaymentIntent.
-     *
      * @return array{success: true, refund_id: string, status: string}|array{success: false, error: string}
      */
     public function refundPaymentIntent(Payment $payment, ?int $amountCents = null): array
     {
-        $configurationGuard = $this->configurationGuard();
-        if ($configurationGuard !== null) {
-            return $configurationGuard;
+        $guard = $this->configurationGuard();
+        if ($guard !== null) {
+            return $guard;
         }
 
-        $intentId = $payment->reference_code;
-        if (empty($intentId)) {
-            return ['success' => false, 'error' => 'No gateway reference found on payment.'];
-        }
-
-        try {
-            $params = ['payment_intent' => $intentId];
-            if ($amountCents !== null) {
-                $params['amount'] = $amountCents;
-            }
-            $refund = $this->stripe->refunds->create($params);
-
-            PaymentLog::query()->create([
-                'payment_id' => $payment->id,
-                'event_type' => 'refund.created',
-                'gateway' => 'stripe',
-                'gateway_reference' => $refund->id,
-                'amount' => $refund->amount / 100,
-                'currency' => $refund->currency,
-                'status' => $refund->status,
-                'response_payload' => $refund->toArray(),
-            ]);
-
-            return ['success' => true, 'refund_id' => $refund->id, 'status' => $refund->status];
-        } catch (ApiErrorException $e) {
-            Log::error('Stripe refund failed', ['error' => $e->getMessage(), 'payment_id' => $payment->id]);
-
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
+        return $this->gateway->refundPaymentIntent($payment, $amountCents);
     }
 
     /**
-     * Verify Stripe webhook signature and return the event.
+     * Stripe-shaped wrapper preserved for the existing webhook handler
+     * (which passes $sigHeader directly). Internally delegates to the
+     * new interface which takes a full header bag.
      *
-     * @return array{success: true, event: Event}|array{success: false, error: string}
+     * @return array{success: true, event: mixed}|array{success: true, event_type: string, gateway_reference: string, raw: mixed}|array{success: false, error: string}
      */
     public function constructWebhookEvent(string $payload, string $sigHeader): array
     {
-        $configurationGuard = $this->configurationGuard();
-        if ($configurationGuard !== null) {
-            return $configurationGuard;
+        $guard = $this->configurationGuard();
+        if ($guard !== null) {
+            return $guard;
         }
 
-        try {
-            $event = Webhook::constructEvent(
-                $payload,
-                $sigHeader,
-                config('payment.stripe.webhook_secret')
-            );
+        $result = $this->gateway->constructWebhookEvent($payload, ['stripe-signature' => $sigHeader]);
 
-            return ['success' => true, 'event' => $event];
-        } catch (SignatureVerificationException $e) {
-            return ['success' => false, 'error' => 'Invalid signature'];
-        } catch (\UnexpectedValueException $e) {
-            return ['success' => false, 'error' => 'Invalid payload'];
+        // Backward-compat shape: original Stripe path returned ['event' => Event]
+        // for callers that introspect $result['event']->type. The interface
+        // returns event_type + raw separately. For Stripe we surface both so
+        // legacy code keeps working without modification.
+        if (($result['success'] ?? false) === true && $this->driver === 'stripe' && isset($result['raw'])) {
+            $result['event'] = $result['raw'];
         }
+
+        return $result;
     }
 
     /**
@@ -214,18 +141,40 @@ class PaymentGatewayService
      */
     private function configurationGuard(): ?array
     {
-        if ($this->configurationError === null) {
+        if ($this->isConfigured()) {
             return null;
         }
 
+        $error = $this->configurationError() ?? 'Payment gateway is not configured.';
         Log::warning('Payment gateway configuration error', [
             'driver' => $this->driver,
-            'error' => $this->configurationError,
+            'error' => $error,
         ]);
 
-        return [
-            'success' => false,
-            'error' => $this->configurationError,
-        ];
+        return ['success' => false, 'error' => $error];
+    }
+
+    private function resolve(string $driver): void
+    {
+        $this->configurationError = null;
+        $this->gateway = null;
+
+        if ($driver === '') {
+            $this->configurationError = 'Payment driver is not configured. Set PAYMENT_DRIVER to one of: '.implode(', ', self::SUPPORTED_DRIVERS).'.';
+
+            return;
+        }
+
+        if (! in_array($driver, self::SUPPORTED_DRIVERS, true)) {
+            $this->configurationError = 'Unsupported payment driver "'.$driver.'". Supported: '.implode(', ', self::SUPPORTED_DRIVERS).'.';
+
+            return;
+        }
+
+        $this->gateway = match ($driver) {
+            'stripe' => new StripeGateway,
+            'arca' => new ArcaGateway,
+            'idram' => new IdramGateway,
+        };
     }
 }

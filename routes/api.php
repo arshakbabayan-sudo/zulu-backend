@@ -177,6 +177,13 @@ Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDi
 Route::post('payments/webhook', [PaymentWebhookController::class, 'handle'])
     ->withoutMiddleware([VerifyCsrfToken::class]);
 
+// Driver-aware webhook entrypoint: same handler, dispatches by URL segment.
+// Stripe Dashboard can keep posting to /payments/webhook; ArCa/Idram point
+// their callbacks at /payments/webhook/arca and /payments/webhook/idram.
+Route::post('payments/webhook/{driver}', [PaymentWebhookController::class, 'handleForDriver'])
+    ->where('driver', 'stripe|arca|idram')
+    ->withoutMiddleware([VerifyCsrfToken::class]);
+
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
         ->middleware(['signed', 'throttle:6,1'])
