@@ -88,6 +88,7 @@ use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TransferController;
 use App\Http\Controllers\Api\TwoFactorController;
+use App\Http\Controllers\Api\UserFavoritesController;
 use App\Http\Controllers\Api\VisaController;
 use App\Http\Middleware\DeprecateLegacyDiscoveryApi;
 use App\Services\Infrastructure\PlatformReadinessService;
@@ -236,6 +237,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('localization/ui-translations', [LocalizationController::class, 'setUiTranslations']);
 
     Route::get('account/me', [AccountController::class, 'me']);
+
+    // Favorites (Phase 5 — heart icon on listing cards). Endpoints pre-built
+    // in Phase 2 so the frontend can wire to a stable URL before the UI lands.
+    Route::get('user/favorites', [UserFavoritesController::class, 'index']);
+    Route::post('user/favorites', [UserFavoritesController::class, 'store']);
+    Route::delete('user/favorites/{itemType}/{itemId}', [UserFavoritesController::class, 'destroy'])
+        ->where('itemType', '[a-z_]+')->whereNumber('itemId');
 
     // Two-factor authentication (PART 29)
     Route::get('account/2fa/status', [TwoFactorController::class, 'status']);
