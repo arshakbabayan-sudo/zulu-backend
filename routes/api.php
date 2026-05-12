@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\AdminVisaApplicationController;
 use App\Http\Controllers\Api\AdminVoucherController;
 use App\Http\Controllers\Api\AdminWebhookController;
 use App\Http\Controllers\Api\AIAssistantController;
+use App\Http\Controllers\Api\MediaUploadController;
 use App\Http\Controllers\Api\AISearchController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
@@ -142,6 +143,13 @@ Route::post('ai/chat', [AIAssistantController::class, 'chat'])
     ->middleware('throttle:20,1');
 Route::get('ai/recommendations', [AIAssistantController::class, 'recommendations'])
     ->middleware(['auth:sanctum', 'throttle:30,1']);
+
+// Image upload endpoint for admin/operator forms.
+// Sanctum-authenticated + per-user rate limit. Files land on the public
+// disk under uploads/{section}/; the symlink at public/storage exposes
+// them at https://api.zulu.am/storage/uploads/...
+Route::post('media/upload', [MediaUploadController::class, 'upload'])
+    ->middleware(['auth:sanctum', 'throttle:file-upload']);
 
 // Self-hosted frontend error capture (PART 31, Sprint 67)
 Route::post('errors/report', [ErrorReportController::class, 'store'])
