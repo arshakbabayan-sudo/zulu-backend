@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
+use App\Models\Package;
+use App\Models\PackageHomepageFeature;
 use App\Models\Page;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class PublicPageController extends Controller
 {
@@ -52,8 +56,108 @@ class PublicPageController extends Controller
                         'widget_content' => $widgetContent->getTranslation($lang) ?? [],
                     ];
                 })->values()->all(),
+                'sections' => $slug === 'home-page' ? $this->buildHomeSections($lang) : (object) [],
             ],
         ]);
+    }
+
+    /**
+     * Returns the dynamic, relationally-sourced sections for the homepage:
+     *  - special_offers / popular_destinations: packages flagged in
+     *    `package_homepage_features` (super-admin checkbox-driven)
+     *  - partners: operator-type companies with is_partner_visible=true + logo
+     *
+     * @return array<string, mixed>
+     */
+    private function buildHomeSections(string $lang): array
+    {
+        $hasFeaturesTable = Schema::hasTable('package_homepage_features');
+        $hasPartnerColumn = Schema::hasColumn('companies', 'is_partner_visible');
+
+        return [
+            'special_offers' => $hasFeaturesTable
+                ? $this->packagesForSection(PackageHomepageFeature::SECTION_SPECIAL_OFFERS, $lang)
+                : [],
+            'popular_destinations' => $hasFeaturesTable
+                ? $this->packagesForSection(PackageHomepageFeature::SECTION_POPULAR_DESTINATIONS, $lang)
+                : [],
+            'partners' => $hasPartnerColumn
+                ? $this->partnerOperators($lang)
+                : [],
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function packagesForSection(string $sectionSlug, string $lang): array
+    {
+        $rows = Package::query()
+            ->join('package_homepage_features as f', 'f.package_id', '=', 'packages.id')
+            ->where('f.section_slug', $sectionSlug)
+            ->where('f.is_active', true)
+            ->where('packages.status', 'active')
+            ->where('packages.is_public', true)
+            ->orderBy('f.position', 'asc')
+            ->orderBy('packages.id', 'asc')
+            ->select([
+                'packages.id',
+                'packages.package_title',
+                'packages.package_subtitle',
+                'packages.short_description',
+                'packages.destination_country',
+                'packages.destination_city',
+                'packages.duration_days',
+                'packages.base_price',
+                'packages.display_price_mode',
+                'packages.currency',
+                'packages.main_image',
+                'f.position',
+            ])
+            ->get();
+
+        return $rows->map(function (Package $pkg) use ($lang): array {
+            return [
+                'id' => $pkg->id,
+                'title' => $pkg->getTranslated('package_title', $lang),
+                'subtitle' => $pkg->getTranslated('package_subtitle', $lang),
+                'short_description' => $pkg->getTranslated('short_description', $lang),
+                'destination_country' => $pkg->destination_country,
+                'destination_city' => $pkg->destination_city,
+                'duration_days' => (int) $pkg->duration_days,
+                'base_price' => $pkg->base_price,
+                'display_price_mode' => $pkg->display_price_mode,
+                'currency' => $pkg->currency,
+                'main_image' => $pkg->main_image,
+                'link' => '/packages/'.$pkg->id,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function partnerOperators(string $lang): array
+    {
+        $rows = Company::query()
+            ->where('is_partner_visible', true)
+            ->where('type', 'operator')
+            ->where('status', 'active')
+            ->whereNotNull('logo')
+            ->where('logo', '!=', '')
+            ->orderBy('name', 'asc')
+            ->get(['id', 'name', 'slug', 'logo', 'website']);
+
+        return $rows->map(function (Company $company) use ($lang): array {
+            return [
+                'id' => $company->id,
+                'partner_name' => method_exists($company, 'getTranslated')
+                    ? ($company->getTranslated('name', $lang) ?? $company->name)
+                    : $company->name,
+                'logo_image' => $company->logo,
+                'link' => $company->website ?? '',
+            ];
+        })->values()->all();
     }
 
     private function resolveLang(Request $request): string
