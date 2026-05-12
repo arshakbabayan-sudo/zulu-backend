@@ -4,17 +4,28 @@ namespace App\Console\Commands;
 
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
 /**
- * Database backup (Sprint 54, PART 32).
+ * Database backup (Sprint 54, PART 32; off-site disk support added 2026-05-12).
  *
  * Runs pg_dump against the configured pgsql connection, gzips the output,
  * stores it on the configured disk, and prunes backups older than the
  * retention window. Wired into the scheduler at 02:30 daily.
+ *
+ * Disks supported:
+ *   - `local` (default) — writes to storage/app/private/{prefix}
+ *   - `backup` (off-site) — writes to an S3-compatible bucket
+ *     (Backblaze B2 / Hetzner Object Storage / Wasabi / R2). See
+ *     config/filesystems.php "backup" disk for the env-var contract.
+ *
+ * Remote-disk path: stream pg_dump → gzip → local tmp file, then
+ * upload via Storage::writeStream() and delete the tmp. Keeps memory
+ * flat regardless of dump size.
  */
 class DatabaseBackup extends Command
 {
@@ -42,16 +53,32 @@ class DatabaseBackup extends Command
         $timestamp = Carbon::now('UTC')->format('Ymd-His');
         $database = (string) ($config['database'] ?? 'zulu');
         $relativePath = "{$prefix}/{$database}-{$timestamp}.sql.gz";
-        $absolutePath = Storage::disk($disk)->path($relativePath);
 
-        $directory = dirname($absolutePath);
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            $this->error("Cannot create backup directory: {$directory}");
+        $storage = Storage::disk($disk);
+        $isLocal = $this->isLocalDisk($storage);
+
+        // Local: gzip straight to the destination file. Remote: gzip to
+        // a tmp file, then upload via stream.
+        $tmpPath = $isLocal
+            ? $storage->path($relativePath)
+            : tempnam(sys_get_temp_dir(), 'zulu-db-backup-');
+
+        if ($tmpPath === false) {
+            $this->error('Cannot allocate a temporary file for the backup.');
 
             return self::FAILURE;
         }
 
-        $this->info("Backing up {$database} → {$relativePath}");
+        if ($isLocal) {
+            $directory = dirname($tmpPath);
+            if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+                $this->error("Cannot create backup directory: {$directory}");
+
+                return self::FAILURE;
+            }
+        }
+
+        $this->info("Backing up {$database} → [{$disk}] {$relativePath}");
 
         $command = [
             'pg_dump',
@@ -71,11 +98,13 @@ class DatabaseBackup extends Command
         $dump = new Process($command, null, $env, null, 3600);
         $dump->start();
 
-        $gzipPath = $absolutePath;
-        $gzipHandle = gzopen($gzipPath, 'wb6');
+        $gzipHandle = gzopen($tmpPath, 'wb6');
         if ($gzipHandle === false) {
-            $this->error("Cannot open gzip file for writing: {$gzipPath}");
+            $this->error("Cannot open gzip file for writing: {$tmpPath}");
             $dump->stop();
+            if (! $isLocal) {
+                @unlink($tmpPath);
+            }
 
             return self::FAILURE;
         }
@@ -91,27 +120,51 @@ class DatabaseBackup extends Command
         gzclose($gzipHandle);
 
         if (! $dump->isSuccessful()) {
-            @unlink($gzipPath);
+            @unlink($tmpPath);
             $this->error('pg_dump failed: '.$dump->getErrorOutput());
 
             return self::FAILURE;
         }
 
-        $size = filesize($gzipPath) ?: 0;
+        $size = filesize($tmpPath) ?: 0;
+
+        if (! $isLocal) {
+            $stream = fopen($tmpPath, 'rb');
+            if ($stream === false) {
+                @unlink($tmpPath);
+                $this->error("Cannot open tmp file for upload: {$tmpPath}");
+
+                return self::FAILURE;
+            }
+
+            try {
+                $storage->writeStream($relativePath, $stream, ['visibility' => 'private']);
+            } catch (\Throwable $e) {
+                @fclose($stream);
+                @unlink($tmpPath);
+                $this->error("Upload to [{$disk}] failed: ".$e->getMessage());
+
+                return self::FAILURE;
+            }
+
+            @fclose($stream);
+            @unlink($tmpPath);
+        }
+
         $elapsed = number_format(microtime(true) - $startedAt, 2);
         $this->info(sprintf('Backup written (%s, %0.2f MB) in %ss', basename($relativePath), $size / 1048576, $elapsed));
 
-        $this->pruneOldBackups($disk, $prefix, $keep, $database);
+        $this->pruneOldBackups($storage, $prefix, $keep, $database);
 
-        $this->logBackupRecord($database, $relativePath, $size);
+        $this->logBackupRecord($disk, $database, $relativePath, $size);
 
         return self::SUCCESS;
     }
 
-    private function pruneOldBackups(string $disk, string $prefix, int $keep, string $database): void
+    private function pruneOldBackups(Filesystem $storage, string $prefix, int $keep, string $database): void
     {
         $cutoff = Carbon::now('UTC')->subDays($keep);
-        $files = Storage::disk($disk)->files($prefix);
+        $files = $storage->files($prefix);
 
         $removed = 0;
         foreach ($files as $file) {
@@ -120,13 +173,13 @@ class DatabaseBackup extends Command
                 continue;
             }
 
-            $modified = Storage::disk($disk)->lastModified($file);
+            $modified = $storage->lastModified($file);
             if ($modified === false) {
                 continue;
             }
 
             if ($modified < $cutoff->getTimestamp()) {
-                Storage::disk($disk)->delete($file);
+                $storage->delete($file);
                 $removed++;
             }
         }
@@ -136,7 +189,7 @@ class DatabaseBackup extends Command
         }
     }
 
-    private function logBackupRecord(string $database, string $path, int $size): void
+    private function logBackupRecord(string $disk, string $database, string $path, int $size): void
     {
         try {
             DB::table('audit_logs')->insert([
@@ -148,18 +201,31 @@ class DatabaseBackup extends Command
                 'subject_type' => 'database',
                 'subject_id' => $database,
                 'action' => 'database.backup.completed',
-                'changes' => json_encode(['path' => $path, 'size_bytes' => $size]),
+                'changes' => json_encode(['disk' => $disk, 'path' => $path, 'size_bytes' => $size]),
                 'context' => null,
                 'ip_address' => null,
                 'user_agent' => null,
                 'session_id' => null,
                 'request_id' => null,
-                'hash' => hash('sha256', $path.'|'.$size.'|'.now()),
+                'hash' => hash('sha256', $disk.'|'.$path.'|'.$size.'|'.now()),
                 'previous_log_hash' => null,
                 'created_at' => now(),
             ]);
         } catch (\Throwable $e) {
             $this->warn('Could not write audit_log row: '.$e->getMessage());
+        }
+    }
+
+    private function isLocalDisk(Filesystem $storage): bool
+    {
+        // Filesystem::path() exists only on local adapters; remote
+        // adapters throw RuntimeException. Probe via has-method check.
+        try {
+            $storage->path('');
+
+            return true;
+        } catch (\Throwable) {
+            return false;
         }
     }
 }

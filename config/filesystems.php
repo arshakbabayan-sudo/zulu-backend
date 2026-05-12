@@ -60,6 +60,35 @@ return [
             'report' => false,
         ],
 
+        /*
+        |----------------------------------------------------------------
+        | Off-site backup disk (S3-compatible)
+        |----------------------------------------------------------------
+        |
+        | Used by `php artisan db:backup --disk=backup` to stream the
+        | nightly dump off the application server. Works with any
+        | S3-compatible bucket: Backblaze B2, Hetzner Object Storage,
+        | Wasabi, Cloudflare R2, AWS S3.
+        |
+        | Activation: set BACKUP_DISK_BUCKET + BACKUP_DISK_KEY +
+        | BACKUP_DISK_SECRET + BACKUP_DISK_REGION + BACKUP_DISK_ENDPOINT
+        | in .env, then set DB_BACKUP_DISK=backup so the scheduler
+        | starts writing there. Until then the disk is declared but
+        | unused, so dev + test stay unchanged.
+        |
+        */
+        'backup' => [
+            'driver' => 's3',
+            'key' => env('BACKUP_DISK_KEY'),
+            'secret' => env('BACKUP_DISK_SECRET'),
+            'region' => env('BACKUP_DISK_REGION', 'us-east-1'),
+            'bucket' => env('BACKUP_DISK_BUCKET'),
+            'endpoint' => env('BACKUP_DISK_ENDPOINT'),
+            'use_path_style_endpoint' => env('BACKUP_DISK_USE_PATH_STYLE', true),
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
 
     /*
