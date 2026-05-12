@@ -96,6 +96,16 @@ class AppServiceProvider extends ServiceProvider
             });
         });
 
+        // Newsletter subscribe form: 5/min per IP, deter automated spam
+        RateLimiter::for('newsletter', function (Request $request) {
+            return Limit::perMinute(5)->by($request->ip())->response(function () {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many subscription requests. Please try again later.',
+                ], 429);
+            });
+        });
+
         // File upload: 20/min per user
         RateLimiter::for('file-upload', function (Request $request) {
             return Limit::perMinute(20)->by(

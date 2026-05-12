@@ -75,6 +75,8 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
 use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
+use App\Http\Controllers\Api\AdminNewsletterController;
+use App\Http\Controllers\Api\NewsletterController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
@@ -187,6 +189,10 @@ Route::prefix('packages')->middleware('throttle:api_public')->group(function () 
 });
 
 Route::get('pages/{slug}', [PublicPageController::class, 'show']);
+
+// Newsletter subscribe (public, rate-limited to deter abuse)
+Route::post('newsletter/subscribe', [NewsletterController::class, 'subscribe'])
+    ->middleware('throttle:newsletter');
 
 // Backward-compatible alias: same handlers as v1/discovery/*; DeprecateLegacyDiscoveryApi adds Link / optional Sunset.
 Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDiscoveryApi::class])->name('discovery.legacy.')->group($registerPublicDiscoveryRoutes);
@@ -540,6 +546,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Notification oversight (PART 23, Sprint 59)
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
+
+        // Newsletter subscriber management (home-page CMS Phase 2 Step 2.2)
+        Route::get('newsletter/subscriptions', [AdminNewsletterController::class, 'index']);
+        Route::get('newsletter/subscriptions/stats', [AdminNewsletterController::class, 'stats']);
+        Route::get('newsletter/subscriptions/export.csv', [AdminNewsletterController::class, 'exportCsv']);
+        Route::delete('newsletter/subscriptions/{id}', [AdminNewsletterController::class, 'destroy'])->whereNumber('id');
 
         // Search trends (PART 20, Sprint 68)
         Route::get('search/trends', [SavedSearchController::class, 'trends']);
