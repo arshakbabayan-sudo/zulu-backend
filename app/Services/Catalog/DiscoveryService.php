@@ -314,6 +314,7 @@ class DiscoveryService
         $vehicleType = $this->nullableString($input['vehicle_type'] ?? null);
         $privateOnly = $input['private_only'] ?? null;
         $isPackageEligible = $input['is_package_eligible'] ?? null;
+        $accommodationType = $this->nullableString($input['accommodation_type'] ?? null);
 
         if ($moduleType === 'flight' || $moduleType === null) {
             $this->applyFlightLocationModuleConstraints($query, $moduleType, $from, $to, $isDirect, $hasBaggage, $cabinClass, $isPackageEligible);
@@ -329,7 +330,8 @@ class DiscoveryService
                 $stars,
                 $mealType,
                 $minRating,
-                $isPackageEligible
+                $isPackageEligible,
+                $accommodationType
             );
         }
 
@@ -434,7 +436,8 @@ class DiscoveryService
         mixed $stars,
         ?string $mealType,
         mixed $minRating,
-        mixed $isPackageEligible
+        mixed $isPackageEligible,
+        ?string $accommodationType = null
     ): void {
         $applyHotelVisibilityControls = $this->platformSettingsService->get(
             'hotel_visibility_controls_enabled',
@@ -461,7 +464,7 @@ class DiscoveryService
             }
         }
 
-        $hotelFilter = function (Builder $q) use ($destination, $stars, $mealType, $minRating, $isPackageEligible, $moduleType, $applyHotelVisibilityControls, $allowedHotelIds): void {
+        $hotelFilter = function (Builder $q) use ($destination, $stars, $mealType, $minRating, $isPackageEligible, $moduleType, $applyHotelVisibilityControls, $allowedHotelIds, $accommodationType): void {
             if ($applyHotelVisibilityControls) {
                 // Public discovery context.
                 $this->offerVisibilityService->applyVisibilityFilter($q, 'web');
@@ -505,6 +508,9 @@ class DiscoveryService
             }
             if ($moduleType === 'hotel' && $isPackageEligible !== null) {
                 $q->where('is_package_eligible', (bool) $isPackageEligible);
+            }
+            if ($accommodationType !== null && $accommodationType !== '') {
+                $q->where('accommodation_type', $accommodationType);
             }
         };
 

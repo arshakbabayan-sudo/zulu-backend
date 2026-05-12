@@ -36,7 +36,16 @@ class DiscoveryController extends Controller
                 'sometimes',
                 'nullable',
                 'string',
-                Rule::in(['flight', 'hotel', 'transfer', 'package', 'car', 'excursion', 'visa']),
+                Rule::in(['flight', 'hotel', 'stay', 'transfer', 'package', 'car', 'excursion', 'visa']),
+            ],
+            // Filter the hotels table by accommodation_type (Phase 1 Step 1.1).
+            // Used by the Hotels strict filter UI; the Stays tab submits no value
+            // and receives all accommodation types.
+            'accommodation_type' => [
+                'sometimes',
+                'nullable',
+                'string',
+                Rule::in(['hotel', 'apartment', 'villa', 'hostel', 'guesthouse']),
             ],
             'from_location' => ['sometimes', 'nullable', 'string'],
             'to_location' => ['sometimes', 'nullable', 'string'],
@@ -64,8 +73,19 @@ class DiscoveryController extends Controller
             'vehicle_type' => ['sometimes', 'nullable', 'string'],
         ]);
 
+        // module_type='stay' is the UX-level umbrella over the hotels table;
+        // treat it as 'hotel' internally so the existing DiscoveryService
+        // query path applies. The Stays tab will not pass accommodation_type,
+        // so all rows (hotel/apartment/villa/hostel/guesthouse) come back.
+        $moduleType = $validated['module_type'] ?? null;
+        if ($moduleType === 'stay') {
+            $moduleType = 'hotel';
+        }
+
         $input = [
-            'module_type' => $validated['module_type'] ?? null,
+            'module_type' => $moduleType,
+            'accommodation_type' => $validated['accommodation_type'] ?? null,
+            'is_stay_umbrella' => ($validated['module_type'] ?? null) === 'stay',
             'from_location' => $validated['from_location'] ?? null,
             'to_location' => $validated['to_location'] ?? null,
             'destination' => $validated['destination'] ?? null,
