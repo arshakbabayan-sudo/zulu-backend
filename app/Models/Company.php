@@ -32,6 +32,7 @@ class Company extends Model
         'website',
         'description',
         'logo',
+        'is_partner_visible',
         'governance_status',
         'is_seller',
         'is_airline',
@@ -44,6 +45,7 @@ class Company extends Model
         return [
             'is_seller' => 'boolean',
             'is_airline' => 'boolean',
+            'is_partner_visible' => 'boolean',
             'profile_completed' => 'boolean',
             'seller_activated_at' => 'datetime',
         ];

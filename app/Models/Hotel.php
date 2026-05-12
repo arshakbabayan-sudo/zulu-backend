@@ -13,6 +13,9 @@ class Hotel extends Model
 {
     use HasFactory, HasTranslations;
 
+    /** @var list<string> */
+    public const ACCOMMODATION_TYPES = ['hotel', 'apartment', 'villa', 'hostel', 'guesthouse'];
+
     protected $fillable = [
         'offer_id',
         'company_id',
@@ -20,6 +23,7 @@ class Hotel extends Model
         'hotel_name',
         'property_type',
         'hotel_type',
+        'accommodation_type',
         'star_rating',
         'country',
         'region_or_state',

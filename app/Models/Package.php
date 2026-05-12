@@ -100,6 +100,14 @@ class Package extends Model
         return $this->hasMany(PackageComponent::class)->orderBy('sort_order');
     }
 
+    /**
+     * @return HasMany<PackageHomepageFeature, $this>
+     */
+    public function homepageFeatures(): HasMany
+    {
+        return $this->hasMany(PackageHomepageFeature::class);
+    }
+
     public function getTranslatableEntityType(): string
     {
         return 'package';
