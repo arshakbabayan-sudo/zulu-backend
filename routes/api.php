@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\AdminSecurityController;
 use App\Http\Controllers\Api\AdminVisaApplicationController;
 use App\Http\Controllers\Api\AdminVoucherController;
 use App\Http\Controllers\Api\AdminWebhookController;
+use App\Http\Controllers\Api\AIAssistantController;
 use App\Http\Controllers\Api\AISearchController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
@@ -133,6 +134,14 @@ Route::get('locations/search', [AdminLocationController::class, 'searchPublic'])
 // AI Search (PART 34 Phase 1) — natural-language → Claude parser → discovery search
 Route::post('ai/search', [AISearchController::class, 'search'])
     ->middleware('throttle:10,1');
+
+// AI deeper-track (PART 34 Phase 4.2): public chat (rate-limited, no auth
+// required so the homepage assistant works for browsers) + authenticated
+// recommendations (Sanctum + per-user history).
+Route::post('ai/chat', [AIAssistantController::class, 'chat'])
+    ->middleware('throttle:20,1');
+Route::get('ai/recommendations', [AIAssistantController::class, 'recommendations'])
+    ->middleware(['auth:sanctum', 'throttle:30,1']);
 
 // Self-hosted frontend error capture (PART 31, Sprint 67)
 Route::post('errors/report', [ErrorReportController::class, 'store'])
