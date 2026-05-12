@@ -720,9 +720,9 @@ class ExcursionService
         app(LocationBusinessValidator::class)->requireLocationOfTypes(
             isset($payload['location_id']) ? (int) $payload['location_id'] : null,
             'location_id',
-            [Location::TYPE_REGION, Location::TYPE_CITY],
-            'Excursion location must be region or city.',
-            'Excursion location must be region or city.'
+            [Location::TYPE_COUNTRY, Location::TYPE_REGION, Location::TYPE_CITY],
+            'Excursion requires a location (country, region or city).',
+            'Excursion location must be country, region or city.'
         );
     }
 

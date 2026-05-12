@@ -921,9 +921,9 @@ class FlightService
         app(LocationBusinessValidator::class)->requireLocationOfTypes(
             isset($payload['location_id']) ? (int) $payload['location_id'] : null,
             'location_id',
-            [Location::TYPE_CITY],
-            'Flight requires a city-level location.',
-            'Flight location must be a city.'
+            [Location::TYPE_COUNTRY, Location::TYPE_REGION, Location::TYPE_CITY],
+            'Flight requires a location (country, region or city).',
+            'Flight location must be country, region or city.'
         );
     }
 }

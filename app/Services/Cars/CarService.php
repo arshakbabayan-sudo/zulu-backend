@@ -892,9 +892,9 @@ class CarService
         app(LocationBusinessValidator::class)->requireLocationOfTypes(
             isset($payload['location_id']) ? (int) $payload['location_id'] : null,
             'location_id',
-            [Location::TYPE_REGION, Location::TYPE_CITY],
-            'Car rental requires a region or city location.',
-            'Car location must be region or city.'
+            [Location::TYPE_COUNTRY, Location::TYPE_REGION, Location::TYPE_CITY],
+            'Car rental requires a location (country, region or city).',
+            'Car location must be country, region or city.'
         );
     }
 }

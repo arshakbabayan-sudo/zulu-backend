@@ -676,17 +676,17 @@ class TransferService
         $origin = app(LocationBusinessValidator::class)->requireLocationOfTypes(
             isset($payload['origin_location_id']) ? (int) $payload['origin_location_id'] : null,
             'origin_location_id',
-            [Location::TYPE_REGION, Location::TYPE_CITY],
+            [Location::TYPE_COUNTRY, Location::TYPE_REGION, Location::TYPE_CITY],
             'Transfer origin location is required.',
-            'Transfer origin must be region or city.'
+            'Transfer origin must be country, region or city.'
         );
 
         $destination = app(LocationBusinessValidator::class)->requireLocationOfTypes(
             isset($payload['destination_location_id']) ? (int) $payload['destination_location_id'] : null,
             'destination_location_id',
-            [Location::TYPE_REGION, Location::TYPE_CITY],
+            [Location::TYPE_COUNTRY, Location::TYPE_REGION, Location::TYPE_CITY],
             'Transfer destination location is required.',
-            'Transfer destination must be region or city.'
+            'Transfer destination must be country, region or city.'
         );
 
         if ((int) $origin->id === (int) $destination->id) {

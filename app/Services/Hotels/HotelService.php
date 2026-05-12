@@ -1056,9 +1056,9 @@ class HotelService
         app(LocationBusinessValidator::class)->requireLocationOfTypes(
             isset($payload['location_id']) ? (int) $payload['location_id'] : null,
             'location_id',
-            [Location::TYPE_CITY],
-            'Հյուրանոցի համար անհրաժեշտ է ընտրել քաղաք։',
-            'Հյուրանոցի location-ը պետք է լինի city տիպի։'
+            [Location::TYPE_COUNTRY, Location::TYPE_REGION, Location::TYPE_CITY],
+            'Հյուրանոցի համար անհրաժեշտ է ընտրել գտնվելու վայր (երկիր, մարզ կամ քաղաք)։',
+            'Հյուրանոցի location-ը պետք է լինի country, region կամ city տիպի։'
         );
     }
 
