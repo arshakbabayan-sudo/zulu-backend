@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Observers\InvoiceObserver;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Packages\Saga\ComponentReserverRegistry;
+use App\Services\Packages\Saga\Reservers\AmadeusFlightReserver;
+use App\Services\Packages\Saga\Reservers\SupplierApiReserver;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -17,7 +19,34 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->singleton(ComponentReserverRegistry::class);
+        $this->app->singleton(ComponentReserverRegistry::class, function () {
+            $registry = new ComponentReserverRegistry;
+
+            // Flight: prefer dedicated Amadeus reserver when credentials
+            // are present; else generic SupplierApiReserver; else stub.
+            $amadeus = new AmadeusFlightReserver;
+            if ($amadeus->isConfigured()) {
+                $registry->register('flight', $amadeus);
+            } else {
+                $generic = new SupplierApiReserver('flight');
+                if ($generic->isConfigured()) {
+                    $registry->register('flight', $generic);
+                }
+            }
+
+            // Hotel / transfer / car / excursion / visa / insurance:
+            // swap stub for SupplierApiReserver whenever a credential
+            // is present in config/supplier.{type}.*. Untouched types
+            // keep their default stub.
+            foreach (['hotel', 'transfer', 'car', 'excursion', 'visa', 'insurance'] as $type) {
+                $reserver = new SupplierApiReserver($type);
+                if ($reserver->isConfigured()) {
+                    $registry->register($type, $reserver);
+                }
+            }
+
+            return $registry;
+        });
     }
 
     public function boot(): void
