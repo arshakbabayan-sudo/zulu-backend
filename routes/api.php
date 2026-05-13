@@ -40,6 +40,7 @@ use App\Http\Controllers\Api\AIAssistantController;
 use App\Http\Controllers\Api\AISearchController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
+use App\Http\Controllers\Api\BrandSettingsController;
 use App\Http\Controllers\Api\CarController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommissionController;
@@ -198,6 +199,10 @@ Route::post('newsletter/subscribe', [NewsletterController::class, 'subscribe'])
 
 // Hero search-tab catalog (public read; admin write)
 Route::get('hero-tabs', [HeroTabsController::class, 'show'])->middleware('throttle:api_public');
+
+// Brand settings (logo / contact info / social links / admin-defined custom fields).
+// Public read so Header/Footer/Contact-page can fetch with no auth.
+Route::get('brand-settings', [BrandSettingsController::class, 'show'])->middleware('throttle:api_public');
 
 // Backward-compatible alias: same handlers as v1/discovery/*; DeprecateLegacyDiscoveryApi adds Link / optional Sunset.
 Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDiscoveryApi::class])->name('discovery.legacy.')->group($registerPublicDiscoveryRoutes);
@@ -564,6 +569,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // Hero search-tab catalog write (home-page CMS Phase 2 Step 2.4)
         Route::patch('site-settings/hero-tabs', [HeroTabsController::class, 'update']);
+
+        // Brand settings write (ZULU CMS Sprint 1)
+        Route::patch('brand-settings', [BrandSettingsController::class, 'update']);
 
         // Newsletter subscriber management (home-page CMS Phase 2 Step 2.2)
         Route::get('newsletter/subscriptions', [AdminNewsletterController::class, 'index']);
