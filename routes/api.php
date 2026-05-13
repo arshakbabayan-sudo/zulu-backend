@@ -504,6 +504,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::patch('companies/{company}/governance', [PlatformAdminController::class, 'changeGovernance'])->whereNumber('company');
         Route::patch('companies/{company}/permissions', [PlatformAdminController::class, 'updateCompanyPermissions'])->whereNumber('company');
         Route::patch('companies/{company}/toggle-seller', [PlatformAdminController::class, 'toggleCompanySellerStatus'])->whereNumber('company');
+        Route::patch('companies/{company}/partner-settings', [PlatformAdminController::class, 'updateCompanyPartnerSettings'])->whereNumber('company');
         Route::get('seller-applications', [PlatformAdminController::class, 'listSellerApplications']);
         Route::post('seller-applications/{id}/approve', [PlatformAdminController::class, 'approveSellerApplication'])->whereNumber('id');
         Route::post('seller-applications/{id}/reject', [PlatformAdminController::class, 'rejectSellerApplication'])->whereNumber('id');

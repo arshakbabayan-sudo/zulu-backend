@@ -157,6 +157,35 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Update partner visibility settings: logo URL + is_partner_visible flag.
+     * Feeds the public home page partner strip (PublicPageController::homePage).
+     */
+    public function updateCompanyPartnerSettings(Request $request, Company $company): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'logo' => ['sometimes', 'nullable', 'string', 'max:2048'],
+            'is_partner_visible' => ['sometimes', 'boolean'],
+        ]);
+
+        if (array_key_exists('logo', $validated)) {
+            $company->logo = $validated['logo'];
+        }
+        if (array_key_exists('is_partner_visible', $validated)) {
+            $company->is_partner_visible = (bool) $validated['is_partner_visible'];
+        }
+        $company->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => CompanyResource::make($company->fresh())->toArray($request),
+        ]);
+    }
+
     public function approvals(Request $request, PlatformAdminService $service): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {

@@ -841,6 +841,7 @@ class HotelService
             'hotel_name' => ['required', 'string', 'max:255'],
             'property_type' => ['required', 'string', 'max:64'],
             'hotel_type' => ['required', 'string', 'max:64'],
+            'accommodation_type' => ['sometimes', 'string', Rule::in(Hotel::ACCOMMODATION_TYPES)],
             'star_rating' => ['nullable', 'integer', 'min:1', 'max:5'],
             // Deprecated: legacy text location fields are now derived from location_id.
             'country' => ['sometimes', 'nullable', 'string', 'max:120'],

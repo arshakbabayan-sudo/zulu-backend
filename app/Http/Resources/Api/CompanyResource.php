@@ -32,6 +32,7 @@ class CompanyResource extends JsonResource
             'website' => $this->website,
             'description' => $this->getTranslated('description', $lang) ?? $this->description,
             'logo' => $this->logo,
+            'is_partner_visible' => (bool) $this->is_partner_visible,
             'governance_status' => $this->governance_status,
             'is_seller' => (bool) $this->is_seller,
             'seller_activated_at' => $this->seller_activated_at?->toIso8601String(),
