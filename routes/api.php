@@ -59,6 +59,8 @@ use App\Http\Controllers\Api\ErrorReportController;
 use App\Http\Controllers\Api\ExcursionController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FlightController;
+use App\Http\Controllers\Api\FooterController;
+use App\Http\Controllers\Api\HeaderMenuController;
 use App\Http\Controllers\Api\HeroTabsController;
 use App\Http\Controllers\Api\HotelController;
 use App\Http\Controllers\Api\ImportSessionController;
@@ -203,6 +205,10 @@ Route::get('hero-tabs', [HeroTabsController::class, 'show'])->middleware('thrott
 // Brand settings (logo / contact info / social links / admin-defined custom fields).
 // Public read so Header/Footer/Contact-page can fetch with no auth.
 Route::get('brand-settings', [BrandSettingsController::class, 'show'])->middleware('throttle:api_public');
+
+// Header menu + Footer columns — public reads (Sprint 2)
+Route::get('header-menu', [HeaderMenuController::class, 'show'])->middleware('throttle:api_public');
+Route::get('footer', [FooterController::class, 'show'])->middleware('throttle:api_public');
 
 // Backward-compatible alias: same handlers as v1/discovery/*; DeprecateLegacyDiscoveryApi adds Link / optional Sunset.
 Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDiscoveryApi::class])->name('discovery.legacy.')->group($registerPublicDiscoveryRoutes);
@@ -572,6 +578,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // Brand settings write (ZULU CMS Sprint 1)
         Route::patch('brand-settings', [BrandSettingsController::class, 'update']);
+
+        // Header menu admin (ZULU CMS Sprint 2)
+        Route::get('header-menu', [HeaderMenuController::class, 'adminIndex']);
+        Route::put('header-menu', [HeaderMenuController::class, 'adminSync']);
+
+        // Footer admin (ZULU CMS Sprint 2)
+        Route::get('footer', [FooterController::class, 'adminIndex']);
+        Route::put('footer', [FooterController::class, 'adminSync']);
 
         // Newsletter subscriber management (home-page CMS Phase 2 Step 2.2)
         Route::get('newsletter/subscriptions', [AdminNewsletterController::class, 'index']);
