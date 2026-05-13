@@ -25,10 +25,12 @@ class WidgetSeeder extends Seeder
             'features',
             'cta',
             'home-hero',
+            'home-hero-settings',
             'home-special-offers',
             'home-popular-destinations',
             'home-partners',
             'home-newsletter',
+            'home-bottom-newsletter',
         ];
 
         $now = now();
