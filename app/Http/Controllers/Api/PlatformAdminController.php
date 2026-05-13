@@ -14,6 +14,7 @@ use App\Models\CompanyApplication;
 use App\Models\CompanySellerApplication;
 use App\Models\CompanySellerPermission;
 use App\Models\Package;
+use App\Models\PackageHomepageFeature;
 use App\Models\Payment;
 use App\Models\PlatformSetting;
 use App\Models\Review;
@@ -515,6 +516,85 @@ class PlatformAdminController extends Controller
             'success' => true,
             'data' => PackageResource::make($fresh)->toArray($request),
         ]);
+    }
+
+    /**
+     * GET — list homepage-feature rows for one package.
+     */
+    public function listPackageHomepageFeatures(Request $request, Package $package): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $rows = PackageHomepageFeature::query()
+            ->where('package_id', $package->id)
+            ->orderBy('section_slug')
+            ->orderBy('position')
+            ->get(['section_slug', 'position', 'is_active'])
+            ->map(fn ($r) => [
+                'section_slug' => $r->section_slug,
+                'position' => (int) $r->position,
+                'is_active' => (bool) $r->is_active,
+            ])
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'package_id' => $package->id,
+                'sections' => PackageHomepageFeature::SECTIONS,
+                'features' => $rows,
+            ],
+        ]);
+    }
+
+    /**
+     * PUT — replace homepage-feature rows for this package.
+     * Body: { features: [{ section_slug, position, is_active }, ...] }
+     * Each (package_id, section_slug) pair is unique; the body fully
+     * replaces existing rows for this package.
+     */
+    public function syncPackageHomepageFeatures(Request $request, Package $package): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'features' => ['present', 'array'],
+            'features.*.section_slug' => ['required', 'string', Rule::in(PackageHomepageFeature::SECTIONS)],
+            'features.*.position' => ['nullable', 'integer', 'min:0'],
+            'features.*.is_active' => ['required', 'boolean'],
+        ]);
+
+        $incoming = collect($validated['features'])->keyBy('section_slug');
+        $existing = PackageHomepageFeature::query()
+            ->where('package_id', $package->id)
+            ->get()
+            ->keyBy('section_slug');
+
+        // Upsert / delete per section
+        foreach (PackageHomepageFeature::SECTIONS as $section) {
+            $payload = $incoming->get($section);
+            if (! $payload) {
+                if ($existing->has($section)) {
+                    $existing->get($section)->delete();
+                }
+
+                continue;
+            }
+
+            PackageHomepageFeature::query()->updateOrCreate(
+                ['package_id' => $package->id, 'section_slug' => $section],
+                [
+                    'position' => (int) ($payload['position'] ?? 0),
+                    'is_active' => (bool) $payload['is_active'],
+                ]
+            );
+        }
+
+        return $this->listPackageHomepageFeatures($request, $package);
     }
 
     public function approveApplication(

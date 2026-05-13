@@ -517,6 +517,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('finance-summary', [PlatformAdminController::class, 'financeSummary']);
         Route::get('packages', [PlatformAdminController::class, 'packages']);
         Route::post('packages/{package}/deactivate', [PlatformAdminController::class, 'deactivatePackage'])->whereNumber('package');
+        Route::get('packages/{package}/homepage-features', [PlatformAdminController::class, 'listPackageHomepageFeatures'])->whereNumber('package');
+        Route::put('packages/{package}/homepage-features', [PlatformAdminController::class, 'syncPackageHomepageFeatures'])->whereNumber('package');
         Route::get('reviews', [PlatformAdminController::class, 'listAllReviews']);
         Route::get('settings', [PlatformAdminController::class, 'getSettings']);
         Route::patch('settings/{key}', [PlatformAdminController::class, 'updateSetting']);
