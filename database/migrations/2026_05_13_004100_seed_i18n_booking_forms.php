@@ -74,7 +74,7 @@ return new class extends Migration
         DB::table('ui_translations')
             ->where(function ($q) {
                 $q->where('key', 'like', 'form.label.%')
-                  ->orWhere('key', 'like', 'form.placeholder.%');
+                    ->orWhere('key', 'like', 'form.placeholder.%');
             })
             ->delete();
         Cache::forget('ui_translations_en');
