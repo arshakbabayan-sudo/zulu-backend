@@ -87,7 +87,6 @@ use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\SellerWebhookController;
-use App\Http\Controllers\Api\StaticPageController;
 use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TransferController;
@@ -210,9 +209,6 @@ Route::get('brand-settings', [BrandSettingsController::class, 'show'])->middlewa
 // Header menu + Footer columns — public reads (Sprint 2)
 Route::get('header-menu', [HeaderMenuController::class, 'show'])->middleware('throttle:api_public');
 Route::get('footer', [FooterController::class, 'show'])->middleware('throttle:api_public');
-
-// Static pages rich-text body (about, contact, terms, privacy, cookies) — Sprint 3
-Route::get('static-pages/{slug}', [StaticPageController::class, 'show'])->middleware('throttle:api_public');
 
 // Backward-compatible alias: same handlers as v1/discovery/*; DeprecateLegacyDiscoveryApi adds Link / optional Sunset.
 Route::prefix('discovery')->middleware(['throttle:api_public', DeprecateLegacyDiscoveryApi::class])->name('discovery.legacy.')->group($registerPublicDiscoveryRoutes);
@@ -590,10 +586,6 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Footer admin (ZULU CMS Sprint 2)
         Route::get('footer', [FooterController::class, 'adminIndex']);
         Route::put('footer', [FooterController::class, 'adminSync']);
-
-        // Static pages admin (ZULU CMS Sprint 3)
-        Route::get('static-pages/{slug}', [StaticPageController::class, 'adminShow']);
-        Route::patch('static-pages/{slug}', [StaticPageController::class, 'adminUpdate']);
 
         // Newsletter subscriber management (home-page CMS Phase 2 Step 2.2)
         Route::get('newsletter/subscriptions', [AdminNewsletterController::class, 'index']);
