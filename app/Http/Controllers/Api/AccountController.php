@@ -162,32 +162,27 @@ class AccountController extends Controller
     public function requestDataExport(Request $request, DataExportService $service): JsonResponse
     {
         $user = $request->user();
-        $recent = DataExportRequest::query()
+
+        // If a generation is already in flight for this user, don't kick off
+        // a parallel one — let the in-progress job finish.
+        $inFlight = DataExportRequest::query()
             ->where('user_id', $user->id)
-            ->where('created_at', '>=', now()->subDays(DataExportRequest::REQUEST_WINDOW_DAYS))
-            ->where('status', '!=', DataExportRequest::STATUS_FAILED)
+            ->where('status', DataExportRequest::STATUS_GENERATING)
+            ->where('created_at', '>=', now()->subMinutes(5))
             ->latest('id')
             ->first();
 
-        if ($recent && $recent->status === DataExportRequest::STATUS_READY && $recent->expires_at && $recent->expires_at->isFuture()) {
+        if ($inFlight) {
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'status' => $recent->status,
-                    'ready_at' => optional($recent->ready_at)->toIso8601String(),
-                    'expires_at' => optional($recent->expires_at)->toIso8601String(),
-                    'message' => 'A recent export is still available; check your email.',
-                ],
-            ], 200);
-        }
-
-        if ($recent && $recent->status === DataExportRequest::STATUS_GENERATING) {
-            return response()->json([
-                'success' => true,
-                'data' => ['status' => $recent->status],
+                'data' => ['status' => $inFlight->status],
             ], 202);
         }
 
+        // Otherwise every "Prepare my data export" click regenerates. Old
+        // ready exports still work until they expire (7 days) but a fresh
+        // archive is created and a fresh email is queued so the user gets
+        // a working link in their inbox now.
         $export = $service->generate($user);
 
         return response()->json([
