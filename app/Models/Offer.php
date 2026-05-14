@@ -240,11 +240,25 @@ class Offer extends Model
         if (! $locationId) {
             return '';
         }
-        $location = Location::query()->find($locationId);
-        if (! $location) {
-            return '';
+        // ZULU locations are a name + parent_id tree (city → region →
+        // country), not flat city/region/country columns. Walk up to 4
+        // hops so a hotel pinned to "Sharm El Sheikh" surfaces for both
+        // city and country queries ("Egypt").
+        $parts = [];
+        $current = Location::query()->find($locationId);
+        $hops = 0;
+        while ($current && $hops < 4) {
+            $name = (string) ($current->name ?? '');
+            if ($name !== '') {
+                $parts[] = $name;
+            }
+            $parentId = $current->parent_id ?? null;
+            if (! $parentId) {
+                break;
+            }
+            $current = Location::query()->find($parentId);
+            $hops++;
         }
-        $parts = array_filter([$location->city ?? null, $location->region ?? null, $location->country ?? null]);
 
         return implode(' ', $parts);
     }
