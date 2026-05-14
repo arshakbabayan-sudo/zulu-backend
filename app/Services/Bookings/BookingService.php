@@ -2,12 +2,15 @@
 
 namespace App\Services\Bookings;
 
+use App\Models\Flight;
 use App\Models\Offer;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Services\Finance\FinanceService;
 use App\Services\Orders\OrderService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -112,10 +115,15 @@ class BookingService
 
     public function confirm(Order $order): Order
     {
+        $wasConfirmed = $order->getOriginal('status') === 'confirmed';
         $order->status = 'confirmed';
         $order->save();
 
-        // TODO Sprint 11/4: restore seat-capacity decrement once Order-native inventory flow is rebuilt.
+        // Decrement flight seat capacity once per confirm transition.
+        if (! $wasConfirmed) {
+            $this->adjustFlightSeatCapacity($order, -1);
+        }
+
         try {
             app(FinanceService::class)->createEntitlementsForOrder($order->fresh(['items']));
         } catch (\Throwable $e) {
@@ -130,11 +138,68 @@ class BookingService
 
     public function cancel(Order $order): Order
     {
-        // TODO Sprint 11/4: restore seat-capacity increment once Order-native inventory flow is rebuilt.
+        $wasConfirmed = $order->getOriginal('status') === 'confirmed';
         $order->status = 'cancelled';
         $order->save();
 
+        // Return seats only if they were previously decremented.
+        if ($wasConfirmed) {
+            $this->adjustFlightSeatCapacity($order, +1);
+        }
+
         return $order->fresh(['items']);
+    }
+
+    /**
+     * Adjust flight seat capacity for every flight item on the order by the
+     * given sign (-1 to consume seats on confirm, +1 to return seats on
+     * cancel). Capacity is clamped at zero so a double-confirm or stale
+     * webhook never drives a flight negative.
+     */
+    private function adjustFlightSeatCapacity(Order $order, int $sign): void
+    {
+        if ($sign === 0) {
+            return;
+        }
+
+        $items = $order->relationLoaded('items')
+            ? $order->items
+            : $order->items()->get();
+
+        foreach ($items as $item) {
+            if (! $item instanceof OrderItem || $item->item_type !== 'flight') {
+                continue;
+            }
+            $flightId = (int) ($item->item_id ?? 0);
+            if ($flightId <= 0) {
+                continue;
+            }
+            $quantity = (int) ($item->quantity ?? 1);
+            if ($quantity <= 0) {
+                continue;
+            }
+            $delta = $sign * $quantity;
+
+            try {
+                DB::transaction(function () use ($flightId, $delta) {
+                    $flight = Flight::query()->lockForUpdate()->find($flightId);
+                    if (! $flight) {
+                        return;
+                    }
+                    $current = (int) ($flight->seat_capacity_available ?? 0);
+                    $next = max(0, $current + $delta);
+                    $flight->seat_capacity_available = $next;
+                    $flight->save();
+                });
+            } catch (\Throwable $e) {
+                Log::warning('Flight seat capacity adjust failed', [
+                    'order_id' => $order->id,
+                    'flight_id' => $flightId,
+                    'delta' => $delta,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     public function getWithDetails(int $id): ?Order

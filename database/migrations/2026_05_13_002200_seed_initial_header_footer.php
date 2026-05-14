@@ -16,14 +16,15 @@ return new class extends Migration
     {
         $now = now();
 
-        // Header menu — matches the user's screenshot: About / Booking /
-        // Destinations (with children) / Code check / Help.
+        // Header menu — About / Destinations (with children) / Help.
+        // Earlier revisions seeded Booking → /bookings and Code check →
+        // /code-check, but neither route exists. 2026_05_14_000200 drops
+        // those rows in prod; this seed no longer recreates them on fresh
+        // installs.
         $headerItems = [
             ['label_en' => 'About', 'label_ru' => 'О нас', 'label_hy' => 'Մեր մասին', 'url' => '/about', 'position' => 1],
-            ['label_en' => 'Booking', 'label_ru' => 'Бронирование', 'label_hy' => 'Ամրագրում', 'url' => '/bookings', 'position' => 2],
-            ['label_en' => 'Destinations', 'label_ru' => 'Направления', 'label_hy' => 'Ուղղություններ', 'url' => '#', 'position' => 3],
-            ['label_en' => 'Code check', 'label_ru' => 'Проверка кода', 'label_hy' => 'Կոդի ստուգում', 'url' => '/code-check', 'position' => 4],
-            ['label_en' => 'Help', 'label_ru' => 'Помощь', 'label_hy' => 'Օգնություն', 'url' => '/contact', 'position' => 5],
+            ['label_en' => 'Destinations', 'label_ru' => 'Направления', 'label_hy' => 'Ուղղություններ', 'url' => '#', 'position' => 2],
+            ['label_en' => 'Help', 'label_ru' => 'Помощь', 'label_hy' => 'Օգնություն', 'url' => '/contact', 'position' => 3],
         ];
 
         foreach ($headerItems as $item) {
