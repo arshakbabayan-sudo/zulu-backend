@@ -388,15 +388,31 @@ class LocalizationController extends Controller
             $langRaw = $request->attributes->get('lang', 'en');
         }
         $lang = is_string($langRaw) ? $langRaw : 'en';
-        $lang = $service->resolveLanguage($lang);
 
+        // `?lang=all` returns all three languages in one payload so the SPA can
+        // preload everything at SSR and switch languages later without any
+        // network roundtrip.
+        if (strtolower($lang) === 'all') {
+            $bundle = [
+                'en' => $service->getUiTranslations('en'),
+                'hy' => $service->getUiTranslations('hy'),
+                'ru' => $service->getUiTranslations('ru'),
+            ];
+
+            return response()
+                ->json([
+                    'success' => true,
+                    'data' => [
+                        'language_code' => 'all',
+                        'translations' => $bundle,
+                    ],
+                ])
+                ->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+        }
+
+        $lang = $service->resolveLanguage($lang);
         $translations = $service->getUiTranslations($lang);
 
-        // 100KB+ payload re-fetched on every language switch was the dominant
-        // language-switch latency (~1.5s for HY). Translations rarely change;
-        // admin edits already bust the server-side `ui_translations_<lang>`
-        // cache key, so a 5-minute public browser cache + SWR is safe and
-        // makes repeat switches in the same browser session instant.
         return response()
             ->json([
                 'success' => true,
