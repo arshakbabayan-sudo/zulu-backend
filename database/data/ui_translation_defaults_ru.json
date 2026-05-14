@@ -1378,6 +1378,8 @@
     "company.apply.company_name": "Название компании",
     "company.apply.contact_person": "Контактное лицо",
     "company.apply.country": "Страна",
+    "company.apply.country_placeholder": "Начните вводить название страны…",
+    "company.apply.city_placeholder": "Начните вводить название города…",
     "company.apply.field_required": "Поле «{label}» обязательно",
     "company.apply.field_already_taken": "«{label}» уже используется",
     "company.apply.field_invalid_email": "«{label}» не является корректным email-адресом",

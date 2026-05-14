@@ -1378,6 +1378,8 @@
     "company.apply.company_name": "Ընկերության անվանում",
     "company.apply.contact_person": "Կոնտակտային անձ",
     "company.apply.country": "Երկիր",
+    "company.apply.country_placeholder": "Մուտքագրեք երկրի անունը՝ որոնելու համար…",
+    "company.apply.city_placeholder": "Մուտքագրեք քաղաքի անունը՝ որոնելու համար…",
     "company.apply.field_required": "{label}-ը պարտադիր է",
     "company.apply.field_already_taken": "{label}-ն արդեն օգտագործվում է",
     "company.apply.field_invalid_email": "{label}-ը վավեր էլ. փոստի հասցե չէ",

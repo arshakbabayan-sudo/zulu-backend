@@ -1378,6 +1378,8 @@
     "company.apply.company_name": "Company name",
     "company.apply.contact_person": "Contact person",
     "company.apply.country": "Country",
+    "company.apply.country_placeholder": "Type to search a country…",
+    "company.apply.city_placeholder": "Type to search a city…",
     "company.apply.field_required": "{label} is required",
     "company.apply.field_already_taken": "{label} is already in use",
     "company.apply.field_invalid_email": "{label} is not a valid email address",
