@@ -108,8 +108,8 @@ class AISearchService
             }
 
             $text = (string) ($response->json('candidates.0.content.parts.0.text') ?? '');
-            $parsed = json_decode($text, true);
-            if (! is_array($parsed)) {
+            $parsed = $this->extractJsonObject($text);
+            if ($parsed === null) {
                 Log::warning('Gemini returned non-JSON', ['text' => substr($text, 0, 500)]);
                 throw new RuntimeException('AI parser returned invalid JSON.');
             }
@@ -163,8 +163,8 @@ class AISearchService
             }
 
             $text = (string) ($response->json('content.0.text') ?? '');
-            $parsed = json_decode($text, true);
-            if (! is_array($parsed)) {
+            $parsed = $this->extractJsonObject($text);
+            if ($parsed === null) {
                 Log::warning('Claude returned non-JSON', ['text' => substr($text, 0, 500)]);
                 throw new RuntimeException('AI parser returned invalid JSON.');
             }
@@ -251,6 +251,36 @@ Rules:
 - Normalise non-Latin city names to English.
 - Output JSON only.
 TXT;
+    }
+
+    /**
+     * Pull a JSON object out of a model response. Both Gemini and Claude
+     * sometimes wrap their answer in ```json fences``` or add a leading
+     * "Here's the JSON:" line, even when the prompt forbids it — strip
+     * those before json_decode so we don't bounce the whole request.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function extractJsonObject(string $text): ?array
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return null;
+        }
+
+        if (preg_match('/```(?:json)?\s*(.+?)\s*```/s', $text, $m) === 1) {
+            $text = $m[1];
+        }
+
+        $start = strpos($text, '{');
+        $end = strrpos($text, '}');
+        if ($start !== false && $end !== false && $end > $start) {
+            $text = substr($text, $start, $end - $start + 1);
+        }
+
+        $parsed = json_decode($text, true);
+
+        return is_array($parsed) ? $parsed : null;
     }
 
     /**
