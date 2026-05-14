@@ -78,6 +78,24 @@ class PlatformAdminController extends Controller
         return $this->paginatedCommerceResourceResponse($request, $paginator, CompanyResource::class);
     }
 
+    public function showCompany(Request $request, Company $company): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $company->loadCount([
+            'sellerPermissions as active_seller_permissions_count' => function ($q): void {
+                $q->where('status', 'active');
+            },
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => CompanyResource::make($company)->toArray($request),
+        ]);
+    }
+
     public function changeGovernance(Request $request, Company $company, PlatformAdminService $service): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
