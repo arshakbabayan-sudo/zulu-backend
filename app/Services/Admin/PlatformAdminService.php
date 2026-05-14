@@ -44,7 +44,7 @@ class PlatformAdminService
     }
 
     /**
-     * @param  array{governance_status?:string,is_seller?:bool|null,search?:string,type?:string}  $filters
+     * @param  array{governance_status?:string,is_seller?:bool|null,search?:string,type?:string,sort_by?:string,sort_dir?:string}  $filters
      */
     public function listCompanies(array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
@@ -53,8 +53,7 @@ class PlatformAdminService
                 'sellerPermissions as active_seller_permissions_count' => function ($q): void {
                     $q->where('status', 'active');
                 },
-            ])
-            ->orderByDesc('id');
+            ]);
 
         if (! empty($filters['governance_status'])) {
             $query->where('governance_status', $filters['governance_status']);
@@ -67,15 +66,22 @@ class PlatformAdminService
         if (! empty($filters['search'])) {
             $term = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $filters['search']).'%';
             $query->where(function ($q) use ($term): void {
-                $q->where('name', 'like', $term)
-                    ->orWhere('legal_name', 'like', $term)
-                    ->orWhere('slug', 'like', $term);
+                $q->where('name', 'ilike', $term)
+                    ->orWhere('legal_name', 'ilike', $term)
+                    ->orWhere('slug', 'ilike', $term);
             });
         }
 
         if (! empty($filters['type'])) {
             $query->where('type', $filters['type']);
         }
+
+        $allowedSorts = ['id', 'name', 'type', 'status', 'governance_status', 'is_seller', 'created_at'];
+        $sortBy = isset($filters['sort_by']) && in_array($filters['sort_by'], $allowedSorts, true)
+            ? $filters['sort_by']
+            : 'id';
+        $sortDir = (isset($filters['sort_dir']) && strtolower((string) $filters['sort_dir']) === 'asc') ? 'asc' : 'desc';
+        $query->orderBy($sortBy, $sortDir);
 
         return $query->paginate($perPage);
     }

@@ -65,6 +65,8 @@ class PlatformAdminController extends Controller
             'is_seller' => $this->parseOptionalBool($request->query('is_seller')),
             'search' => $request->filled('search') ? (string) $request->query('search') : null,
             'type' => $request->filled('type') ? (string) $request->query('type') : null,
+            'sort_by' => $request->filled('sort_by') ? (string) $request->query('sort_by') : null,
+            'sort_dir' => $request->filled('sort_dir') ? (string) $request->query('sort_dir') : null,
         ];
 
         $perPage = $this->commerceListPerPage($request);
