@@ -30,7 +30,12 @@ class AuthController extends Controller
             ], 401);
         }
 
-        if ($user->status !== User::STATUS_ACTIVE) {
+        // Active accounts log in normally. Accounts within their 30-day
+        // GDPR deletion window can still log in so they can self-serve a
+        // cancel — UserResource flags the pending status to the frontend
+        // which surfaces a "scheduled for deletion" banner. Any other
+        // status (banned, etc.) is rejected.
+        if (! in_array($user->status, [User::STATUS_ACTIVE, User::STATUS_PENDING_DELETION], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid credentials',
