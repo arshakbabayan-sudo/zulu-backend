@@ -392,13 +392,20 @@ class LocalizationController extends Controller
 
         $translations = $service->getUiTranslations($lang);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'language_code' => $lang,
-                'translations' => $translations,
-            ],
-        ]);
+        // 100KB+ payload re-fetched on every language switch was the dominant
+        // language-switch latency (~1.5s for HY). Translations rarely change;
+        // admin edits already bust the server-side `ui_translations_<lang>`
+        // cache key, so a 5-minute public browser cache + SWR is safe and
+        // makes repeat switches in the same browser session instant.
+        return response()
+            ->json([
+                'success' => true,
+                'data' => [
+                    'language_code' => $lang,
+                    'translations' => $translations,
+                ],
+            ])
+            ->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     }
 
     public function uiTranslationsPaginated(Request $request, LocalizationService $service): JsonResponse
