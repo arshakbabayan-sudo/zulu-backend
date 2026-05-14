@@ -16,15 +16,16 @@ return new class extends Migration
     {
         $now = now();
 
-        // Header menu — About / Destinations (with children) / Help.
-        // Earlier revisions seeded Booking → /bookings and Code check →
-        // /code-check, but neither route exists. 2026_05_14_000200 drops
-        // those rows in prod; this seed no longer recreates them on fresh
-        // installs.
+        // Header menu — About / Booking / Destinations (with children) /
+        // Code check / Help. Earlier revisions seeded Booking → /bookings
+        // and Code check → /code-check; neither route exists, so the URLs
+        // are repointed at /account/trips and /account/vouchers respectively.
         $headerItems = [
             ['label_en' => 'About', 'label_ru' => 'О нас', 'label_hy' => 'Մեր մասին', 'url' => '/about', 'position' => 1],
-            ['label_en' => 'Destinations', 'label_ru' => 'Направления', 'label_hy' => 'Ուղղություններ', 'url' => '#', 'position' => 2],
-            ['label_en' => 'Help', 'label_ru' => 'Помощь', 'label_hy' => 'Օգնություն', 'url' => '/contact', 'position' => 3],
+            ['label_en' => 'Booking', 'label_ru' => 'Бронирование', 'label_hy' => 'Ամրագրում', 'url' => '/account/trips', 'position' => 2],
+            ['label_en' => 'Destinations', 'label_ru' => 'Направления', 'label_hy' => 'Ուղղություններ', 'url' => '#', 'position' => 3],
+            ['label_en' => 'Code check', 'label_ru' => 'Проверка кода', 'label_hy' => 'Կոդի ստուգում', 'url' => '/account/vouchers', 'position' => 4],
+            ['label_en' => 'Help', 'label_ru' => 'Помощь', 'label_hy' => 'Օգնություն', 'url' => '/contact', 'position' => 5],
         ];
 
         foreach ($headerItems as $item) {
