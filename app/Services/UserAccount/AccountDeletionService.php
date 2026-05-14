@@ -61,9 +61,12 @@ class AccountDeletionService
     }
 
     /**
-     * Step 2 — user clicks the email link. We flip the request to
-     * scheduled and soft-delete the user; auth flows must already filter
-     * trashed users out via SoftDeletes.
+     * Step 2 — user clicks the email link. We flip status to
+     * pending_deletion so the rest of the app can show a "scheduled for
+     * deletion" banner, but we do NOT soft-delete yet — the user still
+     * needs to be able to log in to self-serve a cancel within the
+     * 30-day window. Active Sanctum tokens are revoked so old sessions
+     * are forced to re-auth and pick up the new status.
      */
     public function confirmDeletion(string $token): ?AccountDeletionRequest
     {
@@ -90,11 +93,11 @@ class AccountDeletionService
             if ($user) {
                 $user->status = User::STATUS_PENDING_DELETION;
                 $user->save();
-                // Revoke any active Sanctum tokens so the next API call boots them out.
                 if (method_exists($user, 'tokens')) {
                     $user->tokens()->delete();
                 }
-                $user->delete(); // soft delete — restorable until scheduled_for.
+                // Note: no $user->delete() here — soft-delete happens during
+                // purgeExpired() once the 30-day window elapses.
             }
 
             return $request->fresh();
@@ -103,7 +106,7 @@ class AccountDeletionService
 
     /**
      * Step 3 — user changes their mind within the 30-day window.
-     * Restores the soft-deleted user and marks the request cancelled.
+     * Flips status back to active and marks the request cancelled.
      */
     public function cancelDeletion(int $userId): ?AccountDeletionRequest
     {
@@ -124,8 +127,10 @@ class AccountDeletionService
             ]);
 
             $user = User::withTrashed()->find($request->user_id);
-            if ($user && $user->trashed()) {
-                $user->restore();
+            if ($user) {
+                if ($user->trashed()) {
+                    $user->restore();
+                }
                 $user->status = User::STATUS_ACTIVE;
                 $user->save();
             }
