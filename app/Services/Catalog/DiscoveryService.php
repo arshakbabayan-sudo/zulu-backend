@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class DiscoveryService
 {
@@ -52,6 +53,40 @@ class DiscoveryService
 
             if ($moduleType !== null) {
                 $query->where('type', $moduleType);
+            }
+
+            // Phase 3 — Meilisearch hybrid path. When a free-text query is
+            // present, ask Meilisearch for the matching offer IDs (it owns
+            // typo tolerance, fuzzy matching, multilingual hits) and then
+            // narrow the Eloquent query down to those IDs so all the
+            // structured PG filters below still apply unchanged. Empty `q`
+            // → existing PG-only path; Meilisearch failure → silent
+            // fallback to the PG path so the site keeps working.
+            $textQuery = isset($input['q']) ? trim((string) $input['q']) : '';
+            if ($textQuery !== '' && config('scout.driver') === 'meilisearch') {
+                try {
+                    $builder = Offer::search($textQuery);
+                    if ($moduleType !== null) {
+                        $builder = $builder->where('type', $moduleType);
+                    }
+                    $matchedIds = $builder->take(500)->keys()->all();
+                    if (! empty($matchedIds)) {
+                        $query->whereIn('id', $matchedIds);
+                    } else {
+                        // No hits — return empty result without falling
+                        // through to "show everything that matches the
+                        // structured filters".
+                        $query->whereRaw('1 = 0');
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Meilisearch query failed, falling back to PG ILIKE', [
+                        'q' => $textQuery,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Fallback: simple ILIKE across the offer title only —
+                    // good enough to keep the page functional during outage.
+                    $query->where('title', 'ilike', '%'.$textQuery.'%');
+                }
             }
 
             $this->applyOfferPriceCurrencyFilters($query, $input);

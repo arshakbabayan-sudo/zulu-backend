@@ -32,6 +32,11 @@ class DiscoveryController extends Controller
     public function search(Request $request, DiscoveryService $discoveryService): JsonResponse
     {
         $validated = $request->validate([
+            // Free-text query — Phase 3 (Meilisearch). Empty → existing
+            // PostgreSQL filter-only path. Present → DiscoveryService uses
+            // Meilisearch to narrow to matching offer IDs first, then
+            // applies structured filters in PG.
+            'q' => ['sometimes', 'nullable', 'string', 'max:200'],
             'module_type' => [
                 'sometimes',
                 'nullable',
@@ -83,6 +88,7 @@ class DiscoveryController extends Controller
         }
 
         $input = [
+            'q' => $validated['q'] ?? null,
             'module_type' => $moduleType,
             'accommodation_type' => $validated['accommodation_type'] ?? null,
             'is_stay_umbrella' => ($validated['module_type'] ?? null) === 'stay',
