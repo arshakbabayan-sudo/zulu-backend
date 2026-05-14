@@ -40,10 +40,12 @@ class LocalizationController extends Controller
             'sort_order' => (int) $row->sort_order,
         ])->values();
 
-        return response()->json([
-            'success' => true,
-            'data' => $langs,
-        ]);
+        return response()
+            ->json([
+                'success' => true,
+                'data' => $langs,
+            ])
+            ->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     }
 
     public function translations(Request $request, LocalizationService $service): JsonResponse

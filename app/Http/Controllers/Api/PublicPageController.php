@@ -36,29 +36,34 @@ class PublicPageController extends Controller
             ], 404);
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'id' => $page->id,
-                'page_name' => $page->getTranslation('page_name', $lang),
-                'page_slug' => $page->getTranslation('page_slug', $lang),
-                'meta_title' => $page->getTranslation('meta_title', $lang),
-                'meta_keywords' => $page->getTranslation('meta_keywords', $lang),
-                'meta_description' => $page->getTranslation('meta_description', $lang),
-                'enable_seo' => (bool) $page->enable_seo,
-                'is_bread_crumb' => (bool) $page->is_bread_crumb,
-                'widgets' => $page->widgetContents->map(function ($widgetContent) use ($lang): array {
-                    return [
-                        'id' => $widgetContent->id,
-                        'widget_slug' => $widgetContent->widget_slug,
-                        'ui_card_number' => $widgetContent->ui_card_number,
-                        'position' => (int) $widgetContent->position,
-                        'widget_content' => $widgetContent->getTranslation($lang) ?? [],
-                    ];
-                })->values()->all(),
-                'sections' => $slug === 'home-page' ? $this->buildHomeSections($lang) : (object) [],
-            ],
-        ]);
+        return response()
+            ->json([
+                'success' => true,
+                'data' => [
+                    'id' => $page->id,
+                    'page_name' => $page->getTranslation('page_name', $lang),
+                    'page_slug' => $page->getTranslation('page_slug', $lang),
+                    'meta_title' => $page->getTranslation('meta_title', $lang),
+                    'meta_keywords' => $page->getTranslation('meta_keywords', $lang),
+                    'meta_description' => $page->getTranslation('meta_description', $lang),
+                    'enable_seo' => (bool) $page->enable_seo,
+                    'is_bread_crumb' => (bool) $page->is_bread_crumb,
+                    'widgets' => $page->widgetContents->map(function ($widgetContent) use ($lang): array {
+                        return [
+                            'id' => $widgetContent->id,
+                            'widget_slug' => $widgetContent->widget_slug,
+                            'ui_card_number' => $widgetContent->ui_card_number,
+                            'position' => (int) $widgetContent->position,
+                            'widget_content' => $widgetContent->getTranslation($lang) ?? [],
+                        ];
+                    })->values()->all(),
+                    'sections' => $slug === 'home-page' ? $this->buildHomeSections($lang) : (object) [],
+                ],
+            ])
+            // Public CMS page payloads change only when an admin edits a page
+            // or widget. A 60-second browser cache keeps the home-page snappy
+            // for repeat hits while still letting edits propagate quickly.
+            ->header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     }
 
     /**
