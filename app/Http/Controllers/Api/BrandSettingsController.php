@@ -35,10 +35,15 @@ class BrandSettingsController extends Controller
     {
         $brand = $this->loadBrand($settings);
 
-        return response()->json([
-            'success' => true,
-            'data' => $brand,
-        ]);
+        // Brand info (logo, phone, socials) is the same for every visitor
+        // and changes only when admin edits it. Browser caches the payload
+        // for 5 minutes so repeat visits skip the round trip.
+        return response()
+            ->json([
+                'success' => true,
+                'data' => $brand,
+            ])
+            ->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     }
 
     /**

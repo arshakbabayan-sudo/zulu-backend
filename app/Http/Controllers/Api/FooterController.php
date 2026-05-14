@@ -40,19 +40,31 @@ class FooterController extends Controller
                 'id' => $col->id,
                 'slug' => $col->slug,
                 'title' => $col->{$labelTitle} ?: $col->title_en,
+                'titles' => [
+                    'en' => $col->title_en,
+                    'hy' => $col->title_hy ?: $col->title_en,
+                    'ru' => $col->title_ru ?: $col->title_en,
+                ],
                 'links' => $col->links->map(fn (FooterLink $l) => [
                     'id' => $l->id,
                     'label' => $l->{$labelLink} ?: $l->label_en,
+                    'labels' => [
+                        'en' => $l->label_en,
+                        'hy' => $l->label_hy ?: $l->label_en,
+                        'ru' => $l->label_ru ?: $l->label_en,
+                    ],
                     'url' => $l->url,
                     'open_in_new_tab' => (bool) $l->open_in_new_tab,
                 ])->values(),
             ];
         });
 
-        return response()->json([
-            'success' => true,
-            'data' => ['columns' => $data, 'lang' => $lang],
-        ]);
+        return response()
+            ->json([
+                'success' => true,
+                'data' => ['columns' => $data, 'lang' => $lang],
+            ])
+            ->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     }
 
     public function adminIndex(Request $request): JsonResponse

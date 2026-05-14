@@ -35,10 +35,16 @@ class HeaderMenuController extends Controller
             ->map(fn ($root) => $this->serializeWithChildren($root, $byParent, $lang))
             ->values();
 
-        return response()->json([
-            'success' => true,
-            'data' => ['items' => $tree, 'lang' => $lang],
-        ]);
+        // Browser caches the 3-language payload for 5 minutes; admin edits
+        // bust the corresponding header_menu rows and the next request after
+        // expiry re-fetches. With a multi-language payload the frontend can
+        // switch languages instantly client-side — no SSR round-trip.
+        return response()
+            ->json([
+                'success' => true,
+                'data' => ['items' => $tree, 'lang' => $lang],
+            ])
+            ->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     }
 
     public function adminIndex(Request $request): JsonResponse
@@ -165,7 +171,14 @@ class HeaderMenuController extends Controller
 
         return [
             'id' => $item->id,
+            // `label` stays for back-compat / SSR pre-paint with the cookie's
+            // language; client picks from `labels` once the user toggles.
             'label' => $item->{$labelField} ?: $item->label_en,
+            'labels' => [
+                'en' => $item->label_en,
+                'hy' => $item->label_hy ?: $item->label_en,
+                'ru' => $item->label_ru ?: $item->label_en,
+            ],
             'url' => $item->url,
             'icon' => $item->icon,
             'open_in_new_tab' => (bool) $item->open_in_new_tab,
