@@ -210,11 +210,15 @@ class AdminLocationController extends Controller
             // "list all countries" without inventing a placeholder query.
             'q' => ['sometimes', 'nullable', 'string', 'max:80'],
             'types' => ['sometimes', 'nullable', 'string'],
-            'limit' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:200'],
+            'limit' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:500'],
+            // Restrict result set to a single country (ISO-3166 alpha-2 code).
+            // Useful for the city dropdown after the user picks a country.
+            'country_code' => ['sometimes', 'nullable', 'string', 'size:2'],
         ]);
 
         $q = trim($validated['q'] ?? '');
         $limit = (int) ($validated['limit'] ?? 12);
+        $countryCode = isset($validated['country_code']) ? strtoupper(trim((string) $validated['country_code'])) : null;
 
         $allowedTypes = ['country', 'region', 'city'];
         $types = $allowedTypes;
@@ -232,6 +236,10 @@ class AdminLocationController extends Controller
         $base = Location::query()
             ->whereIn('type', $types)
             ->where('is_active', true);
+
+        if ($countryCode !== null && $countryCode !== '') {
+            $base->where('country_code', $countryCode);
+        }
 
         if ($q !== '') {
             $base->where(function ($w) use ($like) {
