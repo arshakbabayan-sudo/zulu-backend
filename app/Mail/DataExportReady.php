@@ -28,7 +28,11 @@ class DataExportReady extends Mailable implements ShouldQueue
             view: 'emails.data-export-ready',
             with: [
                 'user' => $this->user,
-                'downloadUrl' => $base.'/account/data-export/download?token='.$this->token,
+                // Public path — sits outside /account/* so ProtectedRoute
+                // doesn't bounce un-authenticated users (e.g. clicking the
+                // email link from a different device / incognito tab) to
+                // /login. Security still relies on the 64-char token.
+                'downloadUrl' => $base.'/download?token='.$this->token,
             ],
         );
     }
