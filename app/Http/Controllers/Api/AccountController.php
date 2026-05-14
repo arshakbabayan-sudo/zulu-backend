@@ -4,12 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
+use App\Models\DataExportRequest;
 use App\Models\SavedItem;
 use App\Services\Pricing\PriceCalculatorService;
+use App\Services\UserAccount\AccountDeletionService;
+use App\Services\UserAccount\DataExportService;
 use App\Services\UserAccount\UserAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AccountController extends Controller
 {
@@ -78,6 +83,157 @@ class AccountController extends Controller
         return response()->json([
             'success' => true,
             'data' => null,
+        ]);
+    }
+
+    // ─── GDPR: account deletion ────────────────────────────────────────
+
+    public function requestDeletion(Request $request, AccountDeletionService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $deletion = $service->requestDeletion(
+            $request->user(),
+            $data['reason'] ?? null,
+            $request->ip(),
+            substr((string) $request->userAgent(), 0, 512)
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'status' => $deletion->status,
+                'sent_to' => $request->user()->email,
+            ],
+        ], 202);
+    }
+
+    public function confirmDeletion(Request $request, AccountDeletionService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string', 'size:64'],
+        ]);
+
+        $result = $service->confirmDeletion($data['token']);
+        if ($result === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or already-used token.',
+            ], 410);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'status' => $result->status,
+                'scheduled_for' => optional($result->scheduled_for)->toIso8601String(),
+            ],
+        ]);
+    }
+
+    public function cancelDeletion(Request $request, AccountDeletionService $service): JsonResponse
+    {
+        // Caller must be the soft-deleted user (we authenticate via email +
+        // password or via a recovery link; this endpoint accepts an
+        // authenticated session that has access to a pending-deletion row).
+        $userId = (int) $request->input('user_id', $request->user()?->id ?? 0);
+        if ($userId <= 0) {
+            return response()->json(['success' => false, 'message' => 'User not specified.'], 422);
+        }
+
+        $result = $service->cancelDeletion($userId);
+        if ($result === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active deletion request to cancel.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => ['status' => $result->status],
+        ]);
+    }
+
+    // ─── GDPR: data export ─────────────────────────────────────────────
+
+    public function requestDataExport(Request $request, DataExportService $service): JsonResponse
+    {
+        $user = $request->user();
+        $recent = DataExportRequest::query()
+            ->where('user_id', $user->id)
+            ->where('created_at', '>=', now()->subDays(DataExportRequest::REQUEST_WINDOW_DAYS))
+            ->where('status', '!=', DataExportRequest::STATUS_FAILED)
+            ->latest('id')
+            ->first();
+
+        if ($recent && $recent->status === DataExportRequest::STATUS_READY && $recent->expires_at && $recent->expires_at->isFuture()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'status' => $recent->status,
+                    'ready_at' => optional($recent->ready_at)->toIso8601String(),
+                    'expires_at' => optional($recent->expires_at)->toIso8601String(),
+                    'message' => 'A recent export is still available; check your email.',
+                ],
+            ], 200);
+        }
+
+        if ($recent && $recent->status === DataExportRequest::STATUS_GENERATING) {
+            return response()->json([
+                'success' => true,
+                'data' => ['status' => $recent->status],
+            ], 202);
+        }
+
+        $export = $service->generate($user);
+
+        return response()->json([
+            'success' => $export->status === DataExportRequest::STATUS_READY,
+            'data' => [
+                'status' => $export->status,
+                'ready_at' => optional($export->ready_at)->toIso8601String(),
+                'expires_at' => optional($export->expires_at)->toIso8601String(),
+            ],
+        ], $export->status === DataExportRequest::STATUS_READY ? 200 : 202);
+    }
+
+    public function downloadDataExport(Request $request): BinaryFileResponse|JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string', 'size:64'],
+        ]);
+
+        $export = DataExportRequest::query()
+            ->where('download_token', $data['token'])
+            ->where('status', DataExportRequest::STATUS_READY)
+            ->first();
+
+        if (! $export || ! $export->file_path || ! $export->expires_at || $export->expires_at->isPast()) {
+            if ($export && $export->expires_at && $export->expires_at->isPast()) {
+                $export->update(['status' => DataExportRequest::STATUS_EXPIRED]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Download link expired or invalid.',
+            ], 410);
+        }
+
+        $absolutePath = Storage::disk('local')->path($export->file_path);
+        if (! is_file($absolutePath)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Export file missing from storage.',
+            ], 410);
+        }
+
+        $export->update(['downloaded_at' => now()]);
+
+        return response()->download($absolutePath, basename($absolutePath), [
+            'Content-Type' => 'application/zip',
         ]);
     }
 

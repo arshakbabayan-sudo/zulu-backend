@@ -195,6 +195,12 @@ Route::prefix('packages')->middleware('throttle:api_public')->group(function () 
 
 Route::get('pages/{slug}', [PublicPageController::class, 'show']);
 
+// GDPR — public endpoints (no auth — user comes from email link)
+Route::post('account/delete-confirm', [AccountController::class, 'confirmDeletion'])
+    ->middleware('throttle:api_public');
+Route::get('account/data-export/download', [AccountController::class, 'downloadDataExport'])
+    ->middleware('throttle:api_public');
+
 // Newsletter subscribe (public, rate-limited to deter abuse)
 Route::post('newsletter/subscribe', [NewsletterController::class, 'subscribe'])
     ->middleware('throttle:newsletter');
@@ -350,6 +356,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('account/saved-items', [AccountController::class, 'savedItems']);
     Route::post('account/saved-items', [AccountController::class, 'saveItem']);
     Route::delete('account/saved-items/{item}', [AccountController::class, 'removeSavedItem'])->whereNumber('item');
+
+    // GDPR — account deletion + data export
+    Route::post('account/delete-request', [AccountController::class, 'requestDeletion']);
+    Route::post('account/delete-cancel', [AccountController::class, 'cancelDeletion']);
+    Route::post('account/data-export', [AccountController::class, 'requestDataExport']);
+
     Route::get('account/reviews', [ReviewController::class, 'myReviews']);
 
     Route::post('reviews', [ReviewController::class, 'createReview']);

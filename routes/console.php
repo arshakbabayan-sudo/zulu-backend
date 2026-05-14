@@ -55,3 +55,16 @@ Schedule::command('health:check --digest --quiet-ok')
     ->dailyAt('09:00')
     ->withoutOverlapping()
     ->onOneServer();
+
+// GDPR — hourly sweep for accounts whose 30-day deletion grace expired.
+// Cheap when nothing's due; runs only on the primary scheduler host.
+Schedule::command('accounts:purge-expired')
+    ->hourly()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// GDPR — daily sweep of stale data-export ZIPs (7-day download window).
+Schedule::command('accounts:purge-expired-data-exports')
+    ->dailyAt('01:30')
+    ->withoutOverlapping()
+    ->onOneServer();
