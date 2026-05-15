@@ -2,6 +2,7 @@
 
 namespace App\Traits;
 
+use App\Jobs\TranslateContentJob;
 use App\Models\ContentTranslation;
 use App\Models\SupportedLanguage;
 use App\Services\Localization\LocalizationService;
@@ -13,6 +14,26 @@ trait HasTranslations
     public function getTranslatableEntityType(): string
     {
         return strtolower(class_basename($this));
+    }
+
+    /**
+     * Per-model list of column names that should be auto-translated via
+     * the Claude AI translator when the source value changes. Defaults to
+     * empty; models opt in by declaring a `$translatableFields` array.
+     *
+     * @return list<string>
+     */
+    public function getTranslatableFields(): array
+    {
+        if (property_exists($this, 'translatableFields') && is_array($this->translatableFields)) {
+            return array_values(array_filter(
+                $this->translatableFields,
+                fn ($f): bool => is_string($f)
+                    && in_array($f, ContentTranslation::TRANSLATABLE_FIELDS, true)
+            ));
+        }
+
+        return [];
     }
 
     /**
@@ -64,6 +85,54 @@ trait HasTranslations
             $languageCode,
             $effectiveFallback
         );
+    }
+
+    /**
+     * Hook the trait into the model boot lifecycle. After a model saves,
+     * if any of its translatable fields changed, dispatch a background
+     * job that translates the new value into every other supported
+     * locale. Setting AI_TRANSLATE_AUTO=false in .env disables the
+     * automatic dispatch (manual translation via admin endpoint still
+     * works).
+     */
+    public static function bootHasTranslations(): void
+    {
+        static::saved(function ($model): void {
+            if (! method_exists($model, 'getTranslatableFields')) {
+                return;
+            }
+            if (! (bool) env('AI_TRANSLATE_AUTO', true)) {
+                return;
+            }
+
+            $fields = $model->getTranslatableFields();
+            if ($fields === []) {
+                return;
+            }
+
+            $changed = $model->getChanges();
+            $sources = [];
+            foreach ($fields as $field) {
+                if (! array_key_exists($field, $changed)) {
+                    continue;
+                }
+                $value = $model->getAttribute($field);
+                if (is_string($value) && trim($value) !== '') {
+                    $sources[$field] = $value;
+                }
+            }
+
+            if ($sources === []) {
+                return;
+            }
+
+            TranslateContentJob::dispatch(
+                $model->getTranslatableEntityType(),
+                (int) $model->getKey(),
+                $sources,
+                null,
+            );
+        });
     }
 
     private function resolveDefaultLanguageCode(): string

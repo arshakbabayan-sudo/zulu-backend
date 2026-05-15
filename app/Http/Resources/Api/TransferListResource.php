@@ -46,7 +46,7 @@ class TransferListResource extends JsonResource
             'appears_in_web' => (bool) $this->appears_in_web,
             'appears_in_admin' => (bool) $this->appears_in_admin,
             'appears_in_zulu_admin' => (bool) $this->appears_in_zulu_admin,
-            'transfer_title' => $this->getTranslated('title', $lang, $this->transfer_title) ?? $this->transfer_title,
+            'transfer_title' => $this->getTranslated('transfer_title', $lang) ?? $this->transfer_title,
             'transfer_type' => $this->transfer_type,
             'pickup_country' => $originLabels['country'],
             'origin_location_id' => $this->origin_location_id,

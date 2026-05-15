@@ -12,6 +12,18 @@ class Transfer extends Model
 {
     use HasFactory, HasTranslations;
 
+    /**
+     * Fields auto-translated by the Claude AI translator on save.
+     *
+     * @var list<string>
+     */
+    protected array $translatableFields = [
+        'transfer_title',
+        'pickup_point_name',
+        'dropoff_point_name',
+        'short_description',
+    ];
+
     /** @var list<string> */
     public const TRANSFER_TYPES = [
         'airport_transfer',

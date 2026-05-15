@@ -13,6 +13,19 @@ class Excursion extends Model
 {
     use HasFactory, HasTranslations;
 
+    /**
+     * Fields auto-translated by the Claude AI translator on save.
+     *
+     * @var list<string>
+     */
+    protected array $translatableFields = [
+        'tour_name',
+        'overview',
+        'meeting_pickup',
+        'additional_info',
+        'cancellation_policy',
+    ];
+
     protected $fillable = [
         'offer_id',
         'location',

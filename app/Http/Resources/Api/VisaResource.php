@@ -31,7 +31,7 @@ class VisaResource extends JsonResource
             'location_id' => $this->location_id,
             'visa_type' => $this->visa_type,
             'processing_days' => $this->processing_days,
-            'name' => $this->getTranslated('title', $lang, $this->name) ?? $this->name,
+            'name' => $this->getTranslated('name', $lang) ?? $this->name,
             'description' => $this->getTranslated('description', $lang) ?? $this->description,
             'required_documents' => self::requiredDocumentsAsArray($this->required_documents),
             'visa_price' => $this->price,

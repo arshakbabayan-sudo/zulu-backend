@@ -12,6 +12,18 @@ class Company extends Model
 {
     use HasFactory, HasTranslations;
 
+    /**
+     * Fields auto-translated by the Claude AI translator on save.
+     * Note: company `name` intentionally NOT translated — brand names
+     * stay in their original form across locales.
+     *
+     * @var list<string>
+     */
+    protected array $translatableFields = [
+        'description',
+        'address',
+    ];
+
     /** @var list<string> */
     public const GOVERNANCE_STATUSES = ['pending', 'active', 'suspended', 'rejected'];
 

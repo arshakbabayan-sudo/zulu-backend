@@ -13,6 +13,16 @@ class Visa extends Model
 {
     use HasFactory, HasTranslations;
 
+    /**
+     * Fields auto-translated by the Claude AI translator on save.
+     *
+     * @var list<string>
+     */
+    protected array $translatableFields = [
+        'name',
+        'description',
+    ];
+
     protected $fillable = [
         'offer_id',
         'country_id',

@@ -13,6 +13,16 @@ class Package extends Model
 {
     use HasFactory, HasTranslations;
 
+    /**
+     * Fields auto-translated by the Claude AI translator on save.
+     *
+     * @var list<string>
+     */
+    protected array $translatableFields = [
+        'package_title',
+        'package_subtitle',
+    ];
+
     /** @var list<string> */
     public const PACKAGE_TYPES = ['fixed', 'dynamic', 'semi_fixed'];
 

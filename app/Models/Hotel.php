@@ -16,6 +16,19 @@ class Hotel extends Model
     /** @var list<string> */
     public const ACCOMMODATION_TYPES = ['hotel', 'apartment', 'villa', 'hostel', 'guesthouse'];
 
+    /**
+     * Fields auto-translated by the Claude AI translator on save.
+     *
+     * @var list<string>
+     */
+    protected array $translatableFields = [
+        'hotel_name',
+        'short_description',
+        'full_address',
+        'district_or_area',
+        'review_label',
+    ];
+
     protected $fillable = [
         'offer_id',
         'company_id',

@@ -77,7 +77,7 @@ trait SummarizesOfferModules
         return [
             'id' => $t->id,
             'offer_id' => $t->offer_id,
-            'transfer_title' => $t->getTranslated('title', $lang, $t->transfer_title) ?? $t->transfer_title,
+            'transfer_title' => $t->getTranslated('transfer_title', $lang) ?? $t->transfer_title,
             'pickup_city' => $t->pickup_city,
             'pickup_point_name' => $t->pickup_point_name,
             'dropoff_city' => $t->dropoff_city,
@@ -123,7 +123,7 @@ trait SummarizesOfferModules
         return [
             'id' => $e->id,
             'offer_id' => $e->offer_id,
-            'tour_name' => $e->getTranslated('title', $lang, $e->tour_name) ?? $e->tour_name,
+            'tour_name' => $e->getTranslated('tour_name', $lang) ?? $e->tour_name,
             'location' => $e->location,
             'country' => $e->country,
             'city' => $e->city,

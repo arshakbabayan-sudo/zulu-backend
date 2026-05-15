@@ -15,6 +15,15 @@ class Offer extends Model
     use HasFactory, HasTranslations, Searchable;
 
     /**
+     * Fields auto-translated by the Claude AI translator on save.
+     *
+     * @var list<string>
+     */
+    protected array $translatableFields = [
+        'title',
+    ];
+
+    /**
      * Allowed offer types (catalog, roadmap Phase 0, admin create).
      *
      * @var list<string>

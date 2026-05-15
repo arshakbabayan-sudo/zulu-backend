@@ -47,6 +47,8 @@ class ContentTranslation extends Model
         'dropoff_point_name',
         'tagline',
         'body',
+        'name',
+        'address',
     ];
 
     protected $fillable = [

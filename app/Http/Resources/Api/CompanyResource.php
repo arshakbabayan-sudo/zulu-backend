@@ -19,7 +19,7 @@ class CompanyResource extends JsonResource
 
         return [
             'id' => $this->id,
-            'name' => $this->getTranslated('title', $lang, $this->name) ?? $this->name,
+            'name' => $this->name,
             'type' => $this->type,
             'status' => $this->status,
             'legal_name' => $this->legal_name,
@@ -27,7 +27,7 @@ class CompanyResource extends JsonResource
             'tax_id' => $this->tax_id,
             'country' => $this->country,
             'city' => $this->city,
-            'address' => $this->address,
+            'address' => $this->getTranslated('address', $lang) ?? $this->address,
             'phone' => $this->phone,
             'website' => $this->website,
             'description' => $this->getTranslated('description', $lang) ?? $this->description,
