@@ -34,6 +34,19 @@ class ContentTranslation extends Model
         'highlights',
         'included_summary',
         'notes',
+        'full_address',
+        'district_or_area',
+        'review_label',
+        'tour_name',
+        'overview',
+        'meeting_pickup',
+        'additional_info',
+        'cancellation_policy',
+        'transfer_title',
+        'pickup_point_name',
+        'dropoff_point_name',
+        'tagline',
+        'body',
     ];
 
     protected $fillable = [
