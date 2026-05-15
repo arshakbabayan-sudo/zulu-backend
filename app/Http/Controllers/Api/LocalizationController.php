@@ -20,6 +20,8 @@ use App\Services\Admin\AdminAccessService;
 use App\Services\Localization\LocalizationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -475,6 +477,121 @@ class LocalizationController extends Controller
             'success' => true,
             'data' => ['saved' => $count, 'language_code' => $languageCode],
         ]);
+    }
+
+    /**
+     * Trigger the AI translator scan. Runs the artisan command
+     * synchronously (which only enqueues jobs — actual translation
+     * work happens in the queue worker), captures its console output,
+     * and returns it to the admin UI so the user can see what was
+     * dispatched.
+     *
+     * The scan stays opt-in: nothing here runs on cron.
+     */
+    public function scanTranslationGaps(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'scope' => ['sometimes', 'string', Rule::in(['ui', 'content', 'both'])],
+            'dry_run' => ['sometimes', 'boolean'],
+            'overwrite' => ['sometimes', 'boolean'],
+            'source' => ['sometimes', 'string', 'max:8'],
+            'limit' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+        ]);
+
+        $scope = $validated['scope'] ?? 'both';
+        $options = [];
+        if ($scope === 'ui') {
+            $options['--ui'] = true;
+        } elseif ($scope === 'content') {
+            $options['--content'] = true;
+        }
+        if (! empty($validated['dry_run'])) {
+            $options['--dry-run'] = true;
+        }
+        if (! empty($validated['overwrite'])) {
+            $options['--overwrite'] = true;
+        }
+        if (! empty($validated['source'])) {
+            $options['--source'] = (string) $validated['source'];
+        }
+        if (isset($validated['limit'])) {
+            $options['--limit'] = (string) (int) $validated['limit'];
+        }
+
+        $exitCode = Artisan::call('translations:scan', $options);
+        $output = Artisan::output();
+
+        return response()->json([
+            'success' => $exitCode === 0,
+            'data' => [
+                'scope' => $scope,
+                'dry_run' => (bool) ($validated['dry_run'] ?? false),
+                'overwrite' => (bool) ($validated['overwrite'] ?? false),
+                'output' => $output,
+            ],
+        ]);
+    }
+
+    /**
+     * Quick health check: how many translator jobs are queued / have
+     * failed since the last clear. Drives the admin UI's progress
+     * indicator after the user clicks "Scan + translate gaps".
+     */
+    public function scanStatus(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $jobClasses = [
+            'App\\Jobs\\TranslateUiStringJob',
+            'App\\Jobs\\TranslateContentJob',
+        ];
+
+        $pending = $this->countJobsByPayload('jobs', $jobClasses);
+        $failed = $this->countJobsByPayload('failed_jobs', $jobClasses);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'pending' => $pending,
+                'failed' => $failed,
+            ],
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $classes
+     * @return array<string, int>
+     */
+    private function countJobsByPayload(string $table, array $classes): array
+    {
+        $result = [];
+        foreach ($classes as $class) {
+            $short = (string) class_basename($class);
+            try {
+                $result[$short] = (int) DB::table($table)
+                    ->where('payload', 'like', '%'.$class.'%')
+                    ->count();
+            } catch (\Throwable) {
+                $result[$short] = 0;
+            }
+        }
+        $result['total'] = array_sum($result);
+
+        return $result;
     }
 
     public function createLanguage(Request $request, LocalizationService $service): JsonResponse

@@ -253,6 +253,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('localization/ui-translations/admin', [LocalizationController::class, 'uiTranslationsPaginated']);
     Route::post('localization/ui-translations', [LocalizationController::class, 'setUiTranslations']);
 
+    // Phase 13.6 — AI translator wake-up endpoints. POST kicks off
+    // the scan (queues jobs for every gap); GET reports queue depth so
+    // the admin UI can show progress.
+    Route::post('localization/scan', [LocalizationController::class, 'scanTranslationGaps']);
+    Route::get('localization/scan/status', [LocalizationController::class, 'scanStatus']);
+
     Route::get('account/me', [AccountController::class, 'me']);
 
     // Favorites (Phase 5 — heart icon on listing cards). Endpoints pre-built
