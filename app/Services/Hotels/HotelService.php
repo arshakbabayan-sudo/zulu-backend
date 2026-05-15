@@ -392,7 +392,7 @@ class HotelService
         $this->applyDefaultHotelListOrdering($query);
 
         $hotels = $query->get();
-        $hotels->load(['offer', 'rooms.pricings']);
+        $hotels->load(['offer', 'rooms.pricings', 'translations', 'offer.translations']);
 
         return $hotels;
     }
@@ -408,7 +408,7 @@ class HotelService
         $this->applyDefaultHotelListOrdering($query);
 
         $paginator = $query->paginate($perPage);
-        $paginator->getCollection()->load(['offer', 'rooms.pricings', 'location']);
+        $paginator->getCollection()->load(['offer', 'rooms.pricings', 'location', 'translations', 'offer.translations']);
 
         return $paginator;
     }
@@ -426,7 +426,7 @@ class HotelService
 
         return $this->baseTenantHotelQuery($companyIds)
             ->whereKey($id)
-            ->with(['offer', 'rooms.pricings'])
+            ->with(['offer', 'rooms.pricings', 'translations', 'offer.translations'])
             ->first();
     }
 

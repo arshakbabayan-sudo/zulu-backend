@@ -106,32 +106,36 @@ class DiscoveryService
             $paginator = $query->paginate($perPage, ['*'], 'page', $page);
 
             $offers = $paginator->getCollection();
-            $relations = [];
+            // Phase 13 Step 13.3: eager-load translations on every offer + on
+            // every module that has translatable fields, so subsequent
+            // getTranslated() calls in resources resolve from the in-memory
+            // collection instead of issuing one query per field. Without
+            // this, a 20-item list × ~5 translated fields would issue ~100
+            // queries against content_translations.
+            $relations = ['translations'];
             $types = $offers->pluck('type')->filter()->unique()->values()->all();
             if (in_array('flight', $types, true)) {
                 $relations[] = 'flight.cabins';
             }
             if (in_array('hotel', $types, true)) {
-                $relations[] = 'hotel';
+                $relations[] = 'hotel.translations';
             }
             if (in_array('transfer', $types, true)) {
-                $relations[] = 'transfer';
+                $relations[] = 'transfer.translations';
             }
             if (in_array('car', $types, true)) {
                 $relations[] = 'car';
             }
             if (in_array('excursion', $types, true)) {
-                $relations[] = 'excursion';
+                $relations[] = 'excursion.translations';
             }
             if (in_array('package', $types, true)) {
-                $relations[] = 'package';
+                $relations[] = 'package.translations';
             }
             if (in_array('visa', $types, true)) {
-                $relations[] = 'visa';
+                $relations[] = 'visa.translations';
             }
-            if ($relations !== []) {
-                $offers->loadMissing($relations);
-            }
+            $offers->loadMissing($relations);
 
             $items = [];
             foreach ($offers as $offer) {

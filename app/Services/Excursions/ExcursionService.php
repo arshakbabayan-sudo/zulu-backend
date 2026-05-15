@@ -174,7 +174,7 @@ class ExcursionService
         $this->applyListingFilters($query, $filters);
         $this->applyDefaultListOrdering($query);
 
-        return $query->with(['offer', 'location'])->get();
+        return $query->with(['offer', 'location', 'translations', 'offer.translations'])->get();
     }
 
     /**
@@ -187,7 +187,7 @@ class ExcursionService
         $this->applyListingFilters($query, $filters);
         $this->applyDefaultListOrdering($query);
 
-        return $query->with(['offer', 'location'])->paginate($perPage);
+        return $query->with(['offer', 'location', 'translations', 'offer.translations'])->paginate($perPage);
     }
 
     /**
@@ -201,7 +201,7 @@ class ExcursionService
 
         return $this->baseTenantExcursionQuery($companyIds)
             ->whereKey($id)
-            ->with(['offer', 'location'])
+            ->with(['offer', 'location', 'translations', 'offer.translations'])
             ->first();
     }
 
@@ -212,7 +212,7 @@ class ExcursionService
             ->whereHas('offer', function (Builder $q): void {
                 $q->where('type', 'excursion');
             })
-            ->with(['offer', 'location'])
+            ->with(['offer', 'location', 'translations', 'offer.translations'])
             ->first();
     }
 

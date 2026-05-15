@@ -205,7 +205,7 @@ class TransferService
         $this->applyListingFilters($query, $filters);
         $this->applyDefaultTransferListOrdering($query);
 
-        return $query->with(['offer', 'originLocation', 'destinationLocation'])->get();
+        return $query->with(['offer', 'originLocation', 'destinationLocation', 'translations', 'offer.translations'])->get();
     }
 
     /**
@@ -218,7 +218,7 @@ class TransferService
         $this->applyListingFilters($query, $filters);
         $this->applyDefaultTransferListOrdering($query);
 
-        return $query->with(['offer', 'originLocation', 'destinationLocation'])->paginate($perPage);
+        return $query->with(['offer', 'originLocation', 'destinationLocation', 'translations', 'offer.translations'])->paginate($perPage);
     }
 
     /**
@@ -234,7 +234,7 @@ class TransferService
 
         return $this->baseTenantTransferQuery($companyIds)
             ->whereKey($id)
-            ->with(['offer', 'originLocation', 'destinationLocation'])
+            ->with(['offer', 'originLocation', 'destinationLocation', 'translations', 'offer.translations'])
             ->first();
     }
 

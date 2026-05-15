@@ -343,7 +343,7 @@ class PackageService
 
         return Package::query()
             ->whereIn('company_id', $companyIds)
-            ->with(['offer'])
+            ->with(['offer', 'translations', 'offer.translations'])
             ->orderBy('id')
             ->get();
     }
@@ -354,7 +354,7 @@ class PackageService
     public function paginateForCompanies(array $companyIds, int $perPage = 20): LengthAwarePaginator
     {
         $query = Package::query()
-            ->with(['offer'])
+            ->with(['offer', 'translations', 'offer.translations'])
             ->orderBy('id');
 
         if ($companyIds === []) {
@@ -376,7 +376,7 @@ class PackageService
         return Package::query()
             ->whereIn('company_id', $companyIds)
             ->whereKey($id)
-            ->with(['offer', 'components.offer'])
+            ->with(['offer', 'components.offer', 'translations', 'offer.translations', 'components.offer.translations'])
             ->first();
     }
 
@@ -399,7 +399,7 @@ class PackageService
             ->whereKey($id)
             ->where('status', 'active')
             ->where('is_public', true)
-            ->with(['offer', 'components.offer'])
+            ->with(['offer', 'components.offer', 'translations', 'offer.translations', 'components.offer.translations'])
             ->first();
         if ($byPackageId !== null) {
             return $byPackageId;
@@ -411,7 +411,7 @@ class PackageService
             ->where('offer_id', $id)
             ->where('status', 'active')
             ->where('is_public', true)
-            ->with(['offer', 'components.offer'])
+            ->with(['offer', 'components.offer', 'translations', 'offer.translations', 'components.offer.translations'])
             ->first();
     }
 
