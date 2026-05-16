@@ -53,6 +53,23 @@ trait HasTranslations
             ->where('entity_type', $this->getTranslatableEntityType());
     }
 
+    /**
+     * Return the translated value for a field with an explicit four-step fallback.
+     *
+     * Resolution order (a value at any step short-circuits the chain):
+     *   1. content_translations row for the requested $languageCode
+     *   2. content_translations row for the platform default language
+     *      (from supported_languages.is_default, cached 10 min)
+     *   3. base table column value (e.g. hotels.hotel_name) — the source-of-truth
+     *      English text the operator entered when creating the entity
+     *   4. caller-supplied $fallback (defaults to null)
+     *
+     * Note that step 3 is what makes the system robust against missing
+     * translations: every entity has SOMETHING to display, in whatever language
+     * it was first entered. Use {@see self::getTranslationSource()} when you
+     * need to know which step actually produced the value (e.g. to show an
+     * "Untranslated" badge in admin).
+     */
     public function getTranslated(string $field, string $languageCode, ?string $fallback = null): ?string
     {
         $defaultFallback = $this->attributes[$field] ?? null;
@@ -85,6 +102,55 @@ trait HasTranslations
             $languageCode,
             $effectiveFallback
         );
+    }
+
+    /**
+     * Same resolution chain as {@see self::getTranslated()} but reports which
+     * step produced the returned value. Useful when admin UI needs to mark
+     * a row as "showing the source-language fallback, not a real translation".
+     *
+     * @return array{value: ?string, source: 'translated'|'default_lang'|'base_table'|'missing'}
+     */
+    public function getTranslationSource(string $field, string $languageCode): array
+    {
+        $base = $this->attributes[$field] ?? null;
+        $base = $base !== null ? (string) $base : null;
+
+        if ($this->relationLoaded('translations')) {
+            $fieldMatches = $this->translations->where('field_name', $field);
+
+            $primary = $fieldMatches->firstWhere('language_code', $languageCode)?->translated_value;
+            if ($primary !== null && $primary !== '') {
+                return ['value' => (string) $primary, 'source' => 'translated'];
+            }
+
+            $defaultCode = $this->resolveDefaultLanguageCode();
+            if ($defaultCode !== $languageCode && $defaultCode !== '') {
+                $defaultValue = $fieldMatches->firstWhere('language_code', $defaultCode)?->translated_value;
+                if ($defaultValue !== null && $defaultValue !== '') {
+                    return ['value' => (string) $defaultValue, 'source' => 'default_lang'];
+                }
+            }
+        } else {
+            // Without eager loading we cannot cheaply distinguish steps 1 vs 2 —
+            // call the service for the value but report the rough source.
+            $value = app(LocalizationService::class)->getTranslation(
+                $this->getTranslatableEntityType(),
+                (int) $this->getKey(),
+                $field,
+                $languageCode,
+                null
+            );
+            if ($value !== null && $value !== '') {
+                return ['value' => $value, 'source' => 'translated'];
+            }
+        }
+
+        if ($base !== null && $base !== '') {
+            return ['value' => $base, 'source' => 'base_table'];
+        }
+
+        return ['value' => null, 'source' => 'missing'];
     }
 
     /**

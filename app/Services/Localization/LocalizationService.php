@@ -17,6 +17,15 @@ class LocalizationService
 {
     private const LANGUAGE_CACHE_TTL_SECONDS = 600;
 
+    /**
+     * UI translation maps live for one hour. Long enough to avoid hitting the
+     * DB on every request, short enough that direct SQL inserts surface to
+     * users without an admin remembering to flush the cache. Previously this
+     * was `Cache::rememberForever`, which led to "translations not showing"
+     * incidents when migrations seeded keys via psql.
+     */
+    private const UI_TRANSLATIONS_CACHE_TTL_SECONDS = 3600;
+
     private const CACHE_KEY_ENABLED_LANGUAGE_MAP = 'localization_enabled_language_map';
 
     private const CACHE_KEY_DEFAULT_LANGUAGE_CODE = 'localization_default_language_code';
@@ -196,12 +205,16 @@ class LocalizationService
     {
         $cacheKey = 'ui_translations_'.$languageCode;
 
-        return Cache::rememberForever($cacheKey, function () use ($languageCode): array {
-            return UiTranslation::query()
-                ->where('language_code', $languageCode)
-                ->pluck('value', 'key')
-                ->all();
-        });
+        return Cache::remember(
+            $cacheKey,
+            self::UI_TRANSLATIONS_CACHE_TTL_SECONDS,
+            function () use ($languageCode): array {
+                return UiTranslation::query()
+                    ->where('language_code', $languageCode)
+                    ->pluck('value', 'key')
+                    ->all();
+            }
+        );
     }
 
     /**

@@ -393,15 +393,21 @@ class LocalizationController extends Controller
         }
         $lang = is_string($langRaw) ? $langRaw : 'en';
 
-        // `?lang=all` returns all three languages in one payload so the SPA can
-        // preload everything at SSR and switch languages later without any
-        // network roundtrip.
+        // `?lang=all` returns all supported languages in one payload so the SPA
+        // can preload everything at SSR and switch languages later without any
+        // network roundtrip. Iterates supported_languages dynamically so new
+        // languages added by admins flow through without a code change.
         if (strtolower($lang) === 'all') {
-            $bundle = [
-                'en' => $service->getUiTranslations('en'),
-                'hy' => $service->getUiTranslations('hy'),
-                'ru' => $service->getUiTranslations('ru'),
-            ];
+            $codes = \App\Models\SupportedLanguage::query()
+                ->where('is_enabled', true)
+                ->orderBy('sort_order')
+                ->pluck('code')
+                ->all();
+
+            $bundle = [];
+            foreach ($codes as $code) {
+                $bundle[$code] = $service->getUiTranslations((string) $code);
+            }
 
             return response()
                 ->json([
