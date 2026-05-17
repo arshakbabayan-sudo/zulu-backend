@@ -24,6 +24,7 @@ class Visa extends Model
     ];
 
     protected $fillable = [
+        'source_lang',
         'offer_id',
         'country_id',
         'location_id',

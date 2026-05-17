@@ -31,6 +31,7 @@ class Company extends Model
     public const TYPES = ['operator', 'agency', 'airline', 'hotel_chain', 'other'];
 
     protected $fillable = [
+        'source_lang',
         'name',
         'type',
         'status',

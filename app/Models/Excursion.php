@@ -27,6 +27,7 @@ class Excursion extends Model
     ];
 
     protected $fillable = [
+        'source_lang',
         'offer_id',
         'location',
         'duration',

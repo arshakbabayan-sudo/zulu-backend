@@ -8,7 +8,23 @@ use App\Models\SupportedLanguage;
 use App\Services\Localization\LocalizationService;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
+/**
+ * Equal-language translation system.
+ *
+ * Every translatable entity tracks a `source_lang` column — the language the
+ * operator chose when they first added the record. All language versions
+ * (including the source) live as rows in content_translations; no language
+ * is "the base." Translations into other languages are produced by the AI
+ * translator, which never overwrites a row flagged is_manually_edited=true.
+ *
+ * The legacy base columns (e.g. hotels.hotel_name) are kept ONLY as a
+ * denormalized safety-net mirror of the source-language value, so any old
+ * read path still returns something. New read paths use {@see getTranslated()}
+ * which never touches the base column unless every translation row is
+ * missing.
+ */
 trait HasTranslations
 {
     public function getTranslatableEntityType(): string
@@ -17,10 +33,6 @@ trait HasTranslations
     }
 
     /**
-     * Per-model list of column names that should be auto-translated via
-     * the Claude AI translator when the source value changes. Defaults to
-     * empty; models opt in by declaring a `$translatableFields` array.
-     *
      * @return list<string>
      */
     public function getTranslatableFields(): array
@@ -37,14 +49,22 @@ trait HasTranslations
     }
 
     /**
-     * All content_translations rows for this model instance.
-     *
-     * Use eager loading on list endpoints to avoid N+1:
-     *   Hotel::with('translations')->paginate()
-     *
-     * Without eager loading, getTranslated() falls back to a per-call
-     * query via LocalizationService — correct but slow on large lists.
-     *
+     * The language the operator originally entered this record in. Returns
+     * the entity's `source_lang` column if present, falling back to the
+     * platform default language. Reading is safe before the schema migration
+     * has run (returns the default lang).
+     */
+    public function getSourceLanguage(): string
+    {
+        $column = $this->attributes['source_lang'] ?? null;
+        if (is_string($column) && $column !== '') {
+            return $column;
+        }
+
+        return $this->resolveDefaultLanguageCode();
+    }
+
+    /**
      * @return HasMany<ContentTranslation, $this>
      */
     public function translations(): HasMany
@@ -54,41 +74,45 @@ trait HasTranslations
     }
 
     /**
-     * Return the translated value for a field with an explicit four-step fallback.
+     * Return the translated value for $field in $languageCode using a five-step
+     * fallback. Every translation lives in content_translations; the base
+     * table column is only consulted if every translation row is missing.
      *
-     * Resolution order (a value at any step short-circuits the chain):
+     * Resolution order (first non-empty wins):
      *   1. content_translations row for the requested $languageCode
-     *   2. content_translations row for the platform default language
-     *      (from supported_languages.is_default, cached 10 min)
-     *   3. base table column value (e.g. hotels.hotel_name) — the source-of-truth
-     *      English text the operator entered when creating the entity
-     *   4. caller-supplied $fallback (defaults to null)
-     *
-     * Note that step 3 is what makes the system robust against missing
-     * translations: every entity has SOMETHING to display, in whatever language
-     * it was first entered. Use {@see self::getTranslationSource()} when you
-     * need to know which step actually produced the value (e.g. to show an
-     * "Untranslated" badge in admin).
+     *   2. content_translations row for the entity's source_lang
+     *      (this is the "Translation in progress" path on the customer site)
+     *   3. content_translations row for the platform default language
+     *   4. base table column value (legacy safety net)
+     *   5. caller-supplied $fallback (defaults to null)
      */
     public function getTranslated(string $field, string $languageCode, ?string $fallback = null): ?string
     {
-        $defaultFallback = $this->attributes[$field] ?? null;
-        $defaultFallback = $defaultFallback !== null ? (string) $defaultFallback : null;
-        $effectiveFallback = $fallback ?? $defaultFallback;
+        $base = $this->attributes[$field] ?? null;
+        $base = is_string($base) && trim($base) !== '' ? (string) $base : null;
+        $effectiveFallback = $fallback ?? $base;
 
         if ($this->relationLoaded('translations')) {
-            $fieldMatches = $this->translations->where('field_name', $field);
+            $rows = $this->translations->where('field_name', $field);
 
-            $primary = $fieldMatches->firstWhere('language_code', $languageCode)?->translated_value;
-            if ($primary !== null && $primary !== '') {
-                return (string) $primary;
+            $value = $rows->firstWhere('language_code', $languageCode)?->translated_value;
+            if (is_string($value) && trim($value) !== '') {
+                return $value;
             }
 
-            $defaultCode = $this->resolveDefaultLanguageCode();
-            if ($defaultCode !== $languageCode && $defaultCode !== '') {
-                $defaultValue = $fieldMatches->firstWhere('language_code', $defaultCode)?->translated_value;
-                if ($defaultValue !== null && $defaultValue !== '') {
-                    return (string) $defaultValue;
+            $sourceLang = $this->getSourceLanguage();
+            if ($sourceLang !== $languageCode) {
+                $value = $rows->firstWhere('language_code', $sourceLang)?->translated_value;
+                if (is_string($value) && trim($value) !== '') {
+                    return $value;
+                }
+            }
+
+            $defaultLang = $this->resolveDefaultLanguageCode();
+            if ($defaultLang !== $languageCode && $defaultLang !== $sourceLang) {
+                $value = $rows->firstWhere('language_code', $defaultLang)?->translated_value;
+                if (is_string($value) && trim($value) !== '') {
+                    return $value;
                 }
             }
 
@@ -100,74 +124,111 @@ trait HasTranslations
             (int) $this->getKey(),
             $field,
             $languageCode,
-            $effectiveFallback
+            $effectiveFallback,
+            $this->getSourceLanguage()
         );
     }
 
     /**
-     * Same resolution chain as {@see self::getTranslated()} but reports which
-     * step produced the returned value. Useful when admin UI needs to mark
-     * a row as "showing the source-language fallback, not a real translation".
+     * Same as {@see getTranslated()} but reports which step produced the value.
      *
-     * @return array{value: ?string, source: 'translated'|'default_lang'|'base_table'|'missing'}
+     * The `source` value is what the customer site uses to decide whether to
+     * render a "🔄 Translation in progress" banner: anything other than
+     * 'translated' means the user requested a language that isn't yet ready.
+     *
+     * @return array{value: ?string, source: 'translated'|'source_lang'|'default_lang'|'base_table'|'missing', is_manually_edited: bool}
      */
     public function getTranslationSource(string $field, string $languageCode): array
     {
         $base = $this->attributes[$field] ?? null;
-        $base = $base !== null ? (string) $base : null;
+        $base = is_string($base) && trim($base) !== '' ? (string) $base : null;
 
         if ($this->relationLoaded('translations')) {
-            $fieldMatches = $this->translations->where('field_name', $field);
+            $rows = $this->translations->where('field_name', $field);
 
-            $primary = $fieldMatches->firstWhere('language_code', $languageCode)?->translated_value;
-            if ($primary !== null && $primary !== '') {
-                return ['value' => (string) $primary, 'source' => 'translated'];
+            $primary = $rows->firstWhere('language_code', $languageCode);
+            if ($primary !== null && is_string($primary->translated_value) && trim($primary->translated_value) !== '') {
+                return [
+                    'value' => (string) $primary->translated_value,
+                    'source' => 'translated',
+                    'is_manually_edited' => (bool) ($primary->is_manually_edited ?? false),
+                ];
             }
 
-            $defaultCode = $this->resolveDefaultLanguageCode();
-            if ($defaultCode !== $languageCode && $defaultCode !== '') {
-                $defaultValue = $fieldMatches->firstWhere('language_code', $defaultCode)?->translated_value;
-                if ($defaultValue !== null && $defaultValue !== '') {
-                    return ['value' => (string) $defaultValue, 'source' => 'default_lang'];
+            $sourceLang = $this->getSourceLanguage();
+            if ($sourceLang !== $languageCode) {
+                $row = $rows->firstWhere('language_code', $sourceLang);
+                if ($row !== null && is_string($row->translated_value) && trim($row->translated_value) !== '') {
+                    return [
+                        'value' => (string) $row->translated_value,
+                        'source' => 'source_lang',
+                        'is_manually_edited' => (bool) ($row->is_manually_edited ?? false),
+                    ];
                 }
             }
-        } else {
-            // Without eager loading we cannot cheaply distinguish steps 1 vs 2 —
-            // call the service for the value but report the rough source.
-            $value = app(LocalizationService::class)->getTranslation(
-                $this->getTranslatableEntityType(),
-                (int) $this->getKey(),
-                $field,
-                $languageCode,
-                null
-            );
-            if ($value !== null && $value !== '') {
-                return ['value' => $value, 'source' => 'translated'];
+
+            $defaultLang = $this->resolveDefaultLanguageCode();
+            if ($defaultLang !== $languageCode && $defaultLang !== $sourceLang) {
+                $row = $rows->firstWhere('language_code', $defaultLang);
+                if ($row !== null && is_string($row->translated_value) && trim($row->translated_value) !== '') {
+                    return [
+                        'value' => (string) $row->translated_value,
+                        'source' => 'default_lang',
+                        'is_manually_edited' => (bool) ($row->is_manually_edited ?? false),
+                    ];
+                }
             }
         }
 
-        if ($base !== null && $base !== '') {
-            return ['value' => $base, 'source' => 'base_table'];
+        if ($base !== null) {
+            return ['value' => $base, 'source' => 'base_table', 'is_manually_edited' => false];
         }
 
-        return ['value' => null, 'source' => 'missing'];
+        return ['value' => null, 'source' => 'missing', 'is_manually_edited' => false];
     }
 
     /**
-     * Hook the trait into the model boot lifecycle. After a model saves,
-     * if any of its translatable fields changed, dispatch a background
-     * job that translates the new value into every other supported
-     * locale. Setting AI_TRANSLATE_AUTO=false in .env disables the
-     * automatic dispatch (manual translation via admin endpoint still
-     * works).
+     * Bulk read every language's value for a field. Used by the admin form
+     * to populate the per-flag tabs.
+     *
+     * @return array<string, array{value: string, is_manually_edited: bool, translation_status: string}>
+     *                                                                                                   keyed by language code
+     */
+    public function getAllTranslationsForField(string $field): array
+    {
+        if (! $this->relationLoaded('translations')) {
+            $this->load('translations');
+        }
+
+        $out = [];
+        foreach ($this->translations->where('field_name', $field) as $row) {
+            $out[(string) $row->language_code] = [
+                'value' => (string) $row->translated_value,
+                'is_manually_edited' => (bool) ($row->is_manually_edited ?? false),
+                'translation_status' => (string) ($row->translation_status ?? 'manual'),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Hook into the model lifecycle.
+     *
+     * On create, set source_lang from a request hint (?source_lang= or a
+     * setSourceLang() call) before save. Default is the platform default.
+     *
+     * On save, if any translatable base-column field changed, write that
+     * change as a manually-edited row in content_translations for the
+     * entity's source_lang and dispatch the AI translator. This keeps old
+     * call sites that do `$hotel->update(['hotel_name' => …])` working
+     * with the new architecture — the base column write becomes equivalent
+     * to "operator just edited the source-language version."
      */
     public static function bootHasTranslations(): void
     {
         static::saved(function ($model): void {
             if (! method_exists($model, 'getTranslatableFields')) {
-                return;
-            }
-            if (! (bool) env('AI_TRANSLATE_AUTO', true)) {
                 return;
             }
 
@@ -192,11 +253,37 @@ trait HasTranslations
                 return;
             }
 
+            $sourceLang = method_exists($model, 'getSourceLanguage')
+                ? $model->getSourceLanguage()
+                : 'en';
+
+            DB::transaction(function () use ($model, $sources, $sourceLang): void {
+                foreach ($sources as $field => $value) {
+                    ContentTranslation::query()->updateOrCreate(
+                        [
+                            'entity_type' => $model->getTranslatableEntityType(),
+                            'entity_id' => (int) $model->getKey(),
+                            'language_code' => $sourceLang,
+                            'field_name' => $field,
+                        ],
+                        [
+                            'translated_value' => $value,
+                            'is_manually_edited' => true,
+                            'translation_status' => 'manual',
+                        ]
+                    );
+                }
+            });
+
+            if (! (bool) env('AI_TRANSLATE_AUTO', true)) {
+                return;
+            }
+
             TranslateContentJob::dispatch(
                 $model->getTranslatableEntityType(),
                 (int) $model->getKey(),
                 $sources,
-                null,
+                $sourceLang,
             );
         });
     }

@@ -39,6 +39,7 @@ class Car extends Model
     ];
 
     protected $fillable = [
+        'source_lang',
         'offer_id',
         'pickup_location',
         'dropoff_location',

@@ -410,12 +410,20 @@ class LocalizationService
         throw new InvalidArgumentException('Invalid or unsupported language_code.');
     }
 
+    /**
+     * Translation read with the trait's full five-step fallback. When the
+     * entity has a `source_lang` column the caller can pass it as
+     * `$sourceLanguage` so requests for a not-yet-translated language fall
+     * back to the operator's original input rather than to the platform
+     * default (which may itself be untranslated for that field).
+     */
     public function getTranslation(
         string $entityType,
         int $entityId,
         string $fieldName,
         string $languageCode,
-        ?string $fallback = null
+        ?string $fallback = null,
+        ?string $sourceLanguage = null
     ): ?string {
         try {
             $defaultCode = $this->getDefaultLanguage()?->code ?? 'en';
@@ -431,7 +439,20 @@ class LocalizationService
                 return (string) $row;
             }
 
-            if ($languageCode !== $defaultCode) {
+            if ($sourceLanguage !== null && $sourceLanguage !== '' && $sourceLanguage !== $languageCode) {
+                $rowSource = ContentTranslation::query()
+                    ->where('entity_type', $entityType)
+                    ->where('entity_id', $entityId)
+                    ->where('field_name', $fieldName)
+                    ->where('language_code', $sourceLanguage)
+                    ->value('translated_value');
+
+                if ($rowSource !== null && $rowSource !== '') {
+                    return (string) $rowSource;
+                }
+            }
+
+            if ($languageCode !== $defaultCode && $sourceLanguage !== $defaultCode) {
                 $rowDefault = ContentTranslation::query()
                     ->where('entity_type', $entityType)
                     ->where('entity_id', $entityId)
@@ -494,12 +515,27 @@ class LocalizationService
         }
     }
 
+    /**
+     * Write a single translation row.
+     *
+     * Manual writes (admin form, XLSX import, direct API) set
+     * `is_manually_edited=true` and translation_status='manual', which
+     * locks the row against future AI auto-translation. AI writes go
+     * through this method with `$isManualEdit=false`.
+     *
+     * When `$respectManualLock` is true (the default for AI writes), an
+     * existing row already marked manually-edited is left untouched. The
+     * admin re-translate endpoint passes `false` to force overwrite.
+     */
     public function setTranslation(
         string $entityType,
         int $entityId,
         string $languageCode,
         string $fieldName,
-        string $value
+        string $value,
+        bool $isManualEdit = true,
+        string $translationStatus = 'manual',
+        bool $respectManualLock = false
     ): ContentTranslation {
         if (! in_array($entityType, ContentTranslation::ENTITY_TYPES, true)) {
             throw new InvalidArgumentException('Invalid entity_type.');
@@ -519,6 +555,23 @@ class LocalizationService
             throw new InvalidArgumentException('Invalid or disabled language_code.');
         }
 
+        $existing = ContentTranslation::query()
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $entityId)
+            ->where('language_code', $canonicalCode)
+            ->where('field_name', $fieldName)
+            ->first();
+
+        if ($respectManualLock && $existing !== null && (bool) ($existing->is_manually_edited ?? false)) {
+            return $existing;
+        }
+
+        $payload = [
+            'translated_value' => $value,
+            'is_manually_edited' => $isManualEdit,
+            'translation_status' => $translationStatus,
+        ];
+
         return ContentTranslation::query()->updateOrCreate(
             [
                 'entity_type' => $entityType,
@@ -526,7 +579,7 @@ class LocalizationService
                 'language_code' => $canonicalCode,
                 'field_name' => $fieldName,
             ],
-            ['translated_value' => $value]
+            $payload
         );
     }
 
@@ -538,7 +591,10 @@ class LocalizationService
         string $entityType,
         int $entityId,
         string $languageCode,
-        array $fieldValues
+        array $fieldValues,
+        bool $isManualEdit = true,
+        string $translationStatus = 'manual',
+        bool $respectManualLock = false
     ): array {
         $saved = [];
         foreach ($fieldValues as $fieldName => $value) {
@@ -547,7 +603,10 @@ class LocalizationService
                 $entityId,
                 $languageCode,
                 (string) $fieldName,
-                (string) $value
+                (string) $value,
+                $isManualEdit,
+                $translationStatus,
+                $respectManualLock
             );
         }
 

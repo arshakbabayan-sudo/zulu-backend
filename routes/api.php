@@ -242,6 +242,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Admin translations UI (ZuluApi): canonical mutation surface stays under /api/localization/*.
     Route::post('localization/translations', [LocalizationController::class, 'setTranslations']);
     Route::delete('localization/translations', [LocalizationController::class, 'deleteTranslations']);
+    // Phase B — equal-language content translations: per-entity multi-lang
+    // read + admin "AI re-translate" trigger.
+    Route::get('localization/content-translations/{entityType}/{entityId}', [LocalizationController::class, 'allLanguagesForEntity'])
+        ->where('entityType', '[a-z_]+')
+        ->where('entityId', '[0-9]+');
+    Route::post('localization/content-translations/{entityType}/{entityId}/retranslate', [LocalizationController::class, 'retranslateEntity'])
+        ->where('entityType', '[a-z_]+')
+        ->where('entityId', '[0-9]+');
     Route::patch('localization/languages/{language}/toggle', [LocalizationController::class, 'toggleLanguage']);
     Route::get('localization/languages/all', [LocalizationController::class, 'adminLanguages']);
     Route::post('localization/languages', [LocalizationController::class, 'createLanguage']);

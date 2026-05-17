@@ -64,6 +64,7 @@ class Offer extends Model
     ];
 
     protected $fillable = [
+        'source_lang',
         'company_id',
         'type',
         'title',

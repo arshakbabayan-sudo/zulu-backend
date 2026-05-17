@@ -33,6 +33,7 @@ class Hotel extends Model
         'offer_id',
         'company_id',
         'visibility_rule',
+        'source_lang',
         'hotel_name',
         'property_type',
         'hotel_type',

@@ -16,14 +16,15 @@ use Throwable;
 
 /**
  * Queue job: translate a content-bearing model's source-language fields
- * into every other supported language via Claude, then persist via the
+ * into every other enabled language via Claude, then persist via the
  * LocalizationService into content_translations.
  *
- * Dispatched from HasTranslations trait on `saved` when any whitelisted
- * field changed. Idempotent — re-running for the same entity overwrites
- * any prior auto-translation (manual overrides should set a flag in a
- * future iteration; for now, a manual edit via the admin endpoint just
- * sets the translation again).
+ * Dispatched from the HasTranslations trait `saved` hook and from the
+ * admin "re-translate" endpoint. Rows already flagged
+ * `is_manually_edited=true` are skipped — those represent operator-edited
+ * translations that must never be overwritten by AI. Re-running this job
+ * with `$forceOverwrite=true` ignores the manual lock (the admin "AI
+ * re-translate this row" button).
  */
 class TranslateContentJob implements ShouldQueue
 {
@@ -40,12 +41,15 @@ class TranslateContentJob implements ShouldQueue
 
     /**
      * @param  array<string, string>  $sourceValues  field_name => source value
+     * @param  list<string>|null  $onlyLocales  if set, translate only into these locales
      */
     public function __construct(
         public string $entityType,
         public int $entityId,
         public array $sourceValues,
         public ?string $sourceLocale = null,
+        public bool $forceOverwrite = false,
+        public ?array $onlyLocales = null,
     ) {}
 
     public function handle(TranslationService $translator, LocalizationService $localization): void
@@ -73,7 +77,11 @@ class TranslateContentJob implements ShouldQueue
             return;
         }
 
-        $translated = $translator->translateMany($fieldsToTranslate, $this->sourceLocale);
+        $translated = $translator->translateMany(
+            $fieldsToTranslate,
+            $this->sourceLocale,
+            $this->onlyLocales
+        );
 
         if ($translated === []) {
             Log::info('TranslateContentJob: translator returned no values, nothing to persist', [
@@ -89,12 +97,18 @@ class TranslateContentJob implements ShouldQueue
             foreach ($translated as $field => $localeMap) {
                 foreach ($localeMap as $locale => $value) {
                     try {
+                        // AI-produced writes: never overwrite an operator's
+                        // manual edit unless the caller passed forceOverwrite
+                        // (admin "Re-translate" button).
                         $localization->setTranslation(
                             $this->entityType,
                             $this->entityId,
                             $locale,
                             $field,
-                            $value
+                            $value,
+                            isManualEdit: false,
+                            translationStatus: 'ai_completed',
+                            respectManualLock: ! $this->forceOverwrite,
                         );
                     } catch (Throwable $e) {
                         Log::warning('TranslateContentJob: setTranslation failed for one row', [

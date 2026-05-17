@@ -32,6 +32,7 @@ class Flight extends Model
     public const STATUSES = ['draft', 'active', 'inactive', 'sold_out', 'cancelled', 'completed', 'archived'];
 
     protected $fillable = [
+        'source_lang',
         'offer_id',
         'company_id',
         'visibility_rule',

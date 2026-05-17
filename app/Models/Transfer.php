@@ -67,6 +67,7 @@ class Transfer extends Model
     ];
 
     protected $fillable = [
+        'source_lang',
         'offer_id',
         'company_id',
         'visibility_rule',

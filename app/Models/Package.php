@@ -33,6 +33,7 @@ class Package extends Model
     public const STATUSES = ['draft', 'active', 'inactive', 'archived'];
 
     protected $fillable = [
+        'source_lang',
         'offer_id',
         'company_id',
         'package_type',

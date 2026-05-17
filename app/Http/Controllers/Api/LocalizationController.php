@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\TranslateContentJob;
 use App\Models\Car;
 use App\Models\Company;
 use App\Models\ContentTranslation;
@@ -22,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -162,12 +164,39 @@ class LocalizationController extends Controller
                 $validated['entity_type'],
                 (int) $validated['entity_id'],
                 $languageCode,
-                $validated['translations']
+                $validated['translations'],
+                isManualEdit: true,
+                translationStatus: 'manual',
+                respectManualLock: false,
             );
         } catch (\InvalidArgumentException $e) {
             throw ValidationException::withMessages([
                 'language_code' => [$e->getMessage()],
             ]);
+        }
+
+        // If the operator just edited the source-language version, dispatch
+        // the AI translator to refresh every OTHER language. Other-language
+        // edits don't trigger re-translation — we trust the operator that
+        // their HY/RU/etc. edit is intentional and complete on its own.
+        $sourceLang = $this->resolveEntitySourceLang($validated['entity_type'], (int) $validated['entity_id']);
+        $aiDispatched = false;
+        if ($sourceLang !== null && $sourceLang === $languageCode && (bool) env('AI_TRANSLATE_AUTO', true)) {
+            $sourceValues = [];
+            foreach ($validated['translations'] as $field => $value) {
+                if (is_string($value) && trim($value) !== '') {
+                    $sourceValues[(string) $field] = (string) $value;
+                }
+            }
+            if ($sourceValues !== []) {
+                TranslateContentJob::dispatch(
+                    $validated['entity_type'],
+                    (int) $validated['entity_id'],
+                    $sourceValues,
+                    $sourceLang,
+                );
+                $aiDispatched = true;
+            }
         }
 
         return response()->json([
@@ -177,8 +206,216 @@ class LocalizationController extends Controller
                 'entity_id' => (int) $validated['entity_id'],
                 'language_code' => $languageCode,
                 'fields_saved' => count($validated['translations']),
+                'ai_translation_dispatched' => $aiDispatched,
+                'source_language' => $sourceLang,
             ],
         ]);
+    }
+
+    /**
+     * Return every translation row for every enabled language, grouped by
+     * language code and then by field name. Includes the entity's
+     * `source_lang` so the admin form can mark the source tab.
+     *
+     * Response shape:
+     * {
+     *   "source_lang": "hy",
+     *   "languages": {
+     *     "en": {"hotel_name": {"value": "...", "is_manually_edited": false, "translation_status": "ai_completed"}, ...},
+     *     "hy": {...},
+     *     "ru": {...}
+     *   }
+     * }
+     */
+    public function allLanguagesForEntity(
+        Request $request,
+        string $entityType,
+        int $entityId,
+        LocalizationService $service
+    ): JsonResponse {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+
+        if (! in_array($entityType, ContentTranslation::ENTITY_TYPES, true)) {
+            return response()->json(['success' => false, 'message' => 'Invalid entity_type.'], 422);
+        }
+
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            $companyId = $this->resolveOwningCompanyId($entityType, $entityId);
+            if ($companyId === null || ! $user->belongsToCompany($companyId)) {
+                return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+            }
+        }
+
+        $sourceLang = $this->resolveEntitySourceLang($entityType, $entityId);
+
+        $rows = ContentTranslation::query()
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $entityId)
+            ->get(['language_code', 'field_name', 'translated_value', 'is_manually_edited', 'translation_status']);
+
+        $enabledLangs = $service->getSupportedLanguages(true)->pluck('code')->all();
+
+        $byLanguage = [];
+        foreach ($enabledLangs as $lang) {
+            $byLanguage[(string) $lang] = [];
+        }
+        foreach ($rows as $row) {
+            $lang = (string) $row->language_code;
+            if (! array_key_exists($lang, $byLanguage)) {
+                $byLanguage[$lang] = [];
+            }
+            $byLanguage[$lang][(string) $row->field_name] = [
+                'value' => (string) $row->translated_value,
+                'is_manually_edited' => (bool) ($row->is_manually_edited ?? false),
+                'translation_status' => (string) ($row->translation_status ?? 'manual'),
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'entity_type' => $entityType,
+                'entity_id' => $entityId,
+                'source_lang' => $sourceLang,
+                'languages' => $byLanguage,
+                'available_fields' => ContentTranslation::TRANSLATABLE_FIELDS,
+            ],
+        ]);
+    }
+
+    /**
+     * Force the AI translator to refresh translations for specific target
+     * languages — used by the admin "Re-translate" button. Manual locks on
+     * those target rows are ignored (cleared and overwritten by the job).
+     *
+     * Body:
+     *   { "target_locales": ["ru","en"]  // optional; default = all except source
+     *     "fields": ["hotel_name"]       // optional; default = all translatable }
+     */
+    public function retranslateEntity(
+        Request $request,
+        string $entityType,
+        int $entityId,
+        LocalizationService $service
+    ): JsonResponse {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+
+        if (! in_array($entityType, ContentTranslation::ENTITY_TYPES, true)) {
+            return response()->json(['success' => false, 'message' => 'Invalid entity_type.'], 422);
+        }
+
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            $companyId = $this->resolveOwningCompanyId($entityType, $entityId);
+            if ($companyId === null || ! $user->belongsToCompany($companyId)) {
+                return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+            }
+        }
+
+        $validated = $request->validate([
+            'target_locales' => ['sometimes', 'array'],
+            'target_locales.*' => ['string', 'max:8'],
+            'fields' => ['sometimes', 'array'],
+            'fields.*' => ['string', Rule::in(ContentTranslation::TRANSLATABLE_FIELDS)],
+        ]);
+
+        $sourceLang = $this->resolveEntitySourceLang($entityType, $entityId);
+        if ($sourceLang === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This entity has no source_lang set. Cannot retranslate.',
+            ], 422);
+        }
+
+        $sourceRows = ContentTranslation::query()
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $entityId)
+            ->where('language_code', $sourceLang)
+            ->when(! empty($validated['fields']), fn ($q) => $q->whereIn('field_name', $validated['fields']))
+            ->get(['field_name', 'translated_value']);
+
+        $sourceValues = [];
+        foreach ($sourceRows as $row) {
+            $value = (string) $row->translated_value;
+            if (trim($value) === '') {
+                continue;
+            }
+            $sourceValues[(string) $row->field_name] = $value;
+        }
+
+        if ($sourceValues === []) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No source-language content found to translate from. Fill the source language first.',
+            ], 422);
+        }
+
+        $targetLocales = null;
+        if (! empty($validated['target_locales'])) {
+            $enabled = $service->getSupportedLanguages(true)->pluck('code')->all();
+            $targetLocales = array_values(array_filter(
+                $validated['target_locales'],
+                fn ($l) => in_array(strtolower((string) $l), array_map('strtolower', $enabled), true)
+                    && strtolower((string) $l) !== strtolower($sourceLang)
+            ));
+        }
+
+        TranslateContentJob::dispatch(
+            $entityType,
+            $entityId,
+            $sourceValues,
+            $sourceLang,
+            forceOverwrite: true,
+            onlyLocales: $targetLocales,
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'entity_type' => $entityType,
+                'entity_id' => $entityId,
+                'source_lang' => $sourceLang,
+                'target_locales' => $targetLocales,
+                'fields_count' => count($sourceValues),
+                'queued' => true,
+            ],
+        ]);
+    }
+
+    /**
+     * Read the entity's `source_lang` column without loading the full model.
+     * Returns null if the column is missing (pre-migration deploy) so callers
+     * can degrade gracefully.
+     */
+    private function resolveEntitySourceLang(string $entityType, int $entityId): ?string
+    {
+        $table = match ($entityType) {
+            'hotel' => 'hotels',
+            'excursion' => 'excursions',
+            'transfer' => 'transfers',
+            'car' => 'cars',
+            'visa' => 'visas',
+            'package' => 'packages',
+            'flight' => 'flights',
+            'offer' => 'offers',
+            'company' => 'companies',
+            default => null,
+        };
+        if ($table === null) {
+            return null;
+        }
+        if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'source_lang')) {
+            return null;
+        }
+
+        $value = DB::table($table)->where('id', $entityId)->value('source_lang');
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     public function deleteTranslations(Request $request, LocalizationService $service): JsonResponse
@@ -398,7 +635,7 @@ class LocalizationController extends Controller
         // network roundtrip. Iterates supported_languages dynamically so new
         // languages added by admins flow through without a code change.
         if (strtolower($lang) === 'all') {
-            $codes = \App\Models\SupportedLanguage::query()
+            $codes = SupportedLanguage::query()
                 ->where('is_enabled', true)
                 ->orderBy('sort_order')
                 ->pluck('code')
