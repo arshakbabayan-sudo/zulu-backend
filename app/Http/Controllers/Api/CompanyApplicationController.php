@@ -50,7 +50,14 @@ class CompanyApplicationController extends Controller
             ? $request->file('license')->store($basePath, 'local')
             : null;
 
+        // Link the application back to the registered user when the request
+        // is authenticated (the standard 2-step partner flow). Anonymous
+        // submissions still work — they fall through to the legacy
+        // create-new-user path on approval.
+        $authUserId = optional($request->user())->id;
+
         $application = CompanyApplication::query()->create([
+            'user_id' => $authUserId,
             'company_name' => $validated['company_name'],
             'company_type' => $validated['company_type'],
             'business_email' => $validated['business_email'],
@@ -92,7 +99,7 @@ class CompanyApplicationController extends Controller
         }
 
         $application = CompanyApplication::query()
-            ->with('reviewer')
+            ->with(['reviewer', 'user'])
             ->findOrFail($id);
 
         return response()->json([
@@ -118,7 +125,7 @@ class CompanyApplicationController extends Controller
         ]);
 
         $query = CompanyApplication::query()
-            ->with('reviewer')
+            ->with(['reviewer', 'user'])
             ->orderByDesc('submitted_at');
 
         if (! empty($validated['status'])) {

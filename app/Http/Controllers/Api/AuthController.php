@@ -78,6 +78,10 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
+            // Optional — set when the visitor came in via /register/operator or
+            // /register/agent. Tells admins what kind of partner this user is
+            // becoming BEFORE they submit their CompanyApplication.
+            'intended_role' => ['nullable', 'string', \Illuminate\Validation\Rule::in(['operator', 'agent'])],
         ]);
 
         $user = User::query()->create([
@@ -85,12 +89,29 @@ class AuthController extends Controller
             'email' => $validated['email'],
             'password' => $validated['password'],
             'status' => User::STATUS_ACTIVE,
+            'intended_role' => $validated['intended_role'] ?? null,
         ]);
 
         try {
             $user->sendEmailVerificationNotification();
         } catch (\Throwable $e) {
             // Email verification is opt-in; registration should never fail due to mail issues.
+        }
+
+        // Welcome mail for partner sign-ups — confirms the account was created and
+        // tells the user the next step (complete the company application). The
+        // mail contains NO password (user already set their own at /register).
+        if (! empty($validated['intended_role'])) {
+            try {
+                \Illuminate\Support\Facades\Mail::to($user->email)->send(
+                    new \App\Mail\PartnerRegistrationWelcomeMail($user)
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Partner welcome mail failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $token = $user->createToken('api')->plainTextToken;

@@ -75,6 +75,7 @@ class UserResource extends JsonResource
             'birth_date' => $user->birth_date?->format('Y-m-d'),
             'nationality' => $user->nationality,
             'status' => $user->status,
+            'intended_role' => $user->intended_role ?? null,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
             'roles' => $roleNames,

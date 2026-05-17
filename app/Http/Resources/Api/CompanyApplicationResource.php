@@ -15,8 +15,28 @@ class CompanyApplicationResource extends JsonResource
     {
         $disk = Storage::disk('local');
 
+        // The applicant user — only set on Phase-8 onwards applications where
+        // the user registered first at /register/<role> and submitted the
+        // app while authenticated. Older anonymous submissions stay null.
+        $user = null;
+        if ($this->user_id) {
+            $userModel = $this->user;
+            if ($userModel) {
+                $user = [
+                    'id' => (int) $userModel->id,
+                    'name' => $userModel->name,
+                    'email' => $userModel->email,
+                    'intended_role' => $userModel->intended_role ?? null,
+                ];
+            } else {
+                $user = ['id' => (int) $this->user_id];
+            }
+        }
+
         return [
             'id' => $this->id,
+            'user_id' => $this->user_id,
+            'user' => $user,
             'company_name' => $this->company_name,
             'company_type' => $this->company_type,
             'business_email' => $this->business_email,

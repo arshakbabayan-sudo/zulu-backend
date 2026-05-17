@@ -33,6 +33,7 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
         'email',
         'password',
         'status',
+        'intended_role',
         'phone',
         'preferred_language',
         'avatar',

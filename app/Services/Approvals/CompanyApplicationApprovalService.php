@@ -38,6 +38,15 @@ class CompanyApplicationApprovalService
 
     /**
      * @return array{company: Company, user: User, temporary_password: string}
+     *
+     * Two paths:
+     *   - $application->user_id is set (Phase-8 partner flow): the user
+     *     already registered themselves at /register/<role> with a chosen
+     *     password. Approval attaches the new Company to that existing
+     *     user; no temp password is generated (returned as empty string).
+     *   - $application->user_id is null (legacy / anonymous submissions):
+     *     mint a brand-new user from business_email + a temp password and
+     *     email them the credentials, as before.
      */
     public function approve(CompanyApplication $application, User $reviewer, ?string $notes = null): array
     {
@@ -47,7 +56,16 @@ class CompanyApplicationApprovalService
             ]);
         }
 
-        if (User::query()->where('email', $application->business_email)->exists()) {
+        $existingUser = $application->user_id
+            ? User::query()->find($application->user_id)
+            : null;
+
+        // Only enforce the business_email uniqueness check on the legacy path
+        // where we'd be MINTING a user from that email. When we're attaching
+        // the company to a pre-registered user, the business_email is just a
+        // contact field on the company record — it doesn't have to be unique
+        // against users.email.
+        if (! $existingUser && User::query()->where('email', $application->business_email)->exists()) {
             throw ValidationException::withMessages([
                 'business_email' => ['A user with this business email already exists.'],
             ]);
@@ -70,9 +88,11 @@ class CompanyApplicationApprovalService
             ]);
         }
 
-        $temporaryPassword = Str::random(16);
+        // No temp password generated when attaching to a pre-registered user;
+        // they already chose their own password at /register/<role>.
+        $temporaryPassword = $existingUser ? '' : Str::random(16);
 
-        [$company, $user] = DB::transaction(function () use ($application, $reviewer, $operatorRole, $temporaryPassword, $notes): array {
+        [$company, $user] = DB::transaction(function () use ($application, $reviewer, $operatorRole, $temporaryPassword, $notes, $existingUser): array {
             $company = Company::query()->create([
                 'name' => $application->company_name,
                 'legal_name' => $application->company_name,
@@ -87,12 +107,23 @@ class CompanyApplicationApprovalService
                 'profile_completed' => false,
             ]);
 
-            $user = User::query()->create([
-                'name' => $application->contact_person,
-                'email' => $application->business_email,
-                'password' => $temporaryPassword,
-                'status' => User::STATUS_ACTIVE,
-            ]);
+            if ($existingUser) {
+                // Phase-8 path: attach to the pre-registered user. Don't touch
+                // their password or status; just hook them into the company
+                // and clear `intended_role` (it's been satisfied).
+                $user = $existingUser;
+                if ($user->intended_role !== null) {
+                    $user->update(['intended_role' => null]);
+                }
+            } else {
+                // Legacy path: mint a new user from business_email + temp pw.
+                $user = User::query()->create([
+                    'name' => $application->contact_person,
+                    'email' => $application->business_email,
+                    'password' => $temporaryPassword,
+                    'status' => User::STATUS_ACTIVE,
+                ]);
+            }
 
             $user->companies()->attach($company->id, ['role_id' => $operatorRole->id]);
 

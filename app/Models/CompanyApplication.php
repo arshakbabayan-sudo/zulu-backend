@@ -20,6 +20,7 @@ class CompanyApplication extends Model
     public const STATUS_REJECTED = 'rejected';
 
     protected $fillable = [
+        'user_id',
         'company_name',
         'company_type',
         'business_email',
@@ -58,5 +59,10 @@ class CompanyApplication extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }
