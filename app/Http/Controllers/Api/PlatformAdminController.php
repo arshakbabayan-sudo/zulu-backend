@@ -406,6 +406,46 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    public function showUser(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $user = User::query()->with('companies')->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->platformAdminUserDetail($user),
+        ]);
+    }
+
+    public function updateUser(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $user = User::query()->findOrFail($id);
+
+        $validated = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'preferred_language' => ['sometimes', 'nullable', 'string', 'max:8'],
+            'birth_date' => ['sometimes', 'nullable', 'date'],
+            'nationality' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'status' => ['sometimes', 'string', Rule::in(['active', 'inactive', 'pending', 'suspended'])],
+        ]);
+
+        $user->fill($validated);
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->platformAdminUserDetail($user->fresh(['companies'])),
+        ]);
+    }
+
     public function deactivateUser(Request $request, int $id): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
@@ -770,6 +810,23 @@ class PlatformAdminController extends Controller
                     : 'unknown',
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * Full user detail for the admin user edit page — adds the personal
+     * information fields surfaced by the Zulu_10 customer profile so admins
+     * can audit / amend the same data.
+     */
+    private function platformAdminUserDetail(User $user): array
+    {
+        return array_merge($this->platformAdminUserRow($user), [
+            'phone' => $user->phone,
+            'preferred_language' => $user->preferred_language,
+            'avatar' => $user->avatar,
+            'birth_date' => $user->birth_date?->format('Y-m-d'),
+            'nationality' => $user->nationality,
+            'is_super_admin' => (bool) $user->is_super_admin,
+        ]);
     }
 
     /**
