@@ -32,11 +32,17 @@ trait ResolvesApiLanguage
      */
     protected function computeTranslationStatus(string $lang, array $fields): array
     {
-        $sourceLang = is_string($this->attributes['source_lang'] ?? null)
-            ? (string) $this->attributes['source_lang']
+        // JsonResource wraps the model in $this->resource; we have to reach
+        // into that for the trait method + the source_lang attribute. Reading
+        // $this->attributes directly returns the resource's own array, not
+        // the model's.
+        $model = property_exists($this, 'resource') ? $this->resource : $this;
+        $sourceLangRaw = is_object($model) && method_exists($model, 'getAttribute')
+            ? $model->getAttribute('source_lang')
             : null;
+        $sourceLang = is_string($sourceLangRaw) && $sourceLangRaw !== '' ? $sourceLangRaw : null;
 
-        if (! method_exists($this, 'getTranslationSource')) {
+        if (! is_object($model) || ! method_exists($model, 'getTranslationSource')) {
             return [
                 'status' => 'untracked',
                 'requested_lang' => $lang,
@@ -49,7 +55,7 @@ trait ResolvesApiLanguage
         $translated = 0;
         $eligible = 0;
         foreach ($fields as $field) {
-            $info = $this->getTranslationSource((string) $field, $lang);
+            $info = $model->getTranslationSource((string) $field, $lang);
             if (($info['source'] ?? 'missing') === 'missing') {
                 continue;
             }

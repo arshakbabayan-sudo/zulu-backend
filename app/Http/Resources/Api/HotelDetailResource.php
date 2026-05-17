@@ -41,7 +41,7 @@ class HotelDetailResource extends JsonResource
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
-            'source_lang' => $this->attributes['source_lang'] ?? null,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
             'translation_status' => $translationStatus,
             'hotel_name' => $this->getTranslated('hotel_name', $lang) ?? $this->hotel_name,
             'property_type' => $this->property_type,
