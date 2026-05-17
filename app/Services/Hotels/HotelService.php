@@ -838,6 +838,7 @@ class HotelService
     {
         return [
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
+            'source_lang' => ['sometimes', 'string', 'max:8'],
             'hotel_name' => ['required', 'string', 'max:255'],
             'property_type' => ['required', 'string', 'max:64'],
             'hotel_type' => ['required', 'string', 'max:64'],
