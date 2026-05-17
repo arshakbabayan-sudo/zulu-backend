@@ -5,10 +5,14 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Seed the i18n keys introduced by the Zulu_10 Profile re-skin
- * (breadcrumb, user card, personal information form fields, delete account).
- * Driven from frontend `defaultUiTranslations` in `lib/lang.ts`; this migration
- * supplies HY and RU values so live users see Armenian/Russian copy.
+ * Follow-up to 2026_05_17_030000_seed_account_profile_zulu10_keys.php which
+ * was committed with a stale (partial) row list — the on-disk file had been
+ * extended after the initial `git add`, so 54 keys × 3 langs never reached
+ * the previous migration.
+ *
+ * This file re-seeds the missing Trips / Saved / Reviews / Payment / Review
+ * modal translation rows used by the Zulu_10 account re-skin. Idempotent:
+ * existing rows are updated, missing rows are inserted.
  */
 return new class extends Migration
 {
@@ -16,82 +20,7 @@ return new class extends Migration
     {
         $now = now();
         $rows = [
-            ['en', 'aria.breadcrumb', 'Breadcrumb'],
-            ['hy', 'aria.breadcrumb', 'Նավարկման ուղի'],
-            ['ru', 'aria.breadcrumb', 'Хлебные крошки'],
-
-            ['en', 'account.profile.personal_info', 'Personal information'],
-            ['hy', 'account.profile.personal_info', 'Անձնական տվյալներ'],
-            ['ru', 'account.profile.personal_info', 'Личная информация'],
-
-            ['en', 'account.profile.edit', 'Edit'],
-            ['hy', 'account.profile.edit', 'Փոփոխել'],
-            ['ru', 'account.profile.edit', 'Редактировать'],
-
-            ['en', 'account.profile.edit_avatar_aria', 'Edit photo'],
-            ['hy', 'account.profile.edit_avatar_aria', 'Փոփոխել նկարը'],
-            ['ru', 'account.profile.edit_avatar_aria', 'Изменить фото'],
-
-            ['en', 'account.profile.field.first_name', 'First name'],
-            ['hy', 'account.profile.field.first_name', 'Անուն'],
-            ['ru', 'account.profile.field.first_name', 'Имя'],
-
-            ['en', 'account.profile.field.last_name', 'Last name'],
-            ['hy', 'account.profile.field.last_name', 'Ազգանուն'],
-            ['ru', 'account.profile.field.last_name', 'Фамилия'],
-
-            ['en', 'account.profile.field.email', 'Email'],
-            ['hy', 'account.profile.field.email', 'Էլ. փոստ'],
-            ['ru', 'account.profile.field.email', 'Эл. почта'],
-
-            ['en', 'account.profile.field.phone', 'Phone number'],
-            ['hy', 'account.profile.field.phone', 'Հեռախոս'],
-            ['ru', 'account.profile.field.phone', 'Телефон'],
-
-            ['en', 'account.profile.field.birth_date', 'Birth date'],
-            ['hy', 'account.profile.field.birth_date', 'Ծննդյան ամսաթիվ'],
-            ['ru', 'account.profile.field.birth_date', 'Дата рождения'],
-
-            ['en', 'account.profile.field.nationality', 'Nationality'],
-            ['hy', 'account.profile.field.nationality', 'Քաղաքացիություն'],
-            ['ru', 'account.profile.field.nationality', 'Гражданство'],
-
-            ['en', 'account.profile.field.language', 'Language'],
-            ['hy', 'account.profile.field.language', 'Լեզու'],
-            ['ru', 'account.profile.field.language', 'Язык'],
-
-            ['en', 'account.profile.admin_cta.title', 'Open your admin panel'],
-            ['hy', 'account.profile.admin_cta.title', 'Բացել admin վահանակը'],
-            ['ru', 'account.profile.admin_cta.title', 'Открыть админ-панель'],
-
-            ['en', 'account.profile.admin_cta.subtitle', 'Manage your inventory, bookings and team on admin.zulu.am'],
-            ['hy', 'account.profile.admin_cta.subtitle', 'Կառավարեք ձեր առաջարկները, ամրագրումները և թիմը admin.zulu.am-ում'],
-            ['ru', 'account.profile.admin_cta.subtitle', 'Управляйте предложениями, бронированиями и командой на admin.zulu.am'],
-
-            ['en', 'account.stats.bookings', 'My bookings'],
-            ['hy', 'account.stats.bookings', 'Իմ ամրագրումները'],
-            ['ru', 'account.stats.bookings', 'Мои бронирования'],
-
-            ['en', 'account.stats.saved', 'Saved'],
-            ['hy', 'account.stats.saved', 'Պահպանված'],
-            ['ru', 'account.stats.saved', 'Сохранённые'],
-
-            ['en', 'account.stats.loyalty', 'Loyalty'],
-            ['hy', 'account.stats.loyalty', 'Հավատարմություն'],
-            ['ru', 'account.stats.loyalty', 'Лояльность'],
-
-            ['en', 'account.delete.title', 'Delete account'],
-            ['hy', 'account.delete.title', 'Ջնջել հաշիվը'],
-            ['ru', 'account.delete.title', 'Удалить аккаунт'],
-
-            ['en', 'account.delete.subtitle', 'Account deletion is final, there will be no way to restore your account.'],
-            ['hy', 'account.delete.subtitle', 'Հաշվի ջնջումը վերջնական է, վերականգնելու հնարավորություն չի լինի։'],
-            ['ru', 'account.delete.subtitle', 'Удаление аккаунта окончательно, восстановить его будет невозможно.'],
-
-            ['en', 'account.delete.button', 'Delete'],
-            ['hy', 'account.delete.button', 'Ջնջել'],
-            ['ru', 'account.delete.button', 'Удалить'],
-
+            // Trips
             ['en', 'account.trips.heading', 'Trips'],
             ['hy', 'account.trips.heading', 'Ուղևորություններ'],
             ['ru', 'account.trips.heading', 'Поездки'],
@@ -108,6 +37,7 @@ return new class extends Migration
             ['hy', 'common.page', 'Էջ'],
             ['ru', 'common.page', 'Стр.'],
 
+            // Saved tabs + actions
             ['en', 'account.saved.tab.all', 'All'],
             ['hy', 'account.saved.tab.all', 'Բոլորը'],
             ['ru', 'account.saved.tab.all', 'Все'],
@@ -144,10 +74,12 @@ return new class extends Migration
             ['hy', 'account.saved.remove', 'Հանել պահպանվածներից'],
             ['ru', 'account.saved.remove', 'Удалить из сохранённых'],
 
+            // Reviews
             ['en', 'account.reviews.no_text', 'No comment provided.'],
             ['hy', 'account.reviews.no_text', 'Մեկնաբանություն չկա։'],
             ['ru', 'account.reviews.no_text', 'Комментарий не оставлен.'],
 
+            // Payment
             ['en', 'account.payment.section_title', 'Saved payment methods'],
             ['hy', 'account.payment.section_title', 'Պահպանված վճարման եղանակները'],
             ['ru', 'account.payment.section_title', 'Сохранённые способы оплаты'],
@@ -204,6 +136,7 @@ return new class extends Migration
             ['hy', 'account.payment.field.country', 'Երկիր'],
             ['ru', 'account.payment.field.country', 'Страна'],
 
+            // Review modal
             ['en', 'review_modal.title', 'Leave Review'],
             ['hy', 'review_modal.title', 'Թողնել կարծիք'],
             ['ru', 'review_modal.title', 'Оставить отзыв'],
@@ -336,84 +269,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        $keys = [
-            'aria.breadcrumb',
-            'account.profile.personal_info',
-            'account.profile.edit',
-            'account.profile.edit_avatar_aria',
-            'account.profile.field.first_name',
-            'account.profile.field.last_name',
-            'account.profile.field.email',
-            'account.profile.field.phone',
-            'account.profile.field.birth_date',
-            'account.profile.field.nationality',
-            'account.profile.field.language',
-            'account.profile.admin_cta.title',
-            'account.profile.admin_cta.subtitle',
-            'account.stats.bookings',
-            'account.stats.saved',
-            'account.stats.loyalty',
-            'account.delete.title',
-            'account.delete.subtitle',
-            'account.delete.button',
-            'account.trips.heading',
-            'account.trips.duration_days',
-            'account.trips.write_review',
-            'common.page',
-            'account.saved.tab.all',
-            'account.saved.tab.hotels',
-            'account.saved.tab.flights',
-            'account.saved.tab.excursions',
-            'account.saved.tab.transfers',
-            'account.saved.tab.cars',
-            'account.saved.tab.packages',
-            'account.saved.view_property',
-            'account.saved.remove',
-            'account.reviews.no_text',
-            'account.payment.section_title',
-            'account.payment.expires',
-            'account.payment.default',
-            'account.payment.add_card',
-            'account.payment.add_card_title',
-            'account.payment.add',
-            'account.payment.field.name_on_card',
-            'account.payment.field.card_number',
-            'account.payment.field.expiration_date',
-            'account.payment.field.address_line',
-            'account.payment.field.postal_code',
-            'account.payment.field.city',
-            'account.payment.field.state_region',
-            'account.payment.field.country',
-            'review_modal.title',
-            'review_modal.success',
-            'review_modal.cat.cleanliness',
-            'review_modal.cat.staff',
-            'review_modal.cat.amenities',
-            'review_modal.cat.property',
-            'review_modal.cat.eco',
-            'review_modal.write_review',
-            'review_modal.placeholder',
-            'review_modal.too_short',
-            'review_modal.too_long',
-            'review_modal.recommend.q',
-            'review_modal.recommend.no',
-            'review_modal.recommend.yes',
-            'review_modal.companion.q',
-            'review_modal.companion.couples',
-            'review_modal.companion.family',
-            'review_modal.companion.friends',
-            'review_modal.companion.business',
-            'review_modal.companion.solo',
-            'review_modal.photos.label',
-            'review_modal.photos.optional',
-            'review_modal.photos.cta',
-            'review_modal.need_signin',
-            'review_modal.submitting',
-            'review_modal.submit',
-        ];
-        DB::table('ui_translations')->whereIn('key', $keys)->delete();
-        foreach (['en', 'hy', 'ru'] as $lang) {
-            Cache::forget('ui_translations_'.$lang);
-        }
+        // Intentionally no-op: rollback would conflict with the 030000 migration
+        // since both reference these keys; rely on the 030000 down() if needed.
     }
 };
