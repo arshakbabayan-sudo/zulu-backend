@@ -33,6 +33,8 @@ class CatalogOfferDetailResource extends JsonResource
 
         $data = [
             'id' => $this->id,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
+            'translation_status' => $this->computeTranslationStatus($lang, ['title']),
             'type' => $this->type,
             'title' => $this->getTranslated('title', $lang) ?? $this->title,
             'price' => $b2cPrice,

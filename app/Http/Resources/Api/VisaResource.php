@@ -27,6 +27,8 @@ class VisaResource extends JsonResource
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $offer?->company_id ?? null,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
+            'translation_status' => $this->computeTranslationStatus($lang, ['name', 'description']),
             'country' => $labels['country'],
             'location_id' => $this->location_id,
             'visa_type' => $this->visa_type,

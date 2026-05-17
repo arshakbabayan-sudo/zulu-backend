@@ -35,6 +35,10 @@ class TransferDetailResource extends JsonResource
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
+            'translation_status' => $this->computeTranslationStatus($lang, [
+                'transfer_title', 'pickup_point_name', 'dropoff_point_name', 'short_description',
+            ]),
             'visibility_rule' => $this->visibility_rule,
             'appears_in_web' => (bool) $this->appears_in_web,
             'appears_in_admin' => (bool) $this->appears_in_admin,

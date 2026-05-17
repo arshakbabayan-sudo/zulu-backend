@@ -29,6 +29,10 @@ class ExcursionResource extends JsonResource
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
+            'translation_status' => $this->computeTranslationStatus($lang, [
+                'tour_name', 'overview', 'meeting_pickup', 'additional_info',
+            ]),
             'company_id' => $this->whenLoaded('offer', fn () => $this->offer !== null ? (int) $this->offer->company_id : null),
             // Convenience mirrors of commercial fields (same values as nested `offer`) for operator/inventory tables.
             'title' => $this->whenLoaded('offer', fn () => $this->offer !== null ? ($this->offer->getTranslated('title', $lang) ?? $this->offer->title) : null),

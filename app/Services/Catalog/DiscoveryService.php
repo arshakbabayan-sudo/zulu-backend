@@ -215,11 +215,19 @@ class DiscoveryService
 
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($offer->price, $offer->currency);
 
+        // Translation status for the customer site banner. The "module" entity
+        // (hotel/excursion/transfer/visa/package) is where the long-form text
+        // lives; the offer-level title is short and almost always translated,
+        // so we report on the module's status when one exists.
+        $translationStatus = $this->computeOfferTranslationStatus($offer, $lang);
+
         $payload = [
             'offer' => [
                 'id' => $offer->id,
                 'type' => $offer->type,
                 'title' => $offer->getTranslated('title', $lang) ?? $offer->title,
+                'source_lang' => $offer->getAttribute('source_lang'),
+                'translation_status' => $translationStatus,
                 'price' => $pricing['calculated_price'],
                 'base_price' => $pricing['base_price'],
                 'calculated_price' => $pricing['calculated_price'],
@@ -1718,6 +1726,76 @@ class DiscoveryService
                 })
                 ->orWhereHas('transfer', fn ($q) => $q->forLocation($primary));
         });
+    }
+
+    /**
+     * Per-offer translation status reported to the customer-site banner.
+     *
+     * Inspects the module-content entity (hotel / excursion / etc.) where the
+     * long-form translatable text lives. If translatable rows exist in $lang
+     * the status is 'complete'; if only some fields are translated, 'partial';
+     * if none, 'pending'. Returns null for offer types with no translatables
+     * (flight, car at the moment) so the frontend can skip the banner.
+     *
+     * @return array{status: string, requested_lang: string, source_lang: ?string, fields_translated: int, fields_total: int}|null
+     */
+    private function computeOfferTranslationStatus(Offer $offer, string $lang): ?array
+    {
+        $module = match ($offer->type) {
+            'hotel' => $offer->hotel,
+            'excursion' => $offer->excursion,
+            'transfer' => $offer->transfer,
+            'visa' => $offer->visa,
+            'package' => $offer->package,
+            default => null,
+        };
+
+        if ($module === null || ! method_exists($module, 'getTranslationSource')) {
+            return null;
+        }
+
+        $fields = match ($offer->type) {
+            'hotel' => ['hotel_name', 'short_description', 'full_address', 'district_or_area'],
+            'excursion' => ['tour_name', 'overview', 'meeting_pickup'],
+            'transfer' => ['transfer_title', 'pickup_point_name', 'dropoff_point_name', 'short_description'],
+            'visa' => ['name', 'description'],
+            'package' => ['package_title', 'package_subtitle'],
+            default => [],
+        };
+        if ($fields === []) {
+            return null;
+        }
+
+        $translated = 0;
+        $eligible = 0;
+        foreach ($fields as $field) {
+            $info = $module->getTranslationSource((string) $field, $lang);
+            if (($info['source'] ?? 'missing') === 'missing') {
+                continue;
+            }
+            $eligible++;
+            if (($info['source'] ?? null) === 'translated') {
+                $translated++;
+            }
+        }
+
+        $status = 'complete';
+        if ($eligible === 0 || $translated === 0) {
+            $status = 'pending';
+        } elseif ($translated < $eligible) {
+            $status = 'partial';
+        }
+
+        $sourceLangRaw = $module->getAttribute('source_lang');
+        $sourceLang = is_string($sourceLangRaw) && $sourceLangRaw !== '' ? $sourceLangRaw : null;
+
+        return [
+            'status' => $status,
+            'requested_lang' => $lang,
+            'source_lang' => $sourceLang,
+            'fields_translated' => $translated,
+            'fields_total' => $eligible,
+        ];
     }
 
     private function parseBooleanInput(mixed $value): ?bool

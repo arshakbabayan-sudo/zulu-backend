@@ -19,6 +19,8 @@ class CompanyResource extends JsonResource
 
         return [
             'id' => $this->id,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
+            'translation_status' => $this->computeTranslationStatus($lang, ['description', 'address']),
             'name' => $this->name,
             'type' => $this->type,
             'status' => $this->status,

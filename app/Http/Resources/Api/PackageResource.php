@@ -35,6 +35,8 @@ class PackageResource extends JsonResource
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
+            'translation_status' => $this->computeTranslationStatus($lang, ['package_title', 'package_subtitle']),
             'package_type' => $this->package_type,
             'package_title' => $this->getTranslated('package_title', $lang) ?? $this->package_title,
             'package_subtitle' => $this->getTranslated('package_subtitle', $lang) ?? $this->package_subtitle,

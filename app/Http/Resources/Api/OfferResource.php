@@ -31,6 +31,8 @@ class OfferResource extends JsonResource
         $data = [
             'id' => $this->id,
             'company_id' => $this->company_id,
+            'source_lang' => $this->resource->getAttribute('source_lang'),
+            'translation_status' => $this->computeTranslationStatus($lang, ['title']),
             'type' => $this->type,
             'title' => $this->getTranslated('title', $lang) ?? $this->title,
             'price' => $dual['b2b_price'],
