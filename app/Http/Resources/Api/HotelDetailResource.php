@@ -29,10 +29,20 @@ class HotelDetailResource extends JsonResource
             'rooms' => $this->relationLoaded('rooms') ? $this->rooms->count() : null,
         ]);
 
+        // If any visible field falls back to source-lang / default-lang / base
+        // column instead of returning a real $lang translation, the frontend
+        // surfaces a "🔄 Translation in progress" banner so the customer
+        // knows the page they're looking at hasn't been translated yet.
+        $translationStatus = $this->computeTranslationStatus($lang, [
+            'hotel_name', 'short_description', 'full_address', 'district_or_area',
+        ]);
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
             'company_id' => $this->company_id,
+            'source_lang' => $this->attributes['source_lang'] ?? null,
+            'translation_status' => $translationStatus,
             'hotel_name' => $this->getTranslated('hotel_name', $lang) ?? $this->hotel_name,
             'property_type' => $this->property_type,
             'hotel_type' => $this->hotel_type,
