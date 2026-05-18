@@ -85,6 +85,7 @@ use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\AgentOperatorRequestController;
+use App\Http\Controllers\Api\BlockedDatesController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
@@ -293,6 +294,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('account/pin', [AccountController::class, 'setPin'])->middleware('throttle:10,1');
     Route::post('account/pin/verify', [AccountController::class, 'verifyPin'])->middleware('throttle:10,1');
     Route::delete('account/pin', [AccountController::class, 'clearPin']);
+
+    // Blocked dates (Phase 7.2 — overbooking guard)
+    Route::get('blocked-dates', [BlockedDatesController::class, 'index']);
+    Route::post('blocked-dates', [BlockedDatesController::class, 'store']);
+    Route::delete('blocked-dates/{id}', [BlockedDatesController::class, 'destroy'])->whereNumber('id');
 
     // Agent ↔ Operator requests inbox (Phase 7.7)
     Route::get('agent-operator-requests', [AgentOperatorRequestController::class, 'index']);
