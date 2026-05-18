@@ -86,6 +86,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\AgentOperatorRequestController;
 use App\Http\Controllers\Api\BlockedDatesController;
+use App\Http\Controllers\Api\CasesController;
 use App\Http\Controllers\Api\ServiceCatalogController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
@@ -300,6 +301,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('blocked-dates', [BlockedDatesController::class, 'index']);
     Route::post('blocked-dates', [BlockedDatesController::class, 'store']);
     Route::delete('blocked-dates/{id}', [BlockedDatesController::class, 'destroy'])->whereNumber('id');
+
+    // Cases & assignments (Phase 7.10)
+    Route::get('cases', [CasesController::class, 'index']);
+    Route::post('cases', [CasesController::class, 'store']);
+    Route::get('cases/{id}', [CasesController::class, 'show'])->whereNumber('id');
+    Route::patch('cases/{id}', [CasesController::class, 'update'])->whereNumber('id');
 
     // Service catalog (Phase 7.12 — generic bookable services)
     Route::get('service-catalog', [ServiceCatalogController::class, 'index']);
