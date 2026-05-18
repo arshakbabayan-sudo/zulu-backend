@@ -100,6 +100,12 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
         return $this->hasMany(UserCompany::class);
     }
 
+    /** Phase 7.1 — orders placed by this user (as B2C customer). */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Order::class, 'user_id');
+    }
+
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class);

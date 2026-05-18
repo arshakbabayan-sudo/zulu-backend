@@ -406,6 +406,66 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Phase 7.1 — B2C customers list.
+     *
+     * A "customer" here is a user with zero company memberships (so not an
+     * operator / agent / platform admin). Same paginated/filterable shape as
+     * listUsers; sortable by registration date or name.
+     */
+    public function listCustomers(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $perPage = $this->commerceListPerPage($request);
+        $query = User::query()
+            ->whereDoesntHave('memberships')
+            ->withCount('bookings as bookings_count')
+            ->orderByDesc('id');
+
+        if ($request->filled('search')) {
+            $search = (string) $request->query('search');
+            $query->where(function ($q) use ($search): void {
+                $q->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('email', 'like', '%'.$search.'%')
+                    ->orWhere('phone', 'like', '%'.$search.'%');
+            });
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', (string) $request->query('status'));
+        }
+
+        $paginator = $query->paginate($perPage);
+
+        $data = $paginator->getCollection()->map(function (User $user): array {
+            return [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'status' => $user->status,
+                'preferred_language' => $user->preferred_language,
+                'nationality' => $user->nationality,
+                'bookings_count' => (int) ($user->bookings_count ?? 0),
+                'created_at' => $user->created_at?->toIso8601String(),
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
+            ],
+        ]);
+    }
+
     public function showUser(Request $request, int $id): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
