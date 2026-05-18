@@ -622,6 +622,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Notification oversight (PART 23, Sprint 59)
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
+        Route::post('notifications/bulk-send', [AdminNotificationController::class, 'bulkSend']);
 
         // Hero search-tab catalog write (home-page CMS Phase 2 Step 2.4)
         Route::patch('site-settings/hero-tabs', [HeroTabsController::class, 'update']);

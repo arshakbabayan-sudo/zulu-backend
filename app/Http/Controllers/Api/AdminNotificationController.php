@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Models\User;
+use App\Models\UserCompany;
 use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Platform-admin notification oversight (Sprint 59, PART 23).
@@ -124,5 +127,101 @@ class AdminNotificationController extends Controller
                 'by_priority' => $byPriority,
             ],
         ]);
+    }
+
+    /**
+     * Phase 7.6 — bulk send a single notification to many users.
+     *
+     * Accepts a recipient selector (all_b2c | all_staff | by_company |
+     * specific_users) plus title + message and creates one Notification row
+     * per matched user inside a single transaction. Super-admin gated.
+     */
+    public function bulkSend(Request $request): JsonResponse
+    {
+        $authUser = $request->user();
+        if ($authUser === null || ! $authUser->is_super_admin) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'target' => ['required', 'string', 'in:all_b2c,all_staff,by_company,specific_users'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'user_ids' => ['nullable', 'array'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+            'title' => ['required', 'string', 'max:255'],
+            'message' => ['required', 'string', 'max:5000'],
+            'priority' => ['nullable', 'string', 'in:low,normal,high'],
+        ]);
+
+        $userIds = $this->resolveBulkRecipients($validated);
+        if (count($userIds) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No recipients matched the selector.',
+            ], 422);
+        }
+
+        $now = now();
+        $rows = [];
+        foreach ($userIds as $uid) {
+            $rows[] = [
+                'user_id' => $uid,
+                'type' => 'admin_broadcast',
+                'title' => $validated['title'],
+                'message' => $validated['message'],
+                'status' => 'unread',
+                'event_type' => 'admin_broadcast',
+                'priority' => $validated['priority'] ?? 'normal',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        DB::table('notifications')->insert($rows);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'sent_count' => count($userIds),
+            ],
+        ]);
+    }
+
+    /** @param array<string, mixed> $validated @return list<int> */
+    private function resolveBulkRecipients(array $validated): array
+    {
+        $target = $validated['target'];
+        if ($target === 'specific_users') {
+            return array_values(array_unique(array_map('intval', $validated['user_ids'] ?? [])));
+        }
+        if ($target === 'by_company') {
+            $companyId = (int) ($validated['company_id'] ?? 0);
+            if ($companyId <= 0) {
+                return [];
+            }
+            return UserCompany::query()
+                ->where('company_id', $companyId)
+                ->pluck('user_id')
+                ->map(fn ($v) => (int) $v)
+                ->unique()
+                ->values()
+                ->all();
+        }
+        if ($target === 'all_b2c') {
+            return User::query()
+                ->whereDoesntHave('memberships')
+                ->pluck('id')
+                ->map(fn ($v) => (int) $v)
+                ->all();
+        }
+        if ($target === 'all_staff') {
+            return User::query()
+                ->whereHas('memberships')
+                ->pluck('id')
+                ->map(fn ($v) => (int) $v)
+                ->all();
+        }
+
+        return [];
     }
 }
