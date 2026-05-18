@@ -89,6 +89,7 @@ use App\Http\Controllers\Api\BlockedDatesController;
 use App\Http\Controllers\Api\CasesController;
 use App\Http\Controllers\Api\CustomFieldsController;
 use App\Http\Controllers\Api\ServiceCatalogController;
+use App\Http\Controllers\Api\TimeOffController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
@@ -302,6 +303,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('blocked-dates', [BlockedDatesController::class, 'index']);
     Route::post('blocked-dates', [BlockedDatesController::class, 'store']);
     Route::delete('blocked-dates/{id}', [BlockedDatesController::class, 'destroy'])->whereNumber('id');
+
+    // Time-off / non-service hours (Phase 7.13)
+    Route::get('time-off', [TimeOffController::class, 'index']);
+    Route::post('time-off', [TimeOffController::class, 'store']);
+    Route::patch('time-off/{id}/decide', [TimeOffController::class, 'decide'])->whereNumber('id');
 
     // Custom field definitions (Phase 7.4)
     Route::get('custom-fields', [CustomFieldsController::class, 'index']);
