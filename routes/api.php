@@ -89,6 +89,7 @@ use App\Http\Controllers\Api\BlockedDatesController;
 use App\Http\Controllers\Api\CasesController;
 use App\Http\Controllers\Api\CustomFieldsController;
 use App\Http\Controllers\Api\ServiceCatalogController;
+use App\Http\Controllers\Api\SubscriptionsController;
 use App\Http\Controllers\Api\TimeOffController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
@@ -303,6 +304,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('blocked-dates', [BlockedDatesController::class, 'index']);
     Route::post('blocked-dates', [BlockedDatesController::class, 'store']);
     Route::delete('blocked-dates/{id}', [BlockedDatesController::class, 'destroy'])->whereNumber('id');
+
+    // Subscriptions (Phase 7.11)
+    Route::get('subscription-plans', [SubscriptionsController::class, 'listPlans']);
+    Route::post('subscription-plans', [SubscriptionsController::class, 'storePlan']);
+    Route::patch('subscription-plans/{id}', [SubscriptionsController::class, 'updatePlan'])->whereNumber('id');
+    Route::get('company-subscriptions', [SubscriptionsController::class, 'listCompanySubscriptions']);
+    Route::patch('company-subscriptions/{companyId}', [SubscriptionsController::class, 'assignCompanySubscription'])->whereNumber('companyId');
 
     // Time-off / non-service hours (Phase 7.13)
     Route::get('time-off', [TimeOffController::class, 'index']);
