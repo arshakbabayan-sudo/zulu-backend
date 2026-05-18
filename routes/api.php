@@ -575,6 +575,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('reviews/{review}/moderate', [ReviewController::class, 'moderateReview'])->whereNumber('review');
         Route::get('users', [PlatformAdminController::class, 'listUsers']);
         Route::get('customers', [PlatformAdminController::class, 'listCustomers']);
+        Route::get('unverified-accounts', [PlatformAdminController::class, 'listUnverifiedAccounts']);
         Route::get('users/{id}', [PlatformAdminController::class, 'showUser'])->whereNumber('id');
         Route::patch('users/{id}', [PlatformAdminController::class, 'updateUser'])->whereNumber('id');
         Route::patch('users/{id}/deactivate', [PlatformAdminController::class, 'deactivateUser'])->whereNumber('id');

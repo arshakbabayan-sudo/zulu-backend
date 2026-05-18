@@ -466,6 +466,56 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Phase 7.8 — unverified accounts. Returns users that need attention:
+     * status='pending', or never confirmed their email (email_verified_at
+     * IS NULL). Same shape as listUsers; sorted oldest first so the queue
+     * surfaces stragglers.
+     */
+    public function listUnverifiedAccounts(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $perPage = $this->commerceListPerPage($request);
+        $query = User::query()
+            ->with('companies')
+            ->where(function ($q) {
+                $q->where('status', 'pending')
+                    ->orWhereNull('email_verified_at');
+            })
+            ->orderBy('created_at');
+
+        if ($request->filled('search')) {
+            $search = (string) $request->query('search');
+            $query->where(function ($q) use ($search): void {
+                $q->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('email', 'like', '%'.$search.'%');
+            });
+        }
+
+        $paginator = $query->paginate($perPage);
+
+        $data = $paginator->getCollection()->map(function (User $user): array {
+            return array_merge($this->platformAdminUserRow($user), [
+                'email_verified_at' => $user->email_verified_at?->toIso8601String(),
+                'intended_role' => $user->intended_role ?? null,
+            ]);
+        })->values()->all();
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
+            ],
+        ]);
+    }
+
     public function showUser(Request $request, int $id): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
