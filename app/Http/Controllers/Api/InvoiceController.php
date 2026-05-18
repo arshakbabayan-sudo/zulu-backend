@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\InvoiceResource;
 use App\Models\Invoice;
 use App\Models\Order;
+use Illuminate\Support\Facades\DB;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Invoices\InvoiceService;
 use App\Services\Pdf\InvoicePdfService;
@@ -46,6 +47,78 @@ class InvoiceController extends Controller
         );
 
         return $this->paginatedCommerceResourceResponse($request, $paginator, InvoiceResource::class);
+    }
+
+    /**
+     * Phase 7.3 — Per-X Invoicing aggregate view.
+     *
+     * Group existing invoices by one of several slicing dimensions and
+     * return aggregated totals per group. Pure read-only — no schema
+     * changes. Useful for monthly statement prep, by-operator finance
+     * reconciliation, etc.
+     *
+     * Supported `group_by`:
+     *   - status   → invoice status (issued / paid / cancelled / pending)
+     *   - currency → currency code
+     *   - month    → YYYY-MM bucket of issuing_date
+     *   - operator → seller company on the linked order
+     *
+     * Companies are scoped per the regular invoices.view rules so
+     * operators only see their own slices.
+     */
+    public function aggregate(Request $request): JsonResponse
+    {
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'invoices.view');
+        $groupBy = (string) $request->query('group_by', 'status');
+
+        $query = Invoice::query();
+
+        // Apply the same company scoping the list endpoint uses (via orders.company_id).
+        if ($companyIds !== null) {
+            $query->whereHas('order', function ($q) use ($companyIds): void {
+                $q->whereIn('company_id', $companyIds);
+            });
+        }
+
+        $rows = match ($groupBy) {
+            'currency' => $query
+                ->selectRaw('COALESCE(currency, \'?\') as bucket, COUNT(*) as invoice_count, SUM(total_amount) as total_sum')
+                ->groupBy('bucket')
+                ->orderBy('bucket')
+                ->get(),
+            'month' => $query
+                ->selectRaw('TO_CHAR(issuing_date, \'YYYY-MM\') as bucket, COALESCE(currency, \'?\') as currency, COUNT(*) as invoice_count, SUM(total_amount) as total_sum')
+                ->whereNotNull('issuing_date')
+                ->groupBy('bucket', 'currency')
+                ->orderByDesc('bucket')
+                ->get(),
+            'operator' => $query
+                ->join('orders', 'invoices.order_id', '=', 'orders.id')
+                ->leftJoin('companies', 'orders.company_id', '=', 'companies.id')
+                ->selectRaw('orders.company_id as bucket, companies.name as label, COALESCE(invoices.currency, \'?\') as currency, COUNT(*) as invoice_count, SUM(invoices.total_amount) as total_sum')
+                ->groupBy('orders.company_id', 'companies.name', 'invoices.currency')
+                ->orderByDesc('total_sum')
+                ->get(),
+            default => $query
+                ->selectRaw('status as bucket, COALESCE(currency, \'?\') as currency, COUNT(*) as invoice_count, SUM(total_amount) as total_sum')
+                ->groupBy('bucket', 'currency')
+                ->orderBy('bucket')
+                ->get(),
+        };
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'group_by' => $groupBy,
+                'buckets' => $rows->map(fn ($r) => [
+                    'bucket' => $r->bucket,
+                    'label' => $r->label ?? null,
+                    'currency' => $r->currency ?? null,
+                    'invoice_count' => (int) $r->invoice_count,
+                    'total_sum' => $r->total_sum !== null ? (float) $r->total_sum : 0.0,
+                ])->all(),
+            ],
+        ]);
     }
 
     public function show(Request $request, Invoice $invoice): JsonResponse

@@ -468,6 +468,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('admin/offers/{offer}/reject', [OfferController::class, 'reject'])->middleware('throttle:inventory-write');
 
     Route::get('invoices', [InvoiceController::class, 'index']);
+    Route::get('invoices/aggregate', [InvoiceController::class, 'aggregate']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show']);
     Route::get('invoices/{invoice}/pdf', [InvoiceController::class, 'downloadPdf'])->whereNumber('invoice');
     Route::get('invoices/{invoice}/download', [InvoiceController::class, 'downloadPdf']);
