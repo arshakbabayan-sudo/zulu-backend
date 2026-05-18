@@ -48,6 +48,7 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
      */
     protected $hidden = [
         'password',
+        'pin_hash',
         'remember_token',
     ];
 
@@ -62,6 +63,7 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'birth_date' => 'date',
+            'pin_set_at' => 'datetime',
         ];
     }
 

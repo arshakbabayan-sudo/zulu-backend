@@ -288,6 +288,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('account/2fa/recovery-codes/regenerate', [TwoFactorController::class, 'regenerateRecoveryCodes']);
     Route::get('account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodesStatus']);
 
+    // Per-user PIN for sensitive admin actions (Phase 7.14)
+    Route::get('account/pin', [AccountController::class, 'pinStatus']);
+    Route::post('account/pin', [AccountController::class, 'setPin'])->middleware('throttle:10,1');
+    Route::post('account/pin/verify', [AccountController::class, 'verifyPin'])->middleware('throttle:10,1');
+    Route::delete('account/pin', [AccountController::class, 'clearPin']);
+
     // Agent ↔ Operator requests inbox (Phase 7.7)
     Route::get('agent-operator-requests', [AgentOperatorRequestController::class, 'index']);
     Route::post('agent-operator-requests', [AgentOperatorRequestController::class, 'store']);

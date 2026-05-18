@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
 use App\Models\DataExportRequest;
 use App\Models\SavedItem;
+use Illuminate\Support\Facades\Hash;
 use App\Services\Pricing\PriceCalculatorService;
 use App\Services\UserAccount\AccountDeletionService;
 use App\Services\UserAccount\DataExportService;
@@ -24,6 +25,108 @@ class AccountController extends Controller
             'success' => true,
             'data' => UserResource::make($request->user())->toArray($request),
         ]);
+    }
+
+    /**
+     * Phase 7.14 — current PIN status (set / not set + last set date).
+     * Hash itself is never exposed.
+     */
+    public function pinStatus(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'is_set' => ! empty($user->pin_hash),
+                'set_at' => $user->pin_set_at?->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Phase 7.14 — set or change PIN. Requires current account password.
+     * When the user already has a PIN, also requires the current PIN to
+     * prove they're the one rotating it.
+     */
+    public function setPin(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'password' => ['required', 'string'],
+            'current_pin' => ['nullable', 'string', 'min:4', 'max:8'],
+            'new_pin' => ['required', 'string', 'min:4', 'max:8', 'regex:/^\d+$/'],
+        ]);
+
+        $user = $request->user();
+        if (! Hash::check($validated['password'], (string) $user->password)) {
+            return response()->json(['success' => false, 'message' => 'Incorrect account password'], 422);
+        }
+
+        if (! empty($user->pin_hash)) {
+            if (empty($validated['current_pin'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current PIN required to change an existing PIN',
+                ], 422);
+            }
+            if (! Hash::check($validated['current_pin'], (string) $user->pin_hash)) {
+                return response()->json(['success' => false, 'message' => 'Current PIN incorrect'], 422);
+            }
+        }
+
+        $user->pin_hash = Hash::make($validated['new_pin']);
+        $user->pin_set_at = now();
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'is_set' => true,
+                'set_at' => $user->pin_set_at->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Phase 7.14 — verify the user's PIN before performing a sensitive
+     * action. Returns success on match; never reveals the stored hash.
+     */
+    public function verifyPin(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'pin' => ['required', 'string', 'min:4', 'max:8'],
+        ]);
+
+        $user = $request->user();
+        if (empty($user->pin_hash)) {
+            return response()->json(['success' => false, 'message' => 'PIN not set'], 422);
+        }
+        if (! Hash::check($validated['pin'], (string) $user->pin_hash)) {
+            return response()->json(['success' => false, 'message' => 'PIN incorrect'], 422);
+        }
+
+        return response()->json(['success' => true, 'data' => ['verified' => true]]);
+    }
+
+    /**
+     * Phase 7.14 — clear the PIN. Requires current account password.
+     */
+    public function clearPin(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'password' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        if (! Hash::check($validated['password'], (string) $user->password)) {
+            return response()->json(['success' => false, 'message' => 'Incorrect account password'], 422);
+        }
+
+        $user->pin_hash = null;
+        $user->pin_set_at = null;
+        $user->save();
+
+        return response()->json(['success' => true, 'data' => ['is_set' => false]]);
     }
 
     public function updateProfile(Request $request, UserAccountService $service): JsonResponse
