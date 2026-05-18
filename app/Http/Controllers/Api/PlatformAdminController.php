@@ -390,6 +390,11 @@ class PlatformAdminController extends Controller
             $query->where('status', (string) $request->query('status'));
         }
 
+        // Phase 7.5 — `with_companies=1` filters to staff users only (Bucket-3 Employees view).
+        if ($request->boolean('with_companies')) {
+            $query->whereHas('memberships');
+        }
+
         $paginator = $query->paginate($perPage);
 
         $data = $paginator->getCollection()->map(fn (User $user): array => $this->platformAdminUserRow($user))->values()->all();
