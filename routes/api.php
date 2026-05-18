@@ -86,6 +86,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\AgentOperatorRequestController;
 use App\Http\Controllers\Api\BlockedDatesController;
+use App\Http\Controllers\Api\ServiceCatalogController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
@@ -299,6 +300,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('blocked-dates', [BlockedDatesController::class, 'index']);
     Route::post('blocked-dates', [BlockedDatesController::class, 'store']);
     Route::delete('blocked-dates/{id}', [BlockedDatesController::class, 'destroy'])->whereNumber('id');
+
+    // Service catalog (Phase 7.12 — generic bookable services)
+    Route::get('service-catalog', [ServiceCatalogController::class, 'index']);
+    Route::post('service-catalog', [ServiceCatalogController::class, 'store']);
+    Route::patch('service-catalog/{id}', [ServiceCatalogController::class, 'update'])->whereNumber('id');
+    Route::delete('service-catalog/{id}', [ServiceCatalogController::class, 'destroy'])->whereNumber('id');
 
     // Agent ↔ Operator requests inbox (Phase 7.7)
     Route::get('agent-operator-requests', [AgentOperatorRequestController::class, 'index']);
