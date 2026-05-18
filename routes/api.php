@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
+use App\Http\Controllers\Api\AgentOperatorRequestController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
@@ -286,6 +287,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('account/2fa/disable', [TwoFactorController::class, 'disable']);
     Route::post('account/2fa/recovery-codes/regenerate', [TwoFactorController::class, 'regenerateRecoveryCodes']);
     Route::get('account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodesStatus']);
+
+    // Agent ↔ Operator requests inbox (Phase 7.7)
+    Route::get('agent-operator-requests', [AgentOperatorRequestController::class, 'index']);
+    Route::post('agent-operator-requests', [AgentOperatorRequestController::class, 'store']);
+    Route::get('agent-operator-requests/{id}', [AgentOperatorRequestController::class, 'show'])->whereNumber('id');
+    Route::patch('agent-operator-requests/{id}/status', [AgentOperatorRequestController::class, 'updateStatus'])->whereNumber('id');
 
     // Operator commission settings (Phase 6B — operator → agent split)
     Route::get('operator/commission-settings', [OperatorCommissionController::class, 'index']);
