@@ -7,6 +7,7 @@ use App\Http\Resources\Api\CompanyResource;
 use App\Http\Resources\Api\CompanyUserResource;
 use App\Models\Company;
 use App\Models\CompanyCountryPermission;
+use App\Models\CompanyModulePermission;
 use App\Models\CompanySellerPermission;
 use App\Models\Role;
 use App\Models\User;
@@ -537,6 +538,79 @@ class CompanyController extends Controller
             ->update(['status' => CompanyCountryPermission::STATUS_REVOKED]);
 
         return $this->countryPermissions($request, $company);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Module permissions (admin sidebar gating per company — Phase 6A)
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * GET /platform-admin/companies/{company}/module-permissions
+     * Returns the explicit allow/deny rows + the canonical list of module
+     * keys so the UI can render a checkbox grid even for companies that have
+     * no rows yet (default state: every module allowed).
+     */
+    public function modulePermissions(Request $request, Company $company): JsonResponse
+    {
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
+        }
+
+        $rows = CompanyModulePermission::query()
+            ->where('company_id', $company->id)
+            ->get()
+            ->map(fn (CompanyModulePermission $p) => [
+                'module_key' => $p->module_key,
+                'is_allowed' => (bool) $p->is_allowed,
+                'granted_at' => $p->granted_at?->toIso8601String(),
+                'notes' => $p->notes,
+            ])
+            ->all();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'company_id' => $company->id,
+                'available_module_keys' => CompanyModulePermission::MODULE_KEYS,
+                'permissions' => $rows,
+            ],
+        ]);
+    }
+
+    /**
+     * PATCH /platform-admin/companies/{company}/module-permissions
+     * Accepts a sparse map of explicit settings. Modules omitted from the
+     * payload keep their existing row (or remain in default-allow state).
+     */
+    public function patchModulePermissions(Request $request, Company $company): JsonResponse
+    {
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'permissions' => ['required', 'array'],
+            'permissions.*.module_key' => ['required', 'string', 'max:64'],
+            'permissions.*.is_allowed' => ['required', 'boolean'],
+            'permissions.*.notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $now = now();
+        $userId = $request->user()->id;
+
+        foreach ($validated['permissions'] as $row) {
+            CompanyModulePermission::query()->updateOrCreate(
+                ['company_id' => $company->id, 'module_key' => $row['module_key']],
+                [
+                    'is_allowed' => $row['is_allowed'],
+                    'granted_by_user_id' => $userId,
+                    'granted_at' => $now,
+                    'notes' => $row['notes'] ?? null,
+                ]
+            );
+        }
+
+        return $this->modulePermissions($request, $company);
     }
 
     private function denyUnlessSuperAdmin(Request $request): ?JsonResponse
