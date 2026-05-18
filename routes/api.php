@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
+use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\SellerWebhookController;
@@ -285,6 +286,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('account/2fa/disable', [TwoFactorController::class, 'disable']);
     Route::post('account/2fa/recovery-codes/regenerate', [TwoFactorController::class, 'regenerateRecoveryCodes']);
     Route::get('account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodesStatus']);
+
+    // Operator commission settings (Phase 6B — operator → agent split)
+    Route::get('operator/commission-settings', [OperatorCommissionController::class, 'index']);
+    Route::patch('operator/commission-settings', [OperatorCommissionController::class, 'upsertDefault']);
+    Route::patch('operator/commission-settings/agents/{agent}', [OperatorCommissionController::class, 'upsertOverride'])
+        ->whereNumber('agent');
+    Route::delete('operator/commission-settings/agents/{agent}', [OperatorCommissionController::class, 'deleteOverride'])
+        ->whereNumber('agent');
 
     // Seller contracts (PART 05)
     Route::get('seller/contracts', [SellerContractController::class, 'index']);
