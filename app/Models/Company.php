@@ -101,6 +101,12 @@ class Company extends Model
         return $this->hasMany(CompanySellerPermission::class);
     }
 
+    /** Phase 6A — per-company admin module visibility rows. */
+    public function modulePermissions(): HasMany
+    {
+        return $this->hasMany(CompanyModulePermission::class);
+    }
+
     public function sellerApplications(): HasMany
     {
         return $this->hasMany(CompanySellerApplication::class);

@@ -14,7 +14,7 @@ class UserResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = $this->resource;
-        $user->loadMissing('memberships.role.permissions', 'companies.sellerPermissions');
+        $user->loadMissing('memberships.role.permissions', 'companies.sellerPermissions', 'companies.modulePermissions');
 
         $adminAccess = app(AdminAccessService::class);
         $isSuperAdmin = $adminAccess->isSuperAdmin($user);
@@ -58,6 +58,21 @@ class UserResource extends JsonResource
             ? ($sellerServiceTypesByCompany[$activeCompanyId] ?? [])
             : [];
 
+        // Phase 6A: per-company module visibility map. Default-allow semantics —
+        // a module appears here only when an explicit row exists. Sidebar
+        // enforcement in AdminShell denies a tab when its moduleKey is present
+        // with value `false`. Super admins are never restricted (they don't
+        // belong to a company in the permission sense).
+        $moduleAllowMap = [];
+        if ($activeCompanyId !== null && ! $isSuperAdmin) {
+            $activeCompany = $sortedCompanies->firstWhere('id', $activeCompanyId);
+            if ($activeCompany !== null) {
+                foreach ($activeCompany->modulePermissions as $perm) {
+                    $moduleAllowMap[(string) $perm->module_key] = (bool) $perm->is_allowed;
+                }
+            }
+        }
+
         $canonicalRole = $adminAccess->canonicalRoleForUser($user);
         $canonicalRoles = array_values(array_unique(array_map(
             fn (string $roleName): string => $adminAccess->canonicalizeRoleName($roleName),
@@ -96,6 +111,7 @@ class UserResource extends JsonResource
                 'canonical_role' => $canonicalRole,
                 'active_company_id' => $activeCompanyId,
                 'active_seller_service_types' => $activeSellerServiceTypes,
+                'module_permissions' => (object) $moduleAllowMap,
                 'is_super_admin' => $isSuperAdmin,
                 'is_platform_admin' => $isPlatformAdmin,
                 'operator_statistics_platform_scope' => $operatorStatisticsPlatformScope,
