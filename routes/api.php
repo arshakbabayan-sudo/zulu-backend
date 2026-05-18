@@ -88,6 +88,7 @@ use App\Http\Controllers\Api\AgentOperatorRequestController;
 use App\Http\Controllers\Api\BlockedDatesController;
 use App\Http\Controllers\Api\CasesController;
 use App\Http\Controllers\Api\CustomFieldsController;
+use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\ServiceCatalogController;
 use App\Http\Controllers\Api\SubscriptionsController;
 use App\Http\Controllers\Api\TimeOffController;
@@ -304,6 +305,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('blocked-dates', [BlockedDatesController::class, 'index']);
     Route::post('blocked-dates', [BlockedDatesController::class, 'store']);
     Route::delete('blocked-dates/{id}', [BlockedDatesController::class, 'destroy'])->whereNumber('id');
+
+    // Payroll (Phase 7.15)
+    Route::get('payroll', [PayrollController::class, 'index']);
+    Route::post('payroll', [PayrollController::class, 'store']);
+    Route::patch('payroll/{id}/status', [PayrollController::class, 'changeStatus'])->whereNumber('id');
 
     // Subscriptions (Phase 7.11)
     Route::get('subscription-plans', [SubscriptionsController::class, 'listPlans']);
