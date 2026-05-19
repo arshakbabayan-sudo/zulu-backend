@@ -59,6 +59,9 @@ class PackageOrderService
         $infantsCount = max(0, (int) ($input['infants_count'] ?? 0));
         $bookingChannel = (string) ($input['booking_channel'] ?? 'public_b2c');
         $notes = isset($input['notes']) ? (string) $input['notes'] : null;
+        $agentCompanyId = isset($input['agent_company_id']) && $input['agent_company_id'] !== ''
+            ? (int) $input['agent_company_id']
+            : null;
 
         if (! in_array($bookingChannel, Order::BOOKING_CHANNELS, true)) {
             throw ValidationException::withMessages([
@@ -66,7 +69,7 @@ class PackageOrderService
             ]);
         }
 
-        return DB::transaction(function () use ($package, $user, $adultsCount, $childrenCount, $infantsCount, $bookingChannel, $notes) {
+        return DB::transaction(function () use ($package, $user, $adultsCount, $childrenCount, $infantsCount, $bookingChannel, $notes, $agentCompanyId) {
             $package->loadMissing(['components.offer', 'offer']);
 
             if ($package->status !== 'active' || ! $package->is_public) {
@@ -144,6 +147,7 @@ class PackageOrderService
                 [
                     'user_id' => $user->id,
                     'company_id' => $package->company_id,
+                    'agent_company_id' => $agentCompanyId,
                     'currency' => $currency,
                     'order_number' => $orderNumber,
                     'buyer_type' => 'client',

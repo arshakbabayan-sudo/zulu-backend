@@ -3,6 +3,7 @@
 namespace App\Services\Finance;
 
 use App\Models\Company;
+use App\Models\OperatorAgentCommission;
 use App\Models\Order;
 use App\Models\Settlement;
 use App\Models\SupplierEntitlement;
@@ -76,6 +77,32 @@ class FinanceService
 
                     $net = bcsub($gross, $commission, 2);
 
+                    // Phase 6B Part 2 — operator → agent commission split.
+                    // If this order was referred by an agent and the operator
+                    // has a matching commission config (per-agent override or
+                    // operator default), peel the agent's share off the
+                    // operator's net and create a second entitlement for the
+                    // agent. No config row → no agent split, operator keeps
+                    // the full net (back-compat with pre-Phase-6B orders).
+                    $agentShare = '0';
+                    $agentCompanyId = $order->agent_company_id !== null ? (int) $order->agent_company_id : null;
+                    if ($agentCompanyId !== null && $agentCompanyId !== $sellerId) {
+                        $agentShare = $this->computeAgentShare(
+                            operatorCompanyId: $sellerId,
+                            agentCompanyId: $agentCompanyId,
+                            gross: $gross,
+                            operatorNet: $net,
+                        );
+                    }
+
+                    if (bccomp($agentShare, '0', 4) === 1) {
+                        // Operator's row absorbs the agent payout as additional
+                        // commission so net_amount reflects what the operator
+                        // actually receives.
+                        $commission = bcadd($commission, $agentShare, 4);
+                        $net = bcsub($net, $agentShare, 2);
+                    }
+
                     $created[] = SupplierEntitlement::query()->create([
                         'company_id' => $sellerId,
                         'service_type' => $item->item_type,
@@ -86,6 +113,19 @@ class FinanceService
                         'status' => 'accrued',
                         'notes' => 'order_id:'.$order->id.';order_item_id:'.$item->id,
                     ]);
+
+                    if (bccomp($agentShare, '0', 4) === 1) {
+                        $created[] = SupplierEntitlement::query()->create([
+                            'company_id' => $agentCompanyId,
+                            'service_type' => $item->item_type,
+                            'gross_amount' => $agentShare,
+                            'commission_amount' => '0',
+                            'net_amount' => $agentShare,
+                            'currency' => (string) $item->currency,
+                            'status' => 'accrued',
+                            'notes' => 'agent_share_of_order_id:'.$order->id.';order_item_id:'.$item->id.';operator_company_id:'.$sellerId,
+                        ]);
+                    }
                 }
 
                 return $created;
@@ -98,6 +138,68 @@ class FinanceService
 
             return [];
         }
+    }
+
+    /**
+     * Resolve the operator → agent commission for a (operator, agent) pair
+     * and return the bcmath-precision share that should be paid to the agent.
+     *
+     * Lookup order: per-agent override first, then operator default. No row
+     * → returns "0" (operator keeps the full net). Negative or out-of-range
+     * percentages are clamped to zero.
+     *
+     * @param  numeric-string  $gross
+     * @param  numeric-string  $operatorNet
+     * @return numeric-string
+     */
+    private function computeAgentShare(
+        int $operatorCompanyId,
+        int $agentCompanyId,
+        string $gross,
+        string $operatorNet,
+    ): string {
+        $config = OperatorAgentCommission::query()
+            ->where('operator_company_id', $operatorCompanyId)
+            ->where('agent_company_id', $agentCompanyId)
+            ->first();
+
+        if ($config === null) {
+            $config = OperatorAgentCommission::query()
+                ->where('operator_company_id', $operatorCompanyId)
+                ->whereNull('agent_company_id')
+                ->first();
+        }
+
+        if ($config === null) {
+            return '0';
+        }
+
+        $percentage = (string) ($config->default_percentage ?? '0');
+        if (bccomp($percentage, '0', 4) !== 1) {
+            return '0';
+        }
+
+        $base = match ($config->calculation_base) {
+            'post_platform_fee' => $operatorNet,
+            'custom' => bcdiv(
+                bcmul($gross, (string) ($config->custom_base_percentage ?? '0'), 8),
+                '100',
+                4
+            ),
+            default => $gross,
+        };
+
+        if (bccomp($base, '0', 4) !== 1) {
+            return '0';
+        }
+
+        // Defensive cap: agent share cannot exceed the operator's net.
+        $share = bcdiv(bcmul($base, $percentage, 8), '100', 4);
+        if (bccomp($share, $operatorNet, 4) === 1) {
+            $share = $operatorNet;
+        }
+
+        return $share;
     }
 
     /**

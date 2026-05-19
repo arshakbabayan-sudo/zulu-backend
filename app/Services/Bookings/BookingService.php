@@ -102,6 +102,7 @@ class BookingService
             [
                 'user_id' => $bookingData['user_id'] ?? null,
                 'company_id' => $bookingData['company_id'] ?? null,
+                'agent_company_id' => $bookingData['agent_company_id'] ?? null,
                 'currency' => $currency,
                 'buyer_type' => 'client',
                 'status' => 'pending_payment',

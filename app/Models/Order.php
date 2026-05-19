@@ -37,6 +37,7 @@ class Order extends Model
         'order_number',
         'user_id',
         'company_id',
+        'agent_company_id',
         'buyer_type',
         'status',
         'currency',
@@ -63,6 +64,11 @@ class Order extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class, 'company_id');
+    }
+
+    public function agentCompany(): BelongsTo
+    {
+        return $this->belongsTo(Company::class, 'agent_company_id');
     }
 
     public function payment(): BelongsTo

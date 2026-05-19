@@ -64,6 +64,7 @@ class OrderService
                 'order_number' => $orderData['order_number'] ?? null,
                 'user_id' => $orderData['user_id'] ?? null,
                 'company_id' => $orderData['company_id'] ?? null,
+                'agent_company_id' => $orderData['agent_company_id'] ?? null,
                 'buyer_type' => $orderData['buyer_type'] ?? 'client',
                 'status' => $orderData['status'] ?? 'cart',
                 'currency' => strtoupper($orderData['currency']),
