@@ -93,6 +93,7 @@ use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\ServiceCatalogController;
 use App\Http\Controllers\Api\SubscriptionsController;
 use App\Http\Controllers\Api\TimeOffController;
+use App\Http\Controllers\Api\TimePunchController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
@@ -337,6 +338,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('time-off', [TimeOffController::class, 'index']);
     Route::post('time-off', [TimeOffController::class, 'store']);
     Route::patch('time-off/{id}/decide', [TimeOffController::class, 'decide'])->whereNumber('id');
+
+    // Time punches — clock in / out (shift attendance counterpart to time-off)
+    Route::get('time-punches', [TimePunchController::class, 'index']);
+    Route::post('time-punches', [TimePunchController::class, 'store']);
+    Route::post('time-punches/clock-in', [TimePunchController::class, 'clockIn']);
+    Route::post('time-punches/{id}/clock-out', [TimePunchController::class, 'clockOut'])->whereNumber('id');
 
     // Custom field definitions (Phase 7.4)
     Route::get('custom-fields', [CustomFieldsController::class, 'index']);
