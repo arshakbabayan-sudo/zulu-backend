@@ -32,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ImportUiTranslationsCsv::class,
         PruneExpiredTokens::class,
         PruneOrphanOffers::class,
+        \App\Console\Commands\EscalateOverdueCases::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([

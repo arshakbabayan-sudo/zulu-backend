@@ -56,6 +56,12 @@ Schedule::command('health:check --digest --quiet-ok')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Cases — every 15 minutes, escalate cases whose SLA window has elapsed.
+Schedule::command('cases:escalate-overdue')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // GDPR — hourly sweep for accounts whose 30-day deletion grace expired.
 // Cheap when nothing's due; runs only on the primary scheduler host.
 Schedule::command('accounts:purge-expired')

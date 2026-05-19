@@ -375,6 +375,108 @@ class CasesControllerTest extends TestCase
         $this->assertNull($case->closed_at);
     }
 
+    // -----------------------------------------------------------------
+    // SLA timers + escalation (Path D A2 follow-up)
+    // -----------------------------------------------------------------
+
+    public function test_store_computes_sla_due_at_based_on_priority(): void
+    {
+        $user = $this->makeUser();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/cases', [
+            'title' => 'Urgent thing',
+            'description' => 'Broken',
+            'priority' => 'urgent',
+        ]);
+        $response->assertStatus(201);
+        $this->assertNotNull($response->json('data.sla_due_at'));
+        // urgent = 2h from now; sla_remaining_minutes should be around 120.
+        $remaining = (int) $response->json('data.sla_remaining_minutes');
+        $this->assertGreaterThan(115, $remaining);
+        $this->assertLessThan(125, $remaining);
+    }
+
+    public function test_priority_change_reanchors_sla_deadline(): void
+    {
+        $opener = $this->makeUser();
+        $case = AdminCase::query()->create([
+            'case_number' => 'C-SLA-1',
+            'title' => 'Slow priority',
+            'description' => 'x',
+            'status' => 'open',
+            'priority' => 'low',
+            'sla_due_at' => now()->addHours(72),
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now(),
+        ]);
+
+        Sanctum::actingAs($opener);
+        $response = $this->patchJson("/api/cases/{$case->id}", ['priority' => 'urgent']);
+        $response->assertOk();
+
+        // urgent = 2h from now (re-anchored on patch time)
+        $remaining = (int) $response->json('data.sla_remaining_minutes');
+        $this->assertGreaterThan(115, $remaining);
+        $this->assertLessThan(125, $remaining);
+    }
+
+    public function test_escalate_overdue_command_marks_due_cases(): void
+    {
+        $opener = $this->makeUser();
+        $overdue = AdminCase::query()->create([
+            'case_number' => 'C-SLA-OD',
+            'title' => 'Overdue',
+            'description' => 'x',
+            'status' => 'open',
+            'priority' => 'urgent',
+            'sla_due_at' => now()->subHours(1),
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now()->subHours(3),
+        ]);
+        $fresh = AdminCase::query()->create([
+            'case_number' => 'C-SLA-FR',
+            'title' => 'Fresh',
+            'description' => 'x',
+            'status' => 'open',
+            'priority' => 'high',
+            'sla_due_at' => now()->addHours(3),
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now(),
+        ]);
+
+        $this->artisan('cases:escalate-overdue')->assertExitCode(0);
+
+        $overdue->refresh();
+        $fresh->refresh();
+        $this->assertSame('escalated', $overdue->status);
+        $this->assertNotNull($overdue->escalated_at);
+        $this->assertSame('open', $fresh->status);
+        $this->assertNull($fresh->escalated_at);
+    }
+
+    public function test_escalate_command_skips_resolved_and_closed_cases(): void
+    {
+        $opener = $this->makeUser();
+        $resolved = AdminCase::query()->create([
+            'case_number' => 'C-SLA-RES',
+            'title' => 'Already resolved',
+            'description' => 'x',
+            'status' => 'resolved',
+            'priority' => 'urgent',
+            'sla_due_at' => now()->subHours(5),
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now()->subDay(),
+            'closed_at' => now()->subHour(),
+        ]);
+
+        $this->artisan('cases:escalate-overdue')->assertExitCode(0);
+
+        $resolved->refresh();
+        $this->assertSame('resolved', $resolved->status);
+        $this->assertNull($resolved->escalated_at);
+    }
+
     public function test_user_outside_case_visibility_cannot_view_or_post(): void
     {
         $opener = $this->makeUser();

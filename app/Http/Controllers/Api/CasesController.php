@@ -95,6 +95,8 @@ class CasesController extends Controller
         ]);
 
         $caseNumber = 'C-'.now()->format('Ymd').'-'.strtoupper(substr(md5(uniqid('', true)), 0, 6));
+        $priority = $validated['priority'] ?? 'normal';
+        $openedAt = now();
 
         $row = AdminCase::query()->create([
             'case_number' => $caseNumber,
@@ -102,10 +104,11 @@ class CasesController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'],
             'status' => 'open',
-            'priority' => $validated['priority'] ?? 'normal',
+            'priority' => $priority,
+            'sla_due_at' => AdminCase::slaDeadlineFor($priority, $openedAt),
             'assigned_to_user_id' => $validated['assigned_to_user_id'] ?? null,
             'opened_by_user_id' => $user->id,
-            'opened_at' => now(),
+            'opened_at' => $openedAt,
         ]);
 
         return response()->json([
@@ -136,6 +139,16 @@ class CasesController extends Controller
             } elseif (! in_array($validated['status'], ['closed', 'resolved'], true)) {
                 $row->closed_at = null;
             }
+        }
+
+        // Priority change re-anchors the SLA deadline from now (not from
+        // opened_at) — a priority bump should give staff a fresh window
+        // proportional to the new urgency.
+        if (isset($validated['priority']) && $validated['priority'] !== $row->priority) {
+            $row->sla_due_at = AdminCase::slaDeadlineFor($validated['priority'], now());
+            // Reset escalation flag on priority change so a re-prioritised
+            // case isn't permanently marked escalated.
+            $row->escalated_at = null;
         }
 
         $row->fill($validated);
@@ -308,9 +321,25 @@ class CasesController extends Controller
                 : null,
             'opened_at' => $row->opened_at?->toIso8601String(),
             'closed_at' => $row->closed_at?->toIso8601String(),
+            'sla_due_at' => $row->sla_due_at?->toIso8601String(),
+            'escalated_at' => $row->escalated_at?->toIso8601String(),
+            'sla_remaining_minutes' => $this->slaRemainingMinutes($row),
             'closing_notes' => $row->closing_notes,
             'created_at' => $row->created_at?->toIso8601String(),
             'updated_at' => $row->updated_at?->toIso8601String(),
         ];
+    }
+
+    private function slaRemainingMinutes(AdminCase $row): ?int
+    {
+        if ($row->sla_due_at === null) {
+            return null;
+        }
+        // Closed/resolved cases don't have an active countdown.
+        if (in_array($row->status, ['closed', 'resolved'], true)) {
+            return null;
+        }
+
+        return (int) now()->diffInMinutes($row->sla_due_at, false);
     }
 }

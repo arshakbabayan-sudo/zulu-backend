@@ -22,6 +22,14 @@ class AdminCase extends Model
 
     protected $table = 'cases';
 
+    /** SLA window per priority, in hours. Used by `cases:escalate-overdue`. */
+    public const SLA_HOURS = [
+        'urgent' => 2,
+        'high' => 4,
+        'normal' => 24,
+        'low' => 72,
+    ];
+
     protected $fillable = [
         'case_number',
         'company_id',
@@ -29,6 +37,8 @@ class AdminCase extends Model
         'description',
         'status',
         'priority',
+        'sla_due_at',
+        'escalated_at',
         'assigned_to_user_id',
         'opened_by_user_id',
         'opened_at',
@@ -41,7 +51,23 @@ class AdminCase extends Model
         return [
             'opened_at' => 'datetime',
             'closed_at' => 'datetime',
+            'sla_due_at' => 'datetime',
+            'escalated_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Compute the SLA deadline from a priority + a starting point. Returns
+     * null for unknown priorities so callers can decide whether to default.
+     */
+    public static function slaDeadlineFor(string $priority, \DateTimeInterface $from): ?\Carbon\Carbon
+    {
+        $hours = self::SLA_HOURS[$priority] ?? null;
+        if ($hours === null) {
+            return null;
+        }
+
+        return \Carbon\Carbon::instance($from)->addHours($hours);
     }
 
     public function company(): BelongsTo
