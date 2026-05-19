@@ -39,6 +39,9 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
         'avatar',
         'birth_date',
         'nationality',
+        'google_id',
+        'facebook_id',
+        'oauth_provider',
     ];
 
     /**

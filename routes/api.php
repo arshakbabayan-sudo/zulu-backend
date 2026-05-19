@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\AdminWebhookController;
 use App\Http\Controllers\Api\AIAssistantController;
 use App\Http\Controllers\Api\AISearchController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BrandSettingsController;
 use App\Http\Controllers\Api\CarController;
@@ -113,6 +114,18 @@ Route::post('companies/apply', [CompanyApplicationController::class, 'store'])->
 Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:password-reset');
 Route::post('reset-password', [AuthController::class, 'resetPassword']);
 Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+
+// Phase 8 — social login (Google + Facebook OAuth via Laravel Socialite).
+// The frontend redirects the browser to /redirect, provider sends back to
+// /callback with code+state, we issue a Sanctum token and bounce to the
+// frontend's /auth/oauth-success page.
+Route::prefix('auth/oauth')->group(function (): void {
+    Route::get('{provider}/redirect', [OAuthController::class, 'redirect'])
+        ->whereIn('provider', ['google', 'facebook'])
+        ->middleware('throttle:login');
+    Route::get('{provider}/callback', [OAuthController::class, 'callback'])
+        ->whereIn('provider', ['google', 'facebook']);
+});
 
 $registerPublicDiscoveryRoutes = static function (): void {
     Route::get('search', [DiscoveryController::class, 'search'])->name('search');
