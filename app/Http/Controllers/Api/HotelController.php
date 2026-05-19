@@ -94,6 +94,23 @@ class HotelController extends Controller
             return $response;
         }
 
+        // Plan gate: the company's subscription plan caps how many hotels
+        // they can have. Counted once at create-time; existing rows are
+        // grandfathered when a downgrade happens.
+        $planGate = app(\App\Services\Subscriptions\PlanGateService::class);
+        $currentCount = \App\Models\Hotel::query()
+            ->whereHas('offer', fn ($q) => $q->where('company_id', $offer->company_id))
+            ->count();
+        if (! $planGate->canHaveOneMore((int) $offer->company_id, 'max_hotels', $currentCount)) {
+            $limit = $planGate->limit((int) $offer->company_id, 'max_hotels');
+
+            return response()->json([
+                'success' => false,
+                'message' => "Plan limit reached — your plan allows up to {$limit} hotels. Upgrade to add more.",
+                'plan_limit' => ['feature' => 'max_hotels', 'limit' => $limit, 'current' => $currentCount],
+            ], 402);
+        }
+
         $company = Company::find($offer->company_id);
         $hotelCountry = '';
         if (isset($validated['location_id'])) {

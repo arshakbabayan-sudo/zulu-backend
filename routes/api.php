@@ -329,6 +329,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Subscriptions (Phase 7.11)
     Route::get('subscription-plans', [SubscriptionsController::class, 'listPlans']);
+    Route::get('subscription-plans/feature-catalog', [SubscriptionsController::class, 'listFeatureCatalog']);
+    Route::get('subscription-plans/my-features', [SubscriptionsController::class, 'myFeatures']);
     Route::post('subscription-plans', [SubscriptionsController::class, 'storePlan']);
     Route::patch('subscription-plans/{id}', [SubscriptionsController::class, 'updatePlan'])->whereNumber('id');
     Route::get('company-subscriptions', [SubscriptionsController::class, 'listCompanySubscriptions']);

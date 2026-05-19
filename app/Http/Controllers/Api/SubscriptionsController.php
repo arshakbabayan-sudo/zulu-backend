@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\CompanySubscription;
 use App\Models\SubscriptionPlan;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Subscriptions\PlanFeature;
+use App\Services\Subscriptions\PlanGateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -21,7 +23,60 @@ class SubscriptionsController extends Controller
 {
     public function __construct(
         private AdminAccessService $adminAccessService,
+        private PlanGateService $planGate,
     ) {}
+
+    /**
+     * Catalog of all gatable features so the plan editor UI can render
+     * a typed editor (boolean toggle for flags, number input for limits).
+     */
+    public function listFeatureCatalog(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
+        }
+
+        $catalog = [];
+        foreach (PlanFeature::all() as $key => $def) {
+            $catalog[] = [
+                'key' => $key,
+                'label' => $def['label'],
+                'type' => $def['type'],
+                'default' => $def['default'],
+            ];
+        }
+
+        return response()->json(['success' => true, 'data' => $catalog]);
+    }
+
+    /**
+     * Effective features for the caller's primary company — used by the
+     * frontend to show "upgrade to enable X" messaging before users click
+     * an action that would fail server-side.
+     */
+    public function myFeatures(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $companyId = $user->companies()->pluck('companies.id')->first();
+        if ($companyId === null) {
+            // No company → return defaults so the UI can still render.
+            $defaults = [];
+            foreach (PlanFeature::all() as $key => $def) {
+                $defaults[$key] = $def['default'];
+            }
+
+            return response()->json(['success' => true, 'data' => $defaults]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->planGate->featuresFor((int) $companyId),
+        ]);
+    }
 
     public function listPlans(Request $request): JsonResponse
     {
@@ -56,7 +111,6 @@ class SubscriptionsController extends Controller
             'annual_price' => ['nullable', 'numeric', 'min:0'],
             'currency' => ['nullable', 'string', 'size:3'],
             'features' => ['nullable', 'array'],
-            'features.*' => ['string', 'max:64'],
             'is_active' => ['sometimes', 'boolean'],
             'display_order' => ['nullable', 'integer'],
         ]);
@@ -64,8 +118,10 @@ class SubscriptionsController extends Controller
         if (isset($validated['currency'])) {
             $validated['currency'] = strtoupper($validated['currency']);
         }
+        $validated['features'] = $this->normaliseFeatures($validated['features'] ?? null);
 
         $plan = SubscriptionPlan::query()->create($validated);
+        $this->planGate->flushAll();
 
         return response()->json(['success' => true, 'data' => $this->serializePlan($plan)], 201);
     }
@@ -87,7 +143,6 @@ class SubscriptionsController extends Controller
             'annual_price' => ['nullable', 'numeric', 'min:0'],
             'currency' => ['nullable', 'string', 'size:3'],
             'features' => ['nullable', 'array'],
-            'features.*' => ['string', 'max:64'],
             'is_active' => ['sometimes', 'boolean'],
             'display_order' => ['nullable', 'integer'],
         ]);
@@ -95,9 +150,13 @@ class SubscriptionsController extends Controller
         if (isset($validated['currency'])) {
             $validated['currency'] = strtoupper($validated['currency']);
         }
+        if (array_key_exists('features', $validated)) {
+            $validated['features'] = $this->normaliseFeatures($validated['features']);
+        }
 
         $plan->fill($validated);
         $plan->save();
+        $this->planGate->flushAll();
 
         return response()->json(['success' => true, 'data' => $this->serializePlan($plan)]);
     }
@@ -144,11 +203,55 @@ class SubscriptionsController extends Controller
             ['company_id' => $companyId],
             array_merge($validated, ['assigned_by_user_id' => $request->user()->id])
         );
+        $this->planGate->flush($companyId);
 
         return response()->json([
             'success' => true,
             'data' => $this->serializeCompanySubscription($row->fresh(['company', 'plan'])),
         ]);
+    }
+
+    /**
+     * Normalise the features payload. Accepts either a flat list of
+     * boolean flag keys (legacy) or an associative map of key → bool|int.
+     * Returns an associative map; unknown keys are dropped silently.
+     */
+    private function normaliseFeatures(mixed $features): ?array
+    {
+        if ($features === null) {
+            return null;
+        }
+        if (! is_array($features)) {
+            return null;
+        }
+        $catalog = PlanFeature::all();
+
+        // Legacy flat-list form: ["bulk_notifications", "external_api"]
+        if (array_is_list($features)) {
+            $out = [];
+            foreach ($features as $key) {
+                if (is_string($key) && isset($catalog[$key])) {
+                    $out[$key] = true;
+                }
+            }
+
+            return $out;
+        }
+
+        // Keyed form: ["max_hotels" => 10, "external_api" => true]
+        $out = [];
+        foreach ($features as $key => $value) {
+            if (! is_string($key) || ! isset($catalog[$key])) {
+                continue;
+            }
+            if ($catalog[$key]['type'] === PlanFeature::TYPE_LIMIT) {
+                $out[$key] = is_numeric($value) ? (int) $value : (int) $catalog[$key]['default'];
+            } else {
+                $out[$key] = (bool) $value;
+            }
+        }
+
+        return $out;
     }
 
     private function denyUnlessSuperAdmin(Request $request): ?JsonResponse
