@@ -220,4 +220,177 @@ class CasesControllerTest extends TestCase
             'status' => User::STATUS_ACTIVE,
         ]);
     }
+
+    // -----------------------------------------------------------------
+    // Reply threading (Path D A1 follow-up)
+    // -----------------------------------------------------------------
+
+    public function test_reply_thread_lists_in_chronological_order(): void
+    {
+        $opener = $this->makeUser();
+        $case = AdminCase::query()->create([
+            'case_number' => 'C-R-1',
+            'title' => 'Need help',
+            'description' => 'First contact',
+            'status' => 'open',
+            'priority' => 'normal',
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now(),
+        ]);
+
+        \App\Models\CaseReply::query()->create([
+            'case_id' => $case->id,
+            'user_id' => $opener->id,
+            'body' => 'First reply',
+            'visibility' => 'public',
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinutes(10),
+        ]);
+        \App\Models\CaseReply::query()->create([
+            'case_id' => $case->id,
+            'user_id' => $opener->id,
+            'body' => 'Second reply',
+            'visibility' => 'public',
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(5),
+        ]);
+
+        Sanctum::actingAs($opener);
+
+        $response = $this->getJson("/api/cases/{$case->id}/replies");
+        $response->assertOk();
+        $this->assertCount(2, $response->json('data'));
+        $this->assertEquals('First reply', $response->json('data.0.body'));
+        $this->assertEquals('Second reply', $response->json('data.1.body'));
+    }
+
+    public function test_post_reply_is_visible_in_subsequent_list(): void
+    {
+        $opener = $this->makeUser();
+        $case = AdminCase::query()->create([
+            'case_number' => 'C-R-2',
+            'title' => 'Need help',
+            'description' => '',
+            'status' => 'open',
+            'priority' => 'normal',
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now(),
+        ]);
+
+        Sanctum::actingAs($opener);
+
+        $response = $this->postJson("/api/cases/{$case->id}/replies", [
+            'body' => 'Hello there',
+        ]);
+        $response->assertStatus(201);
+        $this->assertSame('public', $response->json('data.visibility'));
+
+        $list = $this->getJson("/api/cases/{$case->id}/replies");
+        $this->assertCount(1, $list->json('data'));
+    }
+
+    public function test_internal_replies_are_hidden_from_opener(): void
+    {
+        $opener = $this->makeUser();
+        $assignee = $this->makeUser();
+        $case = AdminCase::query()->create([
+            'case_number' => 'C-R-3',
+            'title' => 'Internal',
+            'description' => '',
+            'status' => 'open',
+            'priority' => 'normal',
+            'opened_by_user_id' => $opener->id,
+            'assigned_to_user_id' => $assignee->id,
+            'opened_at' => now(),
+        ]);
+
+        \App\Models\CaseReply::query()->create([
+            'case_id' => $case->id,
+            'user_id' => $assignee->id,
+            'body' => 'Public reply',
+            'visibility' => 'public',
+        ]);
+        \App\Models\CaseReply::query()->create([
+            'case_id' => $case->id,
+            'user_id' => $assignee->id,
+            'body' => 'Internal note — needs escalation',
+            'visibility' => 'internal',
+        ]);
+
+        // Opener: only sees public.
+        Sanctum::actingAs($opener);
+        $openerResp = $this->getJson("/api/cases/{$case->id}/replies");
+        $this->assertCount(1, $openerResp->json('data'));
+        $this->assertSame('Public reply', $openerResp->json('data.0.body'));
+
+        // Assignee: sees both.
+        Sanctum::actingAs($assignee);
+        $assigneeResp = $this->getJson("/api/cases/{$case->id}/replies");
+        $this->assertCount(2, $assigneeResp->json('data'));
+    }
+
+    public function test_opener_posting_internal_is_silently_downgraded_to_public(): void
+    {
+        $opener = $this->makeUser();
+        $case = AdminCase::query()->create([
+            'case_number' => 'C-R-4',
+            'title' => 'Test',
+            'description' => '',
+            'status' => 'open',
+            'priority' => 'normal',
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now(),
+        ]);
+
+        Sanctum::actingAs($opener);
+
+        $response = $this->postJson("/api/cases/{$case->id}/replies", [
+            'body' => 'Pretending to be internal',
+            'visibility' => 'internal',
+        ]);
+        $response->assertStatus(201);
+        $this->assertSame('public', $response->json('data.visibility'));
+    }
+
+    public function test_reply_on_closed_case_reopens_it(): void
+    {
+        $opener = $this->makeUser();
+        $case = AdminCase::query()->create([
+            'case_number' => 'C-R-5',
+            'title' => 'Test',
+            'description' => '',
+            'status' => 'closed',
+            'priority' => 'normal',
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now()->subDay(),
+            'closed_at' => now()->subHour(),
+        ]);
+
+        Sanctum::actingAs($opener);
+        $this->postJson("/api/cases/{$case->id}/replies", ['body' => 'I have more info'])
+            ->assertStatus(201);
+
+        $case->refresh();
+        $this->assertSame('open', $case->status);
+        $this->assertNull($case->closed_at);
+    }
+
+    public function test_user_outside_case_visibility_cannot_view_or_post(): void
+    {
+        $opener = $this->makeUser();
+        $stranger = $this->makeUser();
+        $case = AdminCase::query()->create([
+            'case_number' => 'C-R-6',
+            'title' => 'Private',
+            'description' => '',
+            'status' => 'open',
+            'priority' => 'normal',
+            'opened_by_user_id' => $opener->id,
+            'opened_at' => now(),
+        ]);
+
+        Sanctum::actingAs($stranger);
+        $this->getJson("/api/cases/{$case->id}/replies")->assertStatus(403);
+        $this->postJson("/api/cases/{$case->id}/replies", ['body' => 'Hi'])->assertStatus(403);
+    }
 }

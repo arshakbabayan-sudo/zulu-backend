@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AdminCase;
+use App\Models\CaseReply;
 use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -156,6 +157,135 @@ class CasesController extends Controller
         }
 
         return response()->json(['success' => true, 'data' => $this->serialize($row)]);
+    }
+
+    /**
+     * List the reply thread for a case. Non-staff callers only see replies
+     * with visibility=public; staff (super-admin, platform-admin, or someone
+     * assigned/opened the case) see internal notes too.
+     */
+    public function listReplies(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $case = AdminCase::query()->find($id);
+        if ($case === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+        if (! $this->canViewCase($user, $case)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $query = CaseReply::query()
+            ->with(['user:id,name,email'])
+            ->where('case_id', $case->id)
+            ->orderBy('created_at');
+
+        if (! $this->canSeeInternal($user, $case)) {
+            $query->where('visibility', 'public');
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $query->get()->map(fn ($r) => $this->serializeReply($r))->all(),
+        ]);
+    }
+
+    public function storeReply(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $case = AdminCase::query()->find($id);
+        if ($case === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+        if (! $this->canViewCase($user, $case)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:10000'],
+            'visibility' => ['nullable', Rule::in(CaseReply::VISIBILITIES)],
+            'attachments' => ['nullable', 'array'],
+            'attachments.*.name' => ['required_with:attachments', 'string'],
+            'attachments.*.url' => ['required_with:attachments', 'string'],
+        ]);
+
+        $visibility = $validated['visibility'] ?? 'public';
+        if ($visibility === 'internal' && ! $this->canSeeInternal($user, $case)) {
+            // Customer trying to post an internal note? Silently downgrade.
+            $visibility = 'public';
+        }
+
+        $reply = CaseReply::query()->create([
+            'case_id' => $case->id,
+            'user_id' => $user->id,
+            'body' => $validated['body'],
+            'visibility' => $visibility,
+            'attachments' => $validated['attachments'] ?? null,
+        ]);
+
+        // Posting on a fully-closed case re-opens it so the conversation can
+        // continue. Otherwise leave status alone.
+        if (in_array($case->status, ['closed', 'resolved'], true)) {
+            $case->status = 'open';
+            $case->closed_at = null;
+            $case->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->serializeReply($reply->fresh(['user'])),
+        ], 201);
+    }
+
+    private function canViewCase(\App\Models\User $user, AdminCase $case): bool
+    {
+        if ($this->adminAccessService->isPlatformAdmin($user) || $user->is_super_admin) {
+            return true;
+        }
+        if ($case->opened_by_user_id === $user->id || $case->assigned_to_user_id === $user->id) {
+            return true;
+        }
+        if ($case->company_id !== null) {
+            $companyIds = $user->companies()->pluck('companies.id')->all();
+            if (in_array($case->company_id, $companyIds, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function canSeeInternal(\App\Models\User $user, AdminCase $case): bool
+    {
+        if ($this->adminAccessService->isPlatformAdmin($user) || $user->is_super_admin) {
+            return true;
+        }
+
+        return $case->assigned_to_user_id === $user->id;
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeReply(CaseReply $reply): array
+    {
+        return [
+            'id' => $reply->id,
+            'case_id' => $reply->case_id,
+            'user' => $reply->user
+                ? ['id' => $reply->user->id, 'name' => $reply->user->name, 'email' => $reply->user->email]
+                : null,
+            'body' => $reply->body,
+            'visibility' => $reply->visibility,
+            'attachments' => $reply->attachments,
+            'created_at' => $reply->created_at?->toIso8601String(),
+        ];
     }
 
     /** @return array<string, mixed> */

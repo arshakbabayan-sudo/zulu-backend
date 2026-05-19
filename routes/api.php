@@ -356,6 +356,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('cases', [CasesController::class, 'store']);
     Route::get('cases/{id}', [CasesController::class, 'show'])->whereNumber('id');
     Route::patch('cases/{id}', [CasesController::class, 'update'])->whereNumber('id');
+    Route::get('cases/{id}/replies', [CasesController::class, 'listReplies'])->whereNumber('id');
+    Route::post('cases/{id}/replies', [CasesController::class, 'storeReply'])->whereNumber('id');
 
     // Service catalog (Phase 7.12 — generic bookable services)
     Route::get('service-catalog', [ServiceCatalogController::class, 'index']);
