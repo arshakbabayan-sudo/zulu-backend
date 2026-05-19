@@ -226,6 +226,150 @@ class PayrollControllerTest extends TestCase
         $this->assertNull($response->json('data.paid_at'));
     }
 
+    public function test_payslip_pdf_streams_for_authorised_company_user(): void
+    {
+        $company = $this->makeCompany();
+        $user = $this->makeUserForCompany($company);
+        $row = PayrollRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $this->makeUser()->id,
+            'period_start' => '2026-05-01',
+            'period_end' => '2026-05-31',
+            'base_salary' => 1500,
+            'commission_amount' => 200,
+            'gross_pay' => 1700,
+            'net_pay' => 1700,
+            'currency' => 'USD',
+            'status' => 'finalized',
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->get("/api/payroll/{$row->id}/payslip");
+
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('%PDF-', (string) $response->getContent());
+    }
+
+    public function test_payslip_is_forbidden_for_user_outside_company(): void
+    {
+        $companyA = $this->makeCompany();
+        $companyB = $this->makeCompany();
+        $userB = $this->makeUserForCompany($companyB);
+
+        $row = PayrollRecord::query()->create([
+            'company_id' => $companyA->id,
+            'user_id' => $this->makeUser()->id,
+            'period_start' => '2026-05-01',
+            'period_end' => '2026-05-31',
+            'base_salary' => 1500,
+            'gross_pay' => 1500,
+            'net_pay' => 1500,
+            'currency' => 'USD',
+            'status' => 'finalized',
+        ]);
+
+        Sanctum::actingAs($userB);
+
+        $this->get("/api/payroll/{$row->id}/payslip")->assertStatus(403);
+    }
+
+    public function test_bank_batch_csv_includes_only_company_finalized_records_by_default(): void
+    {
+        $companyA = $this->makeCompany();
+        $companyB = $this->makeCompany();
+        $userA = $this->makeUserForCompany($companyA);
+
+        // In-scope (companyA + finalized) — should appear.
+        $employee1 = $this->makeUser();
+        PayrollRecord::query()->create([
+            'company_id' => $companyA->id,
+            'user_id' => $employee1->id,
+            'period_start' => '2026-05-01',
+            'period_end' => '2026-05-31',
+            'base_salary' => 2000,
+            'gross_pay' => 2000,
+            'net_pay' => 1850,
+            'deductions_amount' => 150,
+            'currency' => 'USD',
+            'status' => 'finalized',
+        ]);
+
+        // Out of scope — different company.
+        $employee2 = $this->makeUser();
+        PayrollRecord::query()->create([
+            'company_id' => $companyB->id,
+            'user_id' => $employee2->id,
+            'period_start' => '2026-05-01',
+            'period_end' => '2026-05-31',
+            'base_salary' => 3000,
+            'gross_pay' => 3000,
+            'net_pay' => 3000,
+            'currency' => 'USD',
+            'status' => 'finalized',
+        ]);
+
+        // Out of scope — same company but draft (default filter is finalized).
+        $employee3 = $this->makeUser();
+        PayrollRecord::query()->create([
+            'company_id' => $companyA->id,
+            'user_id' => $employee3->id,
+            'period_start' => '2026-04-01',
+            'period_end' => '2026-04-30',
+            'base_salary' => 1000,
+            'gross_pay' => 1000,
+            'net_pay' => 1000,
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+
+        Sanctum::actingAs($userA);
+
+        $response = $this->get('/api/payroll/bank-batch');
+
+        $response->assertOk();
+        $this->assertStringContainsString('text/csv', (string) $response->headers->get('Content-Type'));
+        $csv = $response->streamedContent();
+        $this->assertStringContainsString('payroll_id,employee_name', $csv);
+        $this->assertStringContainsString($employee1->email, $csv);
+        $this->assertStringNotContainsString($employee2->email, $csv);
+        $this->assertStringNotContainsString($employee3->email, $csv);
+        $this->assertStringContainsString('1850.00', $csv);
+    }
+
+    public function test_bank_batch_csv_status_filter_can_be_overridden(): void
+    {
+        $company = $this->makeCompany();
+        $user = $this->makeUserForCompany($company);
+        $employee = $this->makeUser();
+
+        PayrollRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $employee->id,
+            'period_start' => '2026-05-01',
+            'period_end' => '2026-05-31',
+            'base_salary' => 1000,
+            'gross_pay' => 1000,
+            'net_pay' => 1000,
+            'currency' => 'USD',
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->get('/api/payroll/bank-batch?status=paid');
+        $response->assertOk();
+        $csv = $response->streamedContent();
+        $this->assertStringContainsString($employee->email, $csv);
+    }
+
+    public function test_bank_batch_rejects_unauthenticated_caller(): void
+    {
+        $this->get('/api/payroll/bank-batch')->assertStatus(401);
+    }
+
     public function test_change_status_rejects_invalid_value(): void
     {
         $company = $this->makeCompany();

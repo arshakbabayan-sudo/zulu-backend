@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PayrollRecord;
 use App\Services\Admin\AdminAccessService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Phase 7.15 — payroll CRUD + finalize / mark-paid endpoints.
@@ -152,6 +155,117 @@ class PayrollController extends Controller
             'success' => true,
             'data' => $this->serialize($row->fresh(['user', 'company'])),
         ]);
+    }
+
+    /**
+     * Stream a payslip PDF for a single record.
+     */
+    public function payslip(Request $request, int $id): Response
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response('Unauthenticated', 401);
+        }
+
+        $row = PayrollRecord::query()->with(['user:id,name,email', 'company:id,name'])->find($id);
+        if ($row === null) {
+            return response('Not found', 404);
+        }
+
+        if (! $this->canAccessRecord($user, $row)) {
+            return response('Forbidden', 403);
+        }
+
+        $pdf = Pdf::loadView('pdf.payslip', ['row' => $row])->setPaper('a4', 'portrait');
+
+        return $pdf->download('payslip-'.$row->id.'.pdf');
+    }
+
+    /**
+     * Stream a bank-transfer batch CSV. Defaults to status=finalized which is
+     * the natural hand-off point to finance (after approval, before payment).
+     * Status filter can be overridden via ?status=. Marking a record as paid
+     * remains a separate PATCH; this endpoint does not mutate state.
+     */
+    public function bankBatch(Request $request): StreamedResponse
+    {
+        $user = $request->user();
+        abort_if($user === null, 401, 'Unauthenticated');
+
+        $query = PayrollRecord::query()
+            ->with(['user:id,name,email', 'company:id,name'])
+            ->orderBy('id');
+
+        if (! $this->adminAccessService->isSuperAdmin($user)) {
+            $companyIds = $user->companies()->pluck('companies.id')->all();
+            $query->whereIn('company_id', $companyIds);
+        }
+
+        $statusFilter = (string) $request->query('status', 'finalized');
+        if (in_array($statusFilter, PayrollRecord::STATUSES, true)) {
+            $query->where('status', $statusFilter);
+        }
+        if ($request->filled('period_start')) {
+            $query->where('period_start', '>=', (string) $request->query('period_start'));
+        }
+        if ($request->filled('period_end')) {
+            $query->where('period_end', '<=', (string) $request->query('period_end'));
+        }
+
+        $filename = 'payroll-batch-'.now()->format('Ymd-His').'.csv';
+
+        return response()->streamDownload(function () use ($query) {
+            $handle = fopen('php://output', 'wb');
+            // UTF-8 BOM so Excel reads Armenian/Cyrillic names correctly.
+            fwrite($handle, "\xEF\xBB\xBF");
+            fputcsv($handle, [
+                'payroll_id',
+                'employee_name',
+                'employee_email',
+                'company',
+                'period_start',
+                'period_end',
+                'currency',
+                'gross_pay',
+                'deductions',
+                'net_pay',
+                'status',
+                'paid_at',
+            ]);
+
+            $query->chunk(500, function ($chunk) use ($handle): void {
+                foreach ($chunk as $row) {
+                    fputcsv($handle, [
+                        $row->id,
+                        $row->user?->name ?? '',
+                        $row->user?->email ?? '',
+                        $row->company?->name ?? '',
+                        $row->period_start?->format('Y-m-d') ?? '',
+                        $row->period_end?->format('Y-m-d') ?? '',
+                        $row->currency,
+                        number_format((float) $row->gross_pay, 2, '.', ''),
+                        number_format((float) $row->deductions_amount, 2, '.', ''),
+                        number_format((float) $row->net_pay, 2, '.', ''),
+                        $row->status,
+                        $row->paid_at?->toIso8601String() ?? '',
+                    ]);
+                }
+            });
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    private function canAccessRecord(\App\Models\User $user, PayrollRecord $row): bool
+    {
+        if ($this->adminAccessService->isSuperAdmin($user)) {
+            return true;
+        }
+        $companyIds = $user->companies()->pluck('companies.id')->all();
+
+        return in_array($row->company_id, $companyIds, true);
     }
 
     /** @return array<string, mixed> */

@@ -323,6 +323,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('payroll', [PayrollController::class, 'index']);
     Route::post('payroll', [PayrollController::class, 'store']);
     Route::patch('payroll/{id}/status', [PayrollController::class, 'changeStatus'])->whereNumber('id');
+    Route::get('payroll/bank-batch', [PayrollController::class, 'bankBatch']);
+    Route::get('payroll/{id}/payslip', [PayrollController::class, 'payslip'])->whereNumber('id');
 
     // Subscriptions (Phase 7.11)
     Route::get('subscription-plans', [SubscriptionsController::class, 'listPlans']);
