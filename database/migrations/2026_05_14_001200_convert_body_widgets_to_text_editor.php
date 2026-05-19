@@ -16,6 +16,17 @@ return new class extends Migration
     {
         $slugs = ['about', 'contact', 'terms', 'privacy', 'cookies'];
 
+        // Skip the whole migration when the destination widget catalog row
+        // isn't present (fresh :memory: SQLite test DB). The widget_contents
+        // FK on widget_slug → widgets.widget_slug would otherwise abort the
+        // migration suite. Production has the row seeded so this is a no-op.
+        $textEditorExists = DB::table('widgets')
+            ->where('widget_slug', 'text-editor')
+            ->exists();
+        if (! $textEditorExists) {
+            return;
+        }
+
         foreach ($slugs as $slug) {
             $pageId = DB::table('pages')->where('page_slug', $slug)->value('id');
             if (! $pageId) {

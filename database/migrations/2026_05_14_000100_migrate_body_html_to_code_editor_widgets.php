@@ -38,6 +38,18 @@ return new class extends Migration
                 continue;
             }
 
+            // Skip if the 'code-editor' widget row doesn't exist (fresh test
+            // DB where the catalog seed hasn't run yet). The widget_contents
+            // FK on widget_slug → widgets.widget_slug would otherwise abort
+            // the whole migration suite under :memory: SQLite. Production
+            // always has the row seeded so this guard is a no-op there.
+            $widgetExists = DB::table('widgets')
+                ->where('widget_slug', 'code-editor')
+                ->exists();
+            if (! $widgetExists) {
+                continue;
+            }
+
             $uiCardNumber = $slug.'-body';
 
             // Insert the canonical (EN) widget content row.
