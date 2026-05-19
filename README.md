@@ -1,59 +1,153 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ZULU Backend (Laravel 11)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+The API + admin/seller business logic + commerce engine for the ZULU
+platform. Production deploys to Hetzner (`api.zulu.am`) on every push to
+`main` via GitHub Actions.
 
-## About Laravel
+Repos in the ZULU monorepo layout:
+- **zulu-backend** ← you are here
+- [zulu-admin-next](https://github.com/arshakbabayan-sudo/zulu-admin-next) — `admin.zulu.am`
+- [zulu-frontend-next](https://github.com/arshakbabayan-sudo/zulu-frontend-next) — `zulu.am`
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Stack
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- PHP 8.3 + Laravel 11
+- PostgreSQL 15 (Hetzner-hosted in prod, local in dev)
+- Sanctum tokens for API auth (cookie-based for web SPA)
+- Pest/PHPUnit for tests
+- Larastan static analysis
+- DomPDF for invoice / payslip / contract PDFs
+- Socialite (Google + Facebook OAuth)
+- Self-hosted error capture → `audit_logs.category=error`
+- Cron-backed scheduler (health checks, daily backups, restore drills, escalation sweep, etc.)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Local setup
 
-## Learning Laravel
+```bash
+# 1. Clone + install
+git clone git@github.com:arshakbabayan-sudo/zulu-backend.git
+cd zulu-backend
+composer install
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+# 2. Env
+cp .env.example .env
+php artisan key:generate
+# Edit .env: set DB_*, MAIL_*, TELEGRAM_BOT_TOKEN (optional for dev)
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+# 3. Database
+createdb zulu                # or use pg_admin / docker compose
+php artisan migrate --seed   # seeds default UI translations + locations + roles
 
-## Laravel Sponsors
+# 4. Storage
+php artisan storage:link
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+# 5. Serve
+php artisan serve            # http://127.0.0.1:8008 by convention
+```
 
-### Premium Partners
+## Daily commands
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```bash
+# Run tests
+php artisan test                      # full suite
+php artisan test --filter=CasesControllerTest   # one class
+php artisan test tests/Unit            # one folder
 
-## Contributing
+# Lint / static analysis
+./vendor/bin/pint                     # auto-format PHP
+./vendor/bin/phpstan analyse          # static analysis (level set in phpstan.neon)
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+# Scheduled jobs locally
+php artisan schedule:work             # runs the scheduler in foreground
 
-## Code of Conduct
+# UI translation cache invalidation (after raw SQL inserts)
+php artisan cache:forget ui_translations_hy
+php artisan cache:forget ui_translations_ru
+php artisan cache:forget ui_translations_en
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+# Generate OpenAPI spec
+php artisan api:generate-openapi --output=storage/app/openapi.json
 
-## Security Vulnerabilities
+# Database backup (manually)
+php artisan db:backup --disk=local --keep=14
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+# Restore drill (replays latest dump into scratch DB)
+php artisan db:restore-drill --execute
+```
 
-## License
+## Project structure (high-level)
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```
+app/
+  Http/Controllers/
+    Api/            ← REST API endpoints (Sanctum auth)
+    Admin/          ← legacy Blade admin (mostly deprecated)
+  Models/           ← Eloquent models (100+ tables, see docs/db-schema)
+  Services/         ← business logic
+    Admin/          ← AdminAccessService (RBAC, super-admin, scoping)
+    Commissions/    ← CommissionService + CommissionRuleResolver (audit pipeline)
+    Finance/        ← FinanceService + SupplierEntitlement (payout pipeline)
+    Subscriptions/  ← PlanFeature + PlanGateService (plan-gated features)
+    UserAccount/    ← DataExportService, account-deletion flow (GDPR)
+    Pdf/            ← InvoicePdfService, ContractPdfService, payslip Blade
+    ErrorReporting/ ← ErrorReportService (self-hosted Sentry replacement)
+  Console/Commands/ ← Artisan commands (registered in bootstrap/app.php)
+  Jobs/             ← queued jobs (ReleaseExpiredHolds, etc)
+database/
+  migrations/       ← timestamped, run in order
+  seeders/          ← UI translations, default roles, locations, etc.
+routes/
+  api.php           ← 200+ endpoints (most under /api/auth-protected)
+  console.php       ← scheduler registration
+  web.php           ← legacy /admin Blade pages (deprecated)
+resources/views/    ← Blade templates: PDFs, transactional emails
+storage/app/        ← user uploads, backups, OpenAPI spec
+tests/Feature/      ← 125+ feature tests (HTTP-level)
+tests/Unit/         ← unit tests (services, model methods)
+```
+
+## Conventions
+
+- Controllers return `{ success: bool, data: ..., message?: string, errors?: {} }` envelopes.
+- 401 = unauthenticated, 403 = forbidden, 404 = not found, 422 = validation, 402 = plan-limit-reached (rare).
+- Migrations are immutable once shipped — no editing past migrations, always add a new one.
+- Status fields use lower_snake_case strings (`'in_progress'`, `'past_due'`, never enums).
+- `is_super_admin` is the only bypass — every other access check goes through `AdminAccessService`.
+- Cache keys for translations follow `ui_translations_<lang>`; always invalidate after raw SQL inserts.
+
+## Deploy
+
+`main` auto-deploys to Hetzner (`api.zulu.am`) via GitHub Actions on every push:
+1. SSH to Hetzner box
+2. `git pull` in `/var/www/zulu-backend`
+3. `composer install --no-dev --optimize-autoloader`
+4. `php artisan migrate --force`
+5. `php artisan config:cache` + `route:cache`
+6. Reload PHP-FPM + nginx
+
+If a deploy fails, GitHub Actions Telegram notifier pings `@Zulu_Deploy_arshak_Bot`.
+
+## Documentation
+
+- `docs/decisions/ADR-*.md` — architecture decisions (see docs/decisions/)
+- `docs/roadmaps/zulu-roadmap-2026-05-20.md` — what's still on the burn-down
+- `docs/audits/` — point-in-time audits (translations, locations, etc.)
+- `docs/design/specs/` — Figma design specs cached for offline reference
+
+## Common operations
+
+| Task | Command / location |
+|---|---|
+| Add a new bucket-3 module | New migration + Model + Controller + routes/api.php entry + admin page; copy a sibling (e.g. `cases`) as a template |
+| Scope queries to company | `AdminAccessService::companyIdsFor(...)` or `isSuperAdmin($user)` bypass |
+| Add a scheduled job | Console command in `app/Console/Commands/`, register in `bootstrap/app.php` `withCommands`, schedule in `routes/console.php` |
+| Add a PDF export | Blade template in `resources/views/pdf/*.blade.php`, service in `app/Services/Pdf/*`, controller endpoint returns `$pdf->download(...)` |
+| Send a notification | `App\Models\Notification::create([...])` row → frontend polls / WebSocket later |
+
+## Production gotchas
+
+- Hetzner runs PHP 8.3.x — match locally to avoid surprises.
+- `php artisan migrate` on deploy will fail loudly if a migration errors; fix → re-push.
+- `php artisan optimize:clear` if cached routes/config look stale after deploy.
+- Telegram bridge service runs on the same Hetzner box (`systemctl status zulu-bridge`).
+- Backups land in `storage/app/backups/db/` (14 days retention by default) — DR drill runs monthly.
