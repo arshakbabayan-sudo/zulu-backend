@@ -275,6 +275,37 @@ class PayrollControllerTest extends TestCase
         $this->get("/api/payroll/{$row->id}/payslip")->assertStatus(403);
     }
 
+    public function test_change_status_is_forbidden_for_user_outside_company(): void
+    {
+        // Regression for I1 audit finding F-1 (2026-05-20): previously
+        // PATCH /api/payroll/{id}/status had no scope check, so any
+        // authenticated user — including a freshly-registered customer —
+        // could mark any company's payroll row as paid by guessing the id.
+        $companyA = $this->makeCompany();
+        $companyB = $this->makeCompany();
+        $userB = $this->makeUserForCompany($companyB);
+
+        $row = PayrollRecord::query()->create([
+            'company_id' => $companyA->id,
+            'user_id' => $this->makeUser()->id,
+            'period_start' => '2026-05-01',
+            'period_end' => '2026-05-31',
+            'base_salary' => 1500,
+            'gross_pay' => 1500,
+            'net_pay' => 1500,
+            'currency' => 'USD',
+            'status' => 'draft',
+        ]);
+
+        Sanctum::actingAs($userB);
+
+        $this->patchJson("/api/payroll/{$row->id}/status", ['status' => 'paid'])
+            ->assertStatus(403);
+
+        $this->assertSame('draft', $row->fresh()->status);
+        $this->assertNull($row->fresh()->paid_at);
+    }
+
     public function test_bank_batch_csv_includes_only_company_finalized_records_by_default(): void
     {
         $companyA = $this->makeCompany();

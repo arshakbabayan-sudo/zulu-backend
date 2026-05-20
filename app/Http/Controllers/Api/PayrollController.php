@@ -129,9 +129,21 @@ class PayrollController extends Controller
 
     public function changeStatus(Request $request, int $id): JsonResponse
     {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
         $row = PayrollRecord::query()->find($id);
         if ($row === null) {
             return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        // Mirror the scope check from payslip() and bankBatch() — any
+        // authenticated user could otherwise PATCH any company's payroll
+        // record by guessing its integer id (I1 audit finding F-1).
+        if (! $this->canAccessRecord($user, $row)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
         $validated = $request->validate([
