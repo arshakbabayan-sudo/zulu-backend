@@ -279,9 +279,9 @@ class LocalizationService
             if ($search !== '') {
                 $like = '%'.$search.'%';
                 $q->where(function ($sub) use ($like): void {
-                    $sub->where('d.key', 'like', $like)
-                        ->orWhere('d.value', 'like', $like)
-                        ->orWhere('s.value', 'like', $like);
+                    $sub->where('d.key', 'ilike', $like)
+                        ->orWhere('d.value', 'ilike', $like)
+                        ->orWhere('s.value', 'ilike', $like);
                 });
             }
 
@@ -312,8 +312,8 @@ class LocalizationService
 
         if ($search !== '') {
             $q->where(function ($sub) use ($search): void {
-                $sub->where('key', 'like', '%'.$search.'%')
-                    ->orWhere('value', 'like', '%'.$search.'%');
+                $sub->where('key', 'ilike', '%'.$search.'%')
+                    ->orWhere('value', 'ilike', '%'.$search.'%');
             });
         }
 
