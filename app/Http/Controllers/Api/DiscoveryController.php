@@ -123,7 +123,6 @@ class DiscoveryController extends Controller
         $lang = $request->attributes->get('lang');
         $lang = is_string($lang) && $lang !== '' ? $lang : null;
 
-        // TODO: apply visibility filter when direct queries are added
         $result = $discoveryService->search($input, $lang);
 
         return response()->json([
