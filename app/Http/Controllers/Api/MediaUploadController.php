@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Media\ImageSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -48,7 +49,7 @@ class MediaUploadController extends Controller
         'users',
     ];
 
-    public function upload(Request $request): JsonResponse
+    public function upload(Request $request, ImageSanitizer $sanitizer): JsonResponse
     {
         $validated = $request->validate([
             'file' => [
@@ -69,6 +70,10 @@ class MediaUploadController extends Controller
         if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             $ext = 'jpg';
         }
+
+        // Re-encode through GD so EXIF GPS coordinates / camera fingerprints
+        // never reach the public disk. The sanitized file replaces $file.
+        $file = $sanitizer->stripExif($file);
 
         $name = Str::uuid()->toString().'.'.$ext;
         $path = "uploads/{$section}/{$name}";

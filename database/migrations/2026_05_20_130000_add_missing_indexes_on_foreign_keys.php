@@ -84,8 +84,27 @@ return new class extends Migration
 
     private function hasIndex(string $table, string $index): bool
     {
+        $driver = \DB::connection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            $rows = \DB::select(
+                "SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = ?",
+                [$table, $index]
+            );
+            return ! empty($rows);
+        }
+
+        if ($driver === 'sqlite') {
+            $rows = \DB::select(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name = ?",
+                [$table, $index]
+            );
+            return ! empty($rows);
+        }
+
+        // MySQL/MariaDB fallback (information_schema is portable).
         $rows = \DB::select(
-            "SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = ?",
+            "SELECT 1 FROM information_schema.statistics WHERE table_schema = database() AND table_name = ? AND index_name = ?",
             [$table, $index]
         );
         return ! empty($rows);
