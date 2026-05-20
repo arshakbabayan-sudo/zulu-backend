@@ -97,6 +97,12 @@ class AuthController extends Controller
             // record timestamp + IP + policy version so the consent is provable
             // later. Phase 1.2 of remaining-work-2026-05-20 roadmap.
             'terms_accepted' => ['required', 'accepted'],
+            // GDPR Article 8 (Child's consent) — services targeted at the
+            // general public cannot enrol users under 16 without parental
+            // consent. ZULU does not currently process parental-consent flows,
+            // so we hard-reject under-16 signups via a self-attestation
+            // checkbox. Phase 3.4 of remaining-work-2026-05-20 roadmap.
+            'age_confirmed' => ['required', 'accepted'],
         ]);
 
         $user = User::query()->create([

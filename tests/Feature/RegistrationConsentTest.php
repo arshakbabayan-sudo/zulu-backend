@@ -8,10 +8,11 @@ use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * Phase 1.2 (GDPR Critical) — registration consent capture.
+ * Phase 1.2 + 3.4 (GDPR) — registration consent + age gate.
  *
  * Verifies POST /api/register:
- *   - Rejects payloads without `terms_accepted: true`.
+ *   - Rejects payloads without `terms_accepted: true` (Article 7).
+ *   - Rejects payloads without `age_confirmed: true` (Article 8 — child consent).
  *   - On successful registration, records terms_accepted_at + consent_ip +
  *     consent_version on the user row.
  */
@@ -26,11 +27,28 @@ class RegistrationConsentTest extends TestCase
             'email' => 'noc-'.str()->uuid().'@example.test',
             'password' => 'Password1',
             'password_confirmation' => 'Password1',
+            'age_confirmed' => true,
             // No terms_accepted field
         ]);
 
         $res->assertStatus(422);
         $res->assertJsonValidationErrors('terms_accepted');
+    }
+
+    public function test_registration_without_age_confirmation_is_rejected(): void
+    {
+        // GDPR Article 8 — under-16 self-attestation gate.
+        $res = $this->postJson('/api/register', [
+            'name' => 'No Age',
+            'email' => 'noage-'.str()->uuid().'@example.test',
+            'password' => 'Password1',
+            'password_confirmation' => 'Password1',
+            'terms_accepted' => true,
+            // No age_confirmed field
+        ]);
+
+        $res->assertStatus(422);
+        $res->assertJsonValidationErrors('age_confirmed');
     }
 
     public function test_registration_with_consent_records_timestamp_ip_version(): void
@@ -43,6 +61,7 @@ class RegistrationConsentTest extends TestCase
             'password' => 'Password1',
             'password_confirmation' => 'Password1',
             'terms_accepted' => true,
+            'age_confirmed' => true,
         ]);
 
         $res->assertStatus(201);
@@ -62,6 +81,7 @@ class RegistrationConsentTest extends TestCase
             'password' => 'Password1',
             'password_confirmation' => 'Password1',
             'terms_accepted' => false,
+            'age_confirmed' => true,
         ]);
 
         $res->assertStatus(422);
