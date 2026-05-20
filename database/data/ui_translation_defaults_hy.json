@@ -1775,5 +1775,11 @@
     "transfer.filter.special_placeholder": "Մանկական նստատեղ, լրացուցիչ ուղեբեռ…",
     "transfer.filter.special_requirements": "Հատուկ պահանջներ",
     "transfer.filter.vehicle_category": "Տրանսպորտային միջոցի կատեգորիա",
-    "home.search.cta.find_hotel": "Գտնել հյուրանոց"
+    "home.search.cta.find_hotel": "Գտնել հյուրանոց",
+    "cookie.title": "Մենք օգտագործում ենք cookie-ներ",
+    "cookie.description": "ZULU-ն օգտագործում է անհրաժեշտ cookie-ներ՝ ձեր մուտքը պահպանելու և նախընտրությունները հիշելու համար (լեզու, արժույթ)։ Մենք երրորդ կողմի վերլուծիչներ չենք օգտագործում այսօր — եթե դա փոխվի, նախ կհարցնենք։",
+    "cookie.read_more": "Գաղտնիության քաղաքականություն",
+    "cookie.essential_only": "Միայն անհրաժեշտները",
+    "cookie.accept_all": "Ընդունել բոլորը",
+    "cookie.banner_aria": "Cookie-ի կարգավորումներ"
 }

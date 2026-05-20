@@ -1775,5 +1775,11 @@
     "transfer.filter.special_placeholder": "Child seat, extra luggage…",
     "transfer.filter.special_requirements": "Special requirements",
     "transfer.filter.vehicle_category": "Vehicle category",
-    "home.search.cta.find_hotel": "Find a hotel"
+    "home.search.cta.find_hotel": "Find a hotel",
+    "cookie.title": "We use cookies",
+    "cookie.description": "ZULU uses essential cookies to keep you signed in and remember your preferences (language, currency). We don't run any third-party trackers today — if that changes, we'll ask first.",
+    "cookie.read_more": "Privacy policy",
+    "cookie.essential_only": "Essential only",
+    "cookie.accept_all": "Accept all",
+    "cookie.banner_aria": "Cookie preferences"
 }

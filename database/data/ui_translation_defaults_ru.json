@@ -1775,5 +1775,11 @@
     "transfer.filter.special_placeholder": "Детское кресло, дополнительный багаж…",
     "transfer.filter.special_requirements": "Особые требования",
     "transfer.filter.vehicle_category": "Категория транспорта",
-    "home.search.cta.find_hotel": "Найти отель"
+    "home.search.cta.find_hotel": "Найти отель",
+    "cookie.title": "Мы используем cookie",
+    "cookie.description": "ZULU использует необходимые cookie-файлы, чтобы вы оставались в системе и сохранялись ваши предпочтения (язык, валюта). Сегодня мы не используем сторонние трекеры — если что-то изменится, сначала спросим вас.",
+    "cookie.read_more": "Политика конфиденциальности",
+    "cookie.essential_only": "Только необходимые",
+    "cookie.accept_all": "Принять все",
+    "cookie.banner_aria": "Настройки cookie"
 }
