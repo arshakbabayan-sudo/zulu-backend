@@ -635,7 +635,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('notifications/paginated', [NotificationController::class, 'paginatedIndex']);
     Route::post('notifications/{notification}/read', [NotificationController::class, 'markRead'])->whereNumber('notification');
 
-    Route::prefix('platform-admin')->group(function () {
+    // I1 audit F-4: group-level platform-admin guard. The in-controller
+    // denyUnlessPlatformAdmin() helpers remain in place as defence-in-depth.
+    Route::prefix('platform-admin')->middleware('platform-admin')->group(function () {
         Route::get('applications', [CompanyApplicationController::class, 'index']);
         Route::get('applications/{id}', [CompanyApplicationController::class, 'show'])->whereNumber('id');
         Route::post('applications/{id}/approve', [PlatformAdminController::class, 'approveApplication'])->whereNumber('id');
