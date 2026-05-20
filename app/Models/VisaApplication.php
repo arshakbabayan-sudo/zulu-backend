@@ -25,6 +25,9 @@ class VisaApplication extends Model
         'entry_date' => 'date',
         'exit_date' => 'date',
         'files' => 'array',
+        // GDPR Article 32: PII at-rest encryption. See migration
+        // 2026_05_21_000000_encrypt_pii_passport_and_nationality.
+        'passport_number' => 'encrypted',
     ];
 
     public function user(): BelongsTo

@@ -67,6 +67,9 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
             'password' => 'hashed',
             'birth_date' => 'date',
             'pin_set_at' => 'datetime',
+            // GDPR Article 32: PII at-rest encryption. See migration
+            // 2026_05_21_000000_encrypt_pii_passport_and_nationality.
+            'nationality' => 'encrypted',
         ];
     }
 
