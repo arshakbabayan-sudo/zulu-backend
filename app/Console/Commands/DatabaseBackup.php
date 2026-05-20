@@ -126,6 +126,41 @@ class DatabaseBackup extends Command
             return self::FAILURE;
         }
 
+        // GDPR Phase 1.3 — optional GPG encryption at rest. When env
+        // BACKUP_GPG_RECIPIENT is set, we pipe the gzipped dump through
+        // `gpg --encrypt` so the file at rest cannot be read by anyone who
+        // doesn't hold the matching private key. The output filename gets
+        // a `.gpg` suffix. If the env is empty / unset, behaviour is
+        // unchanged (gzipped plaintext SQL).
+        $gpgRecipient = (string) (env('BACKUP_GPG_RECIPIENT') ?? '');
+        if ($gpgRecipient !== '') {
+            $encryptedPath = $tmpPath.'.gpg';
+            $gpg = new Process([
+                'gpg',
+                '--batch',
+                '--yes',
+                '--trust-model', 'always',
+                '--encrypt',
+                '--recipient', $gpgRecipient,
+                '--output', $encryptedPath,
+                $tmpPath,
+            ], null, null, null, 600);
+            $gpg->run();
+
+            if (! $gpg->isSuccessful()) {
+                @unlink($tmpPath);
+                @unlink($encryptedPath);
+                $this->error('gpg --encrypt failed: '.$gpg->getErrorOutput());
+
+                return self::FAILURE;
+            }
+
+            // Replace the unencrypted gzip with the encrypted artifact.
+            @unlink($tmpPath);
+            $tmpPath = $encryptedPath;
+            $relativePath .= '.gpg';
+        }
+
         $size = filesize($tmpPath) ?: 0;
 
         if (! $isLocal) {
@@ -169,7 +204,11 @@ class DatabaseBackup extends Command
         $removed = 0;
         foreach ($files as $file) {
             $name = basename($file);
-            if (! str_starts_with($name, $database.'-') || ! str_ends_with($name, '.sql.gz')) {
+            // Match both encrypted (.sql.gz.gpg) and unencrypted (.sql.gz)
+            // backup artifacts — older deploys may have left .sql.gz files
+            // before BACKUP_GPG_RECIPIENT was configured.
+            if (! str_starts_with($name, $database.'-')
+                || (! str_ends_with($name, '.sql.gz') && ! str_ends_with($name, '.sql.gz.gpg'))) {
                 continue;
             }
 
