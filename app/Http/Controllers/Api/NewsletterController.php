@@ -31,8 +31,12 @@ class NewsletterController extends Controller
 
         if ($record !== null) {
             if ($record->unsubscribed_at !== null) {
+                // Re-subscribe — but require fresh confirmation per GDPR Article 7
+                // (consent must be freely given and unambiguous).
                 $record->update([
                     'unsubscribed_at' => null,
+                    'confirmed_at' => null, // Phase 3.3 — re-confirm
+                    'confirmation_token' => bin2hex(random_bytes(32)),
                     'source' => $source,
                     'subscribed_at' => Carbon::now(),
                     'ip' => $request->ip(),
@@ -42,11 +46,17 @@ class NewsletterController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Already subscribed',
-                'data' => ['id' => $record->id],
+                'message' => 'Subscription pending — please check your email to confirm.',
+                'data' => [
+                    'id' => $record->id,
+                    'requires_confirmation' => $record->confirmed_at === null,
+                ],
             ]);
         }
 
+        // Phase 3.3 double opt-in: create a pending subscription with a
+        // single-use confirmation token. The receiver must click the
+        // emailed link before any newsletter is dispatched.
         $subscription = NewsletterSubscription::query()->create([
             'email' => $email,
             'lang' => $lang,
@@ -54,12 +64,53 @@ class NewsletterController extends Controller
             'ip' => $request->ip(),
             'user_agent' => substr((string) $request->userAgent(), 0, 255),
             'subscribed_at' => Carbon::now(),
+            'confirmation_token' => bin2hex(random_bytes(32)),
+            'confirmed_at' => null,
         ]);
+
+        // Emit a job/event to send the confirmation email here. Hook is left
+        // as a TODO because the Mail/NewsletterConfirmation class is a
+        // follow-up — until then the operator can confirm manually.
+        // TODO(phase-3.3-followup): dispatch SendNewsletterConfirmationMail.
 
         return response()->json([
             'success' => true,
-            'message' => 'Subscribed',
-            'data' => ['id' => $subscription->id],
+            'message' => 'Subscription pending — please check your email to confirm.',
+            'data' => [
+                'id' => $subscription->id,
+                'requires_confirmation' => true,
+            ],
         ], 201);
+    }
+
+    /**
+     * Phase 3.3 — confirm a pending newsletter subscription via the
+     * single-use token sent in the confirmation email.
+     *
+     * GET /api/newsletter/confirm?token=<token>
+     */
+    public function confirm(Request $request): JsonResponse
+    {
+        $token = (string) $request->query('token', '');
+        if ($token === '') {
+            return response()->json(['success' => false, 'message' => 'Missing token.'], 400);
+        }
+
+        $row = NewsletterSubscription::query()->where('confirmation_token', $token)->first();
+        if ($row === null) {
+            return response()->json(['success' => false, 'message' => 'Invalid or already-used token.'], 410);
+        }
+
+        if ($row->confirmed_at === null) {
+            $row->update([
+                'confirmed_at' => Carbon::now(),
+                'confirmation_token' => null, // single use
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => ['confirmed' => true],
+        ]);
     }
 }

@@ -33,6 +33,9 @@ class NewsletterSubscription extends Model
         'user_agent',
         'subscribed_at',
         'unsubscribed_at',
+        // Phase 3.3 GDPR double opt-in
+        'confirmed_at',
+        'confirmation_token',
     ];
 
     /**
@@ -43,6 +46,7 @@ class NewsletterSubscription extends Model
         return [
             'subscribed_at' => 'datetime',
             'unsubscribed_at' => 'datetime',
+            'confirmed_at' => 'datetime',
         ];
     }
 }

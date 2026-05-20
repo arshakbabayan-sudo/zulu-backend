@@ -120,6 +120,10 @@ Route::get('health/deep', [HealthController::class, 'deep'])->middleware('thrott
 Route::get('unsubscribe', [UnsubscribeController::class, 'handle'])
     ->middleware('throttle:api_public');
 
+// Phase 3.3 GDPR — newsletter double opt-in confirmation endpoint.
+Route::get('newsletter/confirm', [NewsletterController::class, 'confirm'])
+    ->middleware('throttle:api_public');
+
 Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('register', [AuthController::class, 'register'])->middleware('throttle:register');
 Route::post('companies/apply', [CompanyApplicationController::class, 'store'])->middleware('throttle:file-upload');
