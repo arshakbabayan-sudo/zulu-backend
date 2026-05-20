@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
+use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\CarResource;
 use App\Models\Offer;
@@ -13,6 +14,7 @@ use Illuminate\Http\Request;
 
 class CarController extends Controller
 {
+    use AuthorizesCommerceAccess;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -161,17 +163,5 @@ class CarController extends Controller
             'success' => true,
             'data' => null,
         ]);
-    }
-
-    private function ensureCommerceAccess(Request $request, int $companyId, string $permission): ?JsonResponse
-    {
-        if (! $this->adminAccessService->allowsCommerceOperatorAccess($request->user(), $companyId, $permission)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
-        }
-
-        return null;
     }
 }

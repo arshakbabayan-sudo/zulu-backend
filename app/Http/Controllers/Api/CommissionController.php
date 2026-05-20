@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
+use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
 use App\Models\CommissionRule;
 use App\Models\CommissionTransaction;
@@ -20,6 +21,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
  */
 class CommissionController extends Controller
 {
+    use AuthorizesCommerceAccess;
     use PaginatesCommerceResources;
 
     public function __construct(

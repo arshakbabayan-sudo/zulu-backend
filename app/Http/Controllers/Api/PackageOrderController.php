@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
+use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\OrderResource;
 use App\Models\Order;
@@ -15,6 +16,7 @@ use Illuminate\Validation\Rule;
 
 class PackageOrderController extends Controller
 {
+    use AuthorizesCommerceAccess;
     use PaginatesCommerceResources;
 
     public function __construct(

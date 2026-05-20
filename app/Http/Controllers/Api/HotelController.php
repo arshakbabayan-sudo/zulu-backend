@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
+use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\HotelDetailResource;
 use App\Http\Resources\Api\HotelListResource;
@@ -17,6 +18,7 @@ use Illuminate\Http\Request;
 
 class HotelController extends Controller
 {
+    use AuthorizesCommerceAccess;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -202,17 +204,5 @@ class HotelController extends Controller
             'success' => true,
             'data' => null,
         ]);
-    }
-
-    private function ensureCommerceAccess(Request $request, int $companyId, string $permission): ?JsonResponse
-    {
-        if (! $this->adminAccessService->allowsCommerceOperatorAccess($request->user(), $companyId, $permission)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
-        }
-
-        return null;
     }
 }

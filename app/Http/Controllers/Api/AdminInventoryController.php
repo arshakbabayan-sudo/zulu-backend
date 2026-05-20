@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\CarResource;
 use App\Http\Resources\Api\ExcursionResource;
@@ -20,6 +21,8 @@ use Illuminate\Http\Request;
 
 class AdminInventoryController extends Controller
 {
+    use AuthorizesCommerceAccess;
+
     public function __construct(
         private AdminAccessService $adminAccessService
     ) {}

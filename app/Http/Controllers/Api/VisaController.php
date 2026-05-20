@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
+use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\VisaResource;
 use App\Models\Offer;
@@ -17,6 +18,7 @@ use Illuminate\Validation\Rule;
 
 class VisaController extends Controller
 {
+    use AuthorizesCommerceAccess;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -143,18 +145,6 @@ class VisaController extends Controller
             'success' => true,
             'data' => null,
         ]);
-    }
-
-    private function ensureCommerceAccess(Request $request, int $companyId, string $permission): ?JsonResponse
-    {
-        if (! $this->adminAccessService->allowsCommerceOperatorAccess($request->user(), $companyId, $permission)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
-        }
-
-        return null;
     }
 
     /**
