@@ -113,7 +113,7 @@ Route::post('login', [AuthController::class, 'login'])->middleware('throttle:log
 Route::post('register', [AuthController::class, 'register'])->middleware('throttle:register');
 Route::post('companies/apply', [CompanyApplicationController::class, 'store'])->middleware('throttle:file-upload');
 Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:password-reset');
-Route::post('reset-password', [AuthController::class, 'resetPassword']);
+Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:password-reset');
 Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 
 // Phase 8 — social login (Google + Facebook OAuth via Laravel Socialite).
@@ -195,7 +195,7 @@ Route::prefix('v1')->name('v1.')->group(function () use ($registerPublicDiscover
 });
 
 // Public read endpoints used by admin Blade (API-driven UI) and storefronts.
-Route::prefix('localization')->group(function () {
+Route::prefix('localization')->middleware('throttle:api_public')->group(function () {
     Route::get('languages', [LocalizationController::class, 'languages']);
     Route::get('translations', [LocalizationController::class, 'translations']);
     Route::get('templates/{event}', [LocalizationController::class, 'getTemplate']);
@@ -216,7 +216,7 @@ Route::prefix('packages')->middleware('throttle:api_public')->group(function () 
     Route::get('{package}', [StorefrontPackageController::class, 'show'])->whereNumber('package');
 });
 
-Route::get('pages/{slug}', [PublicPageController::class, 'show']);
+Route::get('pages/{slug}', [PublicPageController::class, 'show'])->middleware('throttle:api_public');
 
 // GDPR — public endpoints (no auth — user comes from email link)
 Route::post('account/delete-confirm', [AccountController::class, 'confirmDeletion'])

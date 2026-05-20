@@ -77,7 +77,14 @@ class AuthController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+                // Complexity: at least one lowercase, one uppercase, one digit
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/',
+            ],
             // Optional — set when the visitor came in via /register/operator or
             // /register/agent. Tells admins what kind of partner this user is
             // becoming BEFORE they submit their CompanyApplication.
@@ -146,7 +153,13 @@ class AuthController extends Controller
         $request->validate([
             'token' => ['required', 'string'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/',
+            ],
         ]);
 
         $resetUser = null;
