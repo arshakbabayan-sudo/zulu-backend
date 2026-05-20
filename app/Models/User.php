@@ -42,6 +42,10 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
         'google_id',
         'facebook_id',
         'oauth_provider',
+        // GDPR Article 7 consent capture
+        'terms_accepted_at',
+        'consent_ip',
+        'consent_version',
     ];
 
     /**
@@ -67,6 +71,7 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
             'password' => 'hashed',
             'birth_date' => 'date',
             'pin_set_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
             // GDPR Article 32: PII at-rest encryption. See migration
             // 2026_05_21_000000_encrypt_pii_passport_and_nationality.
             'nationality' => 'encrypted',

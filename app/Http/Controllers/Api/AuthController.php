@@ -72,6 +72,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /** Current Terms / Privacy Policy version stamped on every consent. */
+    private const CONSENT_VERSION = 'v1-2026-05';
+
     public function register(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -89,6 +92,11 @@ class AuthController extends Controller
             // /register/agent. Tells admins what kind of partner this user is
             // becoming BEFORE they submit their CompanyApplication.
             'intended_role' => ['nullable', 'string', \Illuminate\Validation\Rule::in(['operator', 'agent'])],
+            // GDPR Article 7 — consent must be explicit. The frontend submits
+            // `terms_accepted: true` after the user ticks the checkbox; we
+            // record timestamp + IP + policy version so the consent is provable
+            // later. Phase 1.2 of remaining-work-2026-05-20 roadmap.
+            'terms_accepted' => ['required', 'accepted'],
         ]);
 
         $user = User::query()->create([
@@ -97,6 +105,9 @@ class AuthController extends Controller
             'password' => $validated['password'],
             'status' => User::STATUS_ACTIVE,
             'intended_role' => $validated['intended_role'] ?? null,
+            'terms_accepted_at' => now(),
+            'consent_ip' => (string) $request->ip(),
+            'consent_version' => self::CONSENT_VERSION,
         ]);
 
         try {
