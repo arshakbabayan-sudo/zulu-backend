@@ -115,7 +115,8 @@ class PayrollControllerTest extends TestCase
     {
         $company = $this->makeCompany();
         $employer = $this->makeUserForCompany($company);
-        $employee = $this->makeUser();
+        // F-2: employee must be a member of the same company.
+        $employee = $this->makeUserForCompany($company);
 
         Sanctum::actingAs($employer);
 
@@ -145,7 +146,8 @@ class PayrollControllerTest extends TestCase
     {
         $company = $this->makeCompany();
         $employer = $this->makeUserForCompany($company);
-        $employee = $this->makeUser();
+        // F-2: employee must be a member of the same company.
+        $employee = $this->makeUserForCompany($company);
 
         Sanctum::actingAs($employer);
 
@@ -273,6 +275,33 @@ class PayrollControllerTest extends TestCase
         Sanctum::actingAs($userB);
 
         $this->get("/api/payroll/{$row->id}/payslip")->assertStatus(403);
+    }
+
+    public function test_store_rejects_user_id_outside_callers_company(): void
+    {
+        // I1 audit F-2 regression. Previously POST /api/payroll accepted any
+        // user_id that existed in the database — even if the target user wasn't
+        // a member of the caller's company. This let an operator in Company A
+        // create a payroll row in their own company that referenced a user from
+        // Company B (the row's company_id was correctly Company A's, but the
+        // payslip would carry Company B's user's name — fraud potential).
+        $companyA = $this->makeCompany();
+        $companyB = $this->makeCompany();
+        $userA = $this->makeUserForCompany($companyA);
+        $employeeB = $this->makeUser(); // Belongs to nobody — simulating B's user
+
+        Sanctum::actingAs($userA);
+
+        $response = $this->postJson('/api/payroll', [
+            'user_id' => $employeeB->id,
+            'period_start' => '2026-05-01',
+            'period_end' => '2026-05-31',
+            'base_salary' => 1000,
+            'currency' => 'USD',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('user_id');
     }
 
     public function test_change_status_is_forbidden_for_user_outside_company(): void

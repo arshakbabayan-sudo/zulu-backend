@@ -9,6 +9,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -90,6 +91,24 @@ class PayrollController extends Controller
         $companyId = $user->companies()->pluck('companies.id')->first();
         if (! $companyId) {
             return response()->json(['success' => false, 'message' => 'No active company.'], 422);
+        }
+
+        // I1 audit F-2: verify the target user is a member of the same company,
+        // not just any user in the system. Without this check, an operator in
+        // Company A could create a payroll row pointing at a user from Company B —
+        // the row stores Company A's company_id, so it's not direct cross-tenant
+        // data theft, but it pollutes the ledger and generates a payslip in the
+        // wrong person's name.
+        $targetUserBelongsToCompany = DB::table('user_company')
+            ->where('user_id', $validated['user_id'])
+            ->where('company_id', $companyId)
+            ->exists();
+        if (! $targetUserBelongsToCompany && ! $this->adminAccessService->isSuperAdmin($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Target user does not belong to the caller\'s company.',
+                'errors' => ['user_id' => ['Target user is not a member of your company.']],
+            ], 422);
         }
 
         $base = (float) ($validated['base_salary'] ?? 0);

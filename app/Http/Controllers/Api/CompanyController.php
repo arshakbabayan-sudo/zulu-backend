@@ -29,6 +29,18 @@ class CompanyController extends Controller
 {
     private const COMPANY_ROLE_NAMES = ['company_admin', 'operator_admin', 'company_operator', 'company_viewer'];
 
+    /**
+     * Role privilege rank for ceiling check (I1 audit F-7).
+     * Higher rank = more powerful. Granting a role requires caller's rank ≥ granted rank.
+     */
+    private const ROLE_RANK = [
+        'company_admin' => 3,
+        'operator_admin' => 3,
+        'admin' => 3,
+        'company_operator' => 2,
+        'company_viewer' => 1,
+    ];
+
     public function __construct(
         private CompanyAccessService $companyAccessService,
         private AdminAccessService $adminAccessService
@@ -120,6 +132,20 @@ class CompanyController extends Controller
             'password' => ['required', 'string', 'min:8'],
             'role_name' => ['required', 'string', Rule::in(self::COMPANY_ROLE_NAMES)],
         ]);
+
+        // I1 audit F-7: privilege ceiling. denyUnlessCanManageCompany returns
+        // true for company_operator (per AdminAccessService::ROLE_OPERATOR_ADMIN
+        // aliases), which means without this check a company_operator could
+        // promote someone to company_admin. Enforce caller-rank ≥ grant-rank
+        // unless the caller is a platform super-admin.
+        $caller = $request->user();
+        if (! $this->callerCanGrantRole($caller, $company, $validated['role_name'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot grant a role higher than your own.',
+                'errors' => ['role_name' => ['Role rank exceeds your privilege ceiling.']],
+            ], 403);
+        }
 
         $role = Role::query()->where('name', $validated['role_name'])->first();
         if ($role === null) {
@@ -637,5 +663,40 @@ class CompanyController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * I1 audit F-7: privilege ceiling.
+     *
+     * Super admins can grant any role. Otherwise, the caller's own role in
+     * this company must rank at least as high as the role being granted.
+     */
+    private function callerCanGrantRole(?User $caller, Company $company, string $grantedRoleName): bool
+    {
+        if ($caller === null) {
+            return false;
+        }
+
+        if ($this->adminAccessService->isSuperAdmin($caller)) {
+            return true;
+        }
+
+        $grantedRank = self::ROLE_RANK[$grantedRoleName] ?? 0;
+
+        // Resolve caller's role in this company (highest if multiple).
+        $callerRoleName = UserCompany::query()
+            ->where('user_id', $caller->id)
+            ->where('company_id', $company->id)
+            ->join('roles', 'user_company.role_id', '=', 'roles.id')
+            ->orderByDesc('roles.id')
+            ->value('roles.name');
+
+        if ($callerRoleName === null) {
+            return false;
+        }
+
+        $callerRank = self::ROLE_RANK[$callerRoleName] ?? 0;
+
+        return $callerRank >= $grantedRank;
     }
 }
