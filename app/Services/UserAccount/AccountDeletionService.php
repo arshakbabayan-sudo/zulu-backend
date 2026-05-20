@@ -191,11 +191,36 @@ class AccountDeletionService
      */
     private function anonymiseRetainedRows(User $user): void
     {
+        // Tables whose user-linked rows must survive (financial / audit obligations)
+        // but whose PII columns get blanked. Phase 3.6 of remaining-work-2026-05-20
+        // roadmap expanded coverage from 3 tables (orders, audit_log_entries,
+        // support_tickets) to include passengers, visa_applications,
+        // insurance_policies, and payment_methods per GDPR audit High finding.
         $tablesToAnonymise = [
-            // table => columns to null + email-style override
+            // table => columns to null
             'orders' => ['contact_email', 'contact_phone'],
             'audit_log_entries' => ['actor_email', 'actor_name'],
             'support_tickets' => ['contact_email', 'contact_phone'],
+
+            // Phase 3.6 additions — PII on retained financial/regulatory rows.
+            'passengers' => [
+                'first_name', 'last_name',
+                'passport_number', 'passport_expiry', 'nationality',
+                'date_of_birth', 'gender',
+                'email', 'phone',
+            ],
+            'visa_applications' => [
+                'passport_number', 'admin_notes',
+            ],
+            'insurance_policies' => [
+                'insured_name', 'insured_email', 'insured_phone',
+                'insured_passport_number', 'insured_date_of_birth',
+                'insured_nationality',
+            ],
+            'payment_methods' => [
+                'cardholder_name', 'billing_email', 'billing_phone',
+                'billing_address',
+            ],
         ];
 
         foreach ($tablesToAnonymise as $table => $columns) {
@@ -211,6 +236,59 @@ class AccountDeletionService
             if (! empty($updates)) {
                 DB::table($table)->where('user_id', $user->id)->update($updates);
             }
+        }
+
+        // Phase 3.7 — passport scan / visa documentation files physically removed
+        // from disk. These live in storage/app/private/visa-applications/... and
+        // are referenced from visa_applications.files (JSON array of paths).
+        $this->purgeUserUploadedFiles($user);
+    }
+
+    /**
+     * Phase 3.7 — physically delete uploaded files owned by the user from
+     * the storage disks. The DB row stays (with file paths nulled / anonymised
+     * above), but the underlying bytes are removed so a future disk-image
+     * leak cannot reveal the user's passport photo.
+     */
+    private function purgeUserUploadedFiles(User $user): void
+    {
+        if (! DB::getSchemaBuilder()->hasTable('visa_applications')) {
+            return;
+        }
+
+        $rows = DB::table('visa_applications')
+            ->where('user_id', $user->id)
+            ->select(['id', 'files'])
+            ->get();
+
+        foreach ($rows as $row) {
+            if (empty($row->files)) {
+                continue;
+            }
+            $files = is_string($row->files) ? json_decode($row->files, true) : (array) $row->files;
+            if (! is_array($files)) {
+                continue;
+            }
+
+            foreach ($files as $relativePath) {
+                if (! is_string($relativePath) || $relativePath === '') {
+                    continue;
+                }
+                try {
+                    \Illuminate\Support\Facades\Storage::disk('local')->delete($relativePath);
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to delete visa file during purge', [
+                        'user_id' => $user->id,
+                        'path' => $relativePath,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // Null the files array on the row so even the path metadata is gone.
+            DB::table('visa_applications')
+                ->where('id', $row->id)
+                ->update(['files' => null]);
         }
     }
 }
