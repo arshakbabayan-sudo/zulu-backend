@@ -63,6 +63,7 @@ use App\Http\Controllers\Api\FlightController;
 use App\Http\Controllers\Api\FooterController;
 use App\Http\Controllers\Api\HeaderMenuController;
 use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\UnsubscribeController;
 use App\Http\Controllers\Api\HeroTabsController;
 use App\Http\Controllers\Api\HotelController;
 use App\Http\Controllers\Api\ImportSessionController;
@@ -113,6 +114,11 @@ use Illuminate\Support\Facades\Route;
 // H3 — deep health endpoint for external uptime monitors. Public, rate-limited.
 // The basic Laravel `/up` route stays as the liveness probe.
 Route::get('health/deep', [HealthController::class, 'deep'])->middleware('throttle:api_public');
+
+// Phase 3.2 GDPR — universal unsubscribe link in marketing emails.
+// Token in query string is encrypted+self-contained — no auth required.
+Route::get('unsubscribe', [UnsubscribeController::class, 'handle'])
+    ->middleware('throttle:api_public');
 
 Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('register', [AuthController::class, 'register'])->middleware('throttle:register');
