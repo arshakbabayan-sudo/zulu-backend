@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 
@@ -52,6 +53,17 @@ class AuthController extends Controller
 
         $token = $user->createToken('api', ['*'], $expiresAt)->plainTextToken;
 
+        // Phase 2 (ADR-006) — when the request originates from a stateful
+        // SPA origin (Sanctum's EnsureFrontendRequestsAreStateful set up
+        // the session), also log into the web guard so a session cookie
+        // accompanies the response. The Bearer token in the body stays
+        // for mobile + un-migrated callers; the cookie is the path the
+        // post-migration frontend will use.
+        if ($request->hasSession()) {
+            Auth::guard('web')->login($user, $rememberMe);
+            $request->session()->regenerate();
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -64,7 +76,19 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        // Bearer-token clients: revoke the current token.
+        $accessToken = $request->user()?->currentAccessToken();
+        if ($accessToken) {
+            $accessToken->delete();
+        }
+
+        // Cookie-session clients: tear down the session so the cookie
+        // becomes useless even if it's not deleted by the browser.
+        if ($request->hasSession()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json([
             'success' => true,
