@@ -208,6 +208,14 @@ class SentryPollIssues extends Command
                 ]);
 
             if (! $response->ok()) {
+                $this->warn(sprintf(
+                    'Sentry %s/%s fetch failed: HTTP %d — %s',
+                    $org,
+                    $project,
+                    $response->status(),
+                    mb_substr((string) $response->body(), 0, 200),
+                ));
+
                 return null;
             }
 
@@ -215,6 +223,8 @@ class SentryPollIssues extends Command
 
             return is_array($data) ? $data : [];
         } catch (\Throwable $e) {
+            $this->warn(sprintf('Sentry %s/%s fetch threw: %s', $org, $project, $e->getMessage()));
+
             return null;
         }
     }
