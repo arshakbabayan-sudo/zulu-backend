@@ -39,7 +39,8 @@ class SentryPollIssues extends Command
     protected $signature = 'sentry:poll-issues
         {--mode=watch : watch (immediate alerts) | digest (daily summary)}
         {--projects= : Comma-separated project slugs to scan (default: all three)}
-        {--org=zulu-platform : Sentry organization slug}';
+        {--org=zulu-platform : Sentry organization slug}
+        {--region= : Sentry region host override (defaults to SENTRY_API_REGION env, falls back to sentry.io)}';
 
     protected $description = 'Poll Sentry for new/critical issues and post Telegram alerts (no Sentry UI clicks needed)';
 
@@ -69,22 +70,28 @@ class SentryPollIssues extends Command
             ? self::DEFAULT_PROJECTS
             : array_map('trim', explode(',', $projectsRaw));
 
+        // ZULU's Sentry org is in the EU region (de.sentry.io). Org tokens
+        // generated under that org only authenticate against the matching
+        // region host — calls to sentry.io would 401 silently.
+        $region = (string) ($this->option('region') ?: env('SENTRY_API_REGION', 'de.sentry.io'));
+        $apiBase = 'https://'.$region.'/api/0';
+
         if ($mode === 'digest') {
-            return $this->runDigest($alerts, $token, $org, $projects);
+            return $this->runDigest($alerts, $token, $apiBase, $org, $projects);
         }
 
-        return $this->runWatch($alerts, $token, $org, $projects);
+        return $this->runWatch($alerts, $token, $apiBase, $org, $projects);
     }
 
     /**
      * @param  list<string>  $projects
      */
-    private function runWatch(TelegramAlertService $alerts, string $token, string $org, array $projects): int
+    private function runWatch(TelegramAlertService $alerts, string $token, string $apiBase, string $org, array $projects): int
     {
         $hits = [];
 
         foreach ($projects as $project) {
-            $issues = $this->fetchIssues($token, $org, $project, 'is:unresolved is:unassigned', 25);
+            $issues = $this->fetchIssues($token, $apiBase, $org, $project, 'is:unresolved is:unassigned', 25);
             if ($issues === null) {
                 $this->warn("Failed to fetch issues for {$project}");
 
@@ -132,14 +139,14 @@ class SentryPollIssues extends Command
     /**
      * @param  list<string>  $projects
      */
-    private function runDigest(TelegramAlertService $alerts, string $token, string $org, array $projects): int
+    private function runDigest(TelegramAlertService $alerts, string $token, string $apiBase, string $org, array $projects): int
     {
         $totalEvents = 0;
         $totalUsers = 0;
         $lines = [];
 
         foreach ($projects as $project) {
-            $issues = $this->fetchIssues($token, $org, $project, 'is:unresolved', 10);
+            $issues = $this->fetchIssues($token, $apiBase, $org, $project, 'is:unresolved', 10);
             if ($issues === null) {
                 $lines[] = "<b>{$project}</b> — fetch failed";
 
@@ -189,12 +196,12 @@ class SentryPollIssues extends Command
     /**
      * @return list<array<string, mixed>>|null
      */
-    private function fetchIssues(string $token, string $org, string $project, string $query, int $limit): ?array
+    private function fetchIssues(string $token, string $apiBase, string $org, string $project, string $query, int $limit): ?array
     {
         try {
             $response = Http::withToken($token)
                 ->timeout(15)
-                ->get("https://sentry.io/api/0/projects/{$org}/{$project}/issues/", [
+                ->get("{$apiBase}/projects/{$org}/{$project}/issues/", [
                     'query' => $query,
                     'statsPeriod' => '24h',
                     'limit' => $limit,
