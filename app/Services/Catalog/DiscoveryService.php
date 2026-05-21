@@ -94,7 +94,15 @@ class DiscoveryService
             $this->applyDateRangeFilters($query, $input, $moduleType);
             $this->applyFreeCancellationFilter($query, $input, $moduleType);
             $this->applyPackageEligibleFilter($query, $input, $moduleType);
-            $this->applyHistorySearchFilters($query, $input, $moduleType);
+            // applyHistorySearchFilters removed 2026-05-21: the filter chain
+            // walked Offer->bookingItems->booking->invoices but the
+            // booking_items + bookings tables were dropped in migration
+            // 2026_05_01_000400_drop_legacy_booking_package_schema. The
+            // hotel_name / start_date / end_date params it consumed are
+            // already covered by applyLocationAndModuleFilters +
+            // applyDateRangeFilters above; the order_number param is an
+            // admin-bookings-list concern that has no place on the public
+            // discovery endpoint.
 
             match ($sort) {
                 'price_desc' => $query->orderBy('price', 'desc'),

@@ -72,6 +72,16 @@ jobs:
             php artisan route:cache
             php artisan view:cache
 
+            echo "=== Storage ownership (fix root-owned files from artisan-as-root above) ==="
+            # Every artisan command in this script runs as root, which creates
+            # root-owned files in bootstrap/cache + storage/framework/{views,cache}.
+            # PHP-FPM runs as www-data and cannot write the next time a cache key
+            # turns over, surfacing as 500s on /api/* (caught in Sentry repeatedly
+            # 2026-05-21). Chown after caches so the runtime user can write.
+            chown -R www-data:www-data \
+              /var/www/zulu-backend/bootstrap/cache \
+              /var/www/zulu-backend/storage
+
             echo "=== Reload services ==="
             systemctl reload php8.3-fpm
             systemctl reload nginx
