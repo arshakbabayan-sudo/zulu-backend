@@ -8,131 +8,121 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Snyk dependency-vulnerability bridge → Telegram (Sprint H1 follow-up).
+ * Snyk + Dependabot bridge → Telegram via GitHub PRs.
  *
- * Snyk's free-tier dashboard catches known-vulnerable packages in our
- * GitHub repos (zulu-backend / zulu-frontend-next / zulu-admin-next /
- * zulu-telegram-bridge). We want the same hands-off operating model
- * we set up for Sentry:
- *   - Snyk auto-opens fix PRs in GitHub → Claude reviews + merges
- *   - A weekly digest goes to Telegram so Arshak sees the current count
- *     without ever opening the Snyk UI
+ * Snyk's free plan blocks programmatic vulnerability counts via its REST
+ * API ("not entitled for api access"), but its GitHub integration still
+ * works: when Snyk finds a fixable vuln in one of our repos it opens a
+ * PR under the snyk-bot user. Same applies to dependabot[bot] (GitHub's
+ * built-in scanner). Both are far more useful than raw issue counts —
+ * they're actionable.
+ *
+ * This command queries GitHub for open PRs by those bot accounts across
+ * the four ZULU repos and posts a Telegram digest. The point is so that
+ * Արշակ never opens the Snyk dashboard; he sees PRs in Telegram and
+ * Claude reviews + merges them.
  *
  * Two operating modes:
  *
  *   --mode=digest (default, schedule weekly Monday 09:30 UTC)
- *     Single Telegram message summarising open-issue counts across
- *     every Snyk project. Format: per-target line with H/M/L counts
- *     plus the delta vs the previous run, so resolved issues show as
- *     "−2H" deltas the user can celebrate.
+ *     One Telegram message listing every open Snyk/Dependabot PR
+ *     across all four repos with titles + URLs. Useful as the
+ *     "what's piled up" weekly glance.
  *
  *   --mode=watch (schedule every 6 hours)
- *     Alerts immediately when the critical (high+severe) count for
- *     any project crosses an upward edge from the cached baseline.
- *     De-duped with a 24h cooldown per project so the same number
- *     can't re-ping.
+ *     Alerts immediately when a new PR appears since the last cached
+ *     baseline. Per-PR cooldown so the same PR can't re-ping.
  *
- * No-op when SNYK_API_TOKEN is unset.
+ * No-op when GITHUB_TOKEN (or GH_TOKEN) is unset.
  */
 class SnykPollIssues extends Command
 {
     protected $signature = 'snyk:poll-issues
-        {--mode=digest : digest (weekly summary) | watch (count-rise alerts)}
-        {--org= : Snyk organization slug (defaults to SNYK_ORG env)}';
+        {--mode=digest : digest (weekly summary) | watch (new-PR alerts)}
+        {--repos= : Comma-separated owner/name list (default: the four ZULU repos)}';
 
-    protected $description = 'Poll Snyk for dependency vulnerabilities and post Telegram alerts (no Snyk UI clicks needed)';
+    protected $description = 'Watch GitHub for Snyk/Dependabot PRs across ZULU repos and post Telegram digests (no Snyk UI clicks needed)';
+
+    private const DEFAULT_REPOS = [
+        'arshakbabayan-sudo/zulu-backend',
+        'arshakbabayan-sudo/zulu-frontend-next',
+        'arshakbabayan-sudo/zulu-admin-next',
+        'arshakbabayan-sudo/zulu-telegram-bridge',
+    ];
+
+    private const BOT_LOGINS = ['snyk-bot', 'dependabot[bot]'];
 
     private const ALERT_COOLDOWN_HOURS = 24;
 
-    private const BASELINE_CACHE_KEY = 'snyk_high_count_baseline';
-
     public function handle(TelegramAlertService $alerts): int
     {
-        $token = (string) (env('SNYK_API_TOKEN') ?? '');
+        $token = (string) (env('GITHUB_TOKEN') ?? env('GH_TOKEN') ?? '');
         if ($token === '') {
-            $this->warn('SNYK_API_TOKEN unset — Snyk polling disabled.');
+            $this->warn('GITHUB_TOKEN / GH_TOKEN unset — Snyk-via-GitHub polling disabled.');
 
             return self::SUCCESS;
         }
 
-        $org = (string) ($this->option('org') ?: env('SNYK_ORG', ''));
-        if ($org === '') {
-            $this->error('Missing --org and SNYK_ORG env.');
-
-            return self::FAILURE;
-        }
+        $reposRaw = (string) ($this->option('repos') ?? '');
+        $repos = $reposRaw === ''
+            ? self::DEFAULT_REPOS
+            : array_map('trim', explode(',', $reposRaw));
 
         $mode = (string) $this->option('mode');
 
-        $projects = $this->fetchProjects($token, $org);
-        if ($projects === null) {
-            $this->error('Failed to fetch Snyk projects.');
+        $allPrs = [];
+        foreach ($repos as $repo) {
+            $prs = $this->fetchBotPrs($token, $repo);
+            if ($prs === null) {
+                $this->warn("Failed to fetch PRs for {$repo}");
 
-            return self::FAILURE;
-        }
-
-        $summaries = [];
-        foreach ($projects as $project) {
-            $counts = $this->fetchIssueCounts($token, $org, (string) ($project['id'] ?? ''));
-            if ($counts === null) {
                 continue;
             }
-            $summaries[] = [
-                'name' => (string) ($project['attributes']['name'] ?? $project['name'] ?? 'unknown'),
-                'id' => (string) ($project['id'] ?? ''),
-                'counts' => $counts,
-            ];
+            foreach ($prs as $pr) {
+                $pr['_repo'] = $repo;
+                $allPrs[] = $pr;
+            }
         }
 
-        if ($summaries === []) {
-            $this->info('No Snyk projects returned issue counts.');
+        if ($mode === 'watch') {
+            return $this->runWatch($alerts, $allPrs);
+        }
+
+        return $this->runDigest($alerts, $allPrs, $repos);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $prs
+     */
+    private function runWatch(TelegramAlertService $alerts, array $prs): int
+    {
+        $newHits = [];
+
+        foreach ($prs as $pr) {
+            $key = 'snyk_pr_'.md5(($pr['html_url'] ?? '').$pr['number']);
+            if (Cache::has($key)) {
+                continue;
+            }
+            $newHits[] = $pr;
+        }
+
+        if ($newHits === []) {
+            $this->info('No new bot PRs across '.count($prs).' existing.');
 
             return self::SUCCESS;
         }
 
-        if ($mode === 'watch') {
-            return $this->runWatch($alerts, $summaries);
-        }
-
-        return $this->runDigest($alerts, $summaries);
-    }
-
-    /**
-     * @param  list<array{name:string,id:string,counts:array<string,int>}>  $summaries
-     */
-    private function runWatch(TelegramAlertService $alerts, array $summaries): int
-    {
-        $hits = [];
-
-        foreach ($summaries as $s) {
-            $highNow = (int) ($s['counts']['high'] ?? 0) + (int) ($s['counts']['critical'] ?? 0);
-            $key = self::BASELINE_CACHE_KEY.'_'.md5($s['id']);
-            $baseline = (int) (Cache::get($key, $highNow));
-
-            if ($highNow > $baseline) {
-                $cdKey = $key.'_cd';
-                if (! Cache::has($cdKey)) {
-                    $hits[] = [
-                        'name' => $s['name'],
-                        'rise' => $highNow - $baseline,
-                        'now' => $highNow,
-                        'cd_key' => $cdKey,
-                    ];
-                }
-            }
-
-            Cache::put($key, $highNow, now()->addDays(30));
-        }
-
-        foreach ($hits as $hit) {
+        foreach ($newHits as $pr) {
             $body = sprintf(
-                "🛡️ <b>ZULU Snyk — new critical issues</b>\n<b>%s</b>: +%d high (now %d)\nClaude will review the auto-fix PRs when Snyk opens them.",
-                $hit['name'],
-                $hit['rise'],
-                $hit['now'],
+                "🛡️ <b>New dependency-fix PR</b>\n<b>%s</b>\n<code>%s</code>\n<a href=\"%s\">Open in GitHub</a>",
+                $pr['_repo'],
+                $this->trim((string) ($pr['title'] ?? '?'), 100),
+                (string) ($pr['html_url'] ?? ''),
             );
             if ($alerts->send($body)) {
-                Cache::put($hit['cd_key'], true, now()->addHours(self::ALERT_COOLDOWN_HOURS));
+                $key = 'snyk_pr_'.md5(($pr['html_url'] ?? '').$pr['number']);
+                Cache::put($key, true, now()->addHours(self::ALERT_COOLDOWN_HOURS));
+                $this->info("Alerted: {$pr['_repo']} #{$pr['number']}");
             }
         }
 
@@ -140,46 +130,53 @@ class SnykPollIssues extends Command
     }
 
     /**
-     * @param  list<array{name:string,id:string,counts:array<string,int>}>  $summaries
+     * @param  list<array<string, mixed>>  $prs
+     * @param  list<string>  $repos
      */
-    private function runDigest(TelegramAlertService $alerts, array $summaries): int
+    private function runDigest(TelegramAlertService $alerts, array $prs, array $repos): int
     {
-        $totalH = 0;
-        $totalM = 0;
-        $totalL = 0;
-        $lines = [];
+        if ($prs === []) {
+            $body = sprintf(
+                "🛡️ <b>ZULU dependency-fix digest</b>\nNo open Snyk / Dependabot PRs across %d repos. ✅",
+                count($repos),
+            );
+            $alerts->send($body, silent: true);
+            $this->info('Digest sent: 0 open PRs');
 
-        foreach ($summaries as $s) {
-            $critical = (int) ($s['counts']['critical'] ?? 0);
-            $high = (int) ($s['counts']['high'] ?? 0);
-            $medium = (int) ($s['counts']['medium'] ?? 0);
-            $low = (int) ($s['counts']['low'] ?? 0);
-            $hCombined = $critical + $high;
+            return self::SUCCESS;
+        }
 
-            $totalH += $hCombined;
-            $totalM += $medium;
-            $totalL += $low;
+        // Group by repo
+        $byRepo = [];
+        foreach ($prs as $pr) {
+            $byRepo[$pr['_repo']][] = $pr;
+        }
 
-            if ($hCombined === 0 && $medium === 0 && $low === 0) {
-                $lines[] = "<b>{$s['name']}</b> — ✅ clean";
-
-                continue;
+        $sections = [];
+        foreach ($byRepo as $repo => $list) {
+            $shortRepo = $this->trim(explode('/', $repo)[1] ?? $repo, 40);
+            $lines = ['<b>'.$shortRepo.'</b> ('.count($list).' PRs)'];
+            foreach (array_slice($list, 0, 5) as $pr) {
+                $title = $this->trim((string) ($pr['title'] ?? '?'), 70);
+                $url = (string) ($pr['html_url'] ?? '');
+                $lines[] = "  • <a href=\"{$url}\">#{$pr['number']}</a> {$title}";
             }
-
-            $lines[] = "<b>{$s['name']}</b> — {$hCombined}H / {$medium}M / {$low}L";
+            if (count($list) > 5) {
+                $extra = count($list) - 5;
+                $lines[] = "  • ... and {$extra} more";
+            }
+            $sections[] = implode("\n", $lines);
         }
 
         $header = sprintf(
-            "🛡️ <b>ZULU Snyk weekly digest</b>\n<b>Totals:</b> %dH / %dM / %dL across %d projects",
-            $totalH,
-            $totalM,
-            $totalL,
-            count($summaries),
+            "🛡️ <b>ZULU dependency-fix digest</b>\n<b>Total:</b> %d open PRs across %d repos",
+            count($prs),
+            count($byRepo),
         );
 
-        $alerts->send($header."\n\n".implode("\n", $lines), silent: true);
+        $alerts->send($header."\n\n".implode("\n\n", $sections), silent: true);
 
-        $this->info("Digest sent: {$totalH}H / {$totalM}M / {$totalL}L across ".count($summaries).' projects');
+        $this->info('Digest sent: '.count($prs).' open PRs across '.count($byRepo).' repos');
 
         return self::SUCCESS;
     }
@@ -187,75 +184,49 @@ class SnykPollIssues extends Command
     /**
      * @return list<array<string, mixed>>|null
      */
-    private function fetchProjects(string $token, string $org): ?array
+    private function fetchBotPrs(string $token, string $repo): ?array
     {
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'token '.$token,
-                'Accept' => 'application/vnd.api+json',
+                'Authorization' => 'Bearer '.$token,
+                'Accept' => 'application/vnd.github+json',
+                'X-GitHub-Api-Version' => '2022-11-28',
+                'User-Agent' => 'zulu-monitoring',
             ])
-                ->timeout(20)
-                ->get("https://api.snyk.io/rest/orgs/{$org}/projects", [
-                    'version' => '2024-10-15',
-                    'limit' => 100,
+                ->timeout(15)
+                ->get("https://api.github.com/repos/{$repo}/pulls", [
+                    'state' => 'open',
+                    'per_page' => 100,
                 ]);
 
             if (! $response->ok()) {
-                $this->warn(sprintf('Snyk projects fetch failed: HTTP %d — %s', $response->status(), mb_substr((string) $response->body(), 0, 200)));
+                $this->warn(sprintf('GitHub fetch %s failed: HTTP %d', $repo, $response->status()));
 
                 return null;
             }
 
             $data = $response->json();
-            $items = $data['data'] ?? [];
+            if (! is_array($data)) {
+                return [];
+            }
 
-            return is_array($items) ? $items : [];
+            return array_values(array_filter(
+                $data,
+                fn ($pr) => in_array(strtolower((string) ($pr['user']['login'] ?? '')), self::BOT_LOGINS, true),
+            ));
         } catch (\Throwable $e) {
-            $this->warn('Snyk projects fetch threw: '.$e->getMessage());
+            $this->warn('GitHub fetch '.$repo.' threw: '.$e->getMessage());
 
             return null;
         }
     }
 
-    /**
-     * @return array<string, int>|null
-     */
-    private function fetchIssueCounts(string $token, string $org, string $projectId): ?array
+    private function trim(string $s, int $max): string
     {
-        if ($projectId === '') {
-            return null;
+        if (mb_strlen($s) <= $max) {
+            return $s;
         }
 
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => 'token '.$token,
-                'Accept' => 'application/vnd.api+json',
-            ])
-                ->timeout(20)
-                ->get("https://api.snyk.io/rest/orgs/{$org}/issues", [
-                    'version' => '2024-10-15',
-                    'scan_item.id' => $projectId,
-                    'scan_item.type' => 'project',
-                    'status' => 'open',
-                    'limit' => 100,
-                ]);
-
-            if (! $response->ok()) {
-                return null;
-            }
-
-            $items = $response->json()['data'] ?? [];
-            $counts = ['critical' => 0, 'high' => 0, 'medium' => 0, 'low' => 0];
-            foreach ($items as $row) {
-                $severity = strtolower((string) ($row['attributes']['effective_severity_level'] ?? $row['attributes']['severity'] ?? ''));
-                if (isset($counts[$severity])) {
-                    $counts[$severity]++;
-                }
-            }
-
-            return $counts;
-        } catch (\Throwable $e) {
-            return null;
-        }
+        return mb_substr($s, 0, $max - 1).'…';
     }
 }
