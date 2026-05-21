@@ -53,6 +53,18 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(append: [
             ResolveLanguage::class,
         ]);
+
+        // Phase 2 (ADR-006) — Sanctum SPA cookie auth foundation.
+        // statefulApi() prepends EnsureFrontendRequestsAreStateful so the
+        // session cookie issued at /sanctum/csrf-cookie is treated as
+        // primary credentials for requests from origins listed in
+        // SANCTUM_STATEFUL_DOMAINS. Bearer-token auth (mobile + legacy
+        // SPA clients) keeps working through `auth:sanctum` because the
+        // guard falls back to the token middleware after the cookie
+        // middleware no-ops for non-stateful origins. So this can ship
+        // without breaking the current Bearer flow; the frontend cookie
+        // migration happens in a separate later commit.
+        $middleware->statefulApi();
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Self-hosted error capture (PART 31, Sprint 67) — write to audit_logs.category=error
