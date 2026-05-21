@@ -66,6 +66,20 @@ Schedule::command('sentry:poll-issues --mode=digest')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Sprint H1 follow-up — Snyk dependency-vulnerability bridge.
+//   - watch mode every 6h: alerts when high+critical count rises on any repo
+//   - digest mode Mondays 09:30 UTC: weekly H/M/L roll-up
+// Snyk auto-opens fix PRs in GitHub; Claude reviews + merges them.
+Schedule::command('snyk:poll-issues --mode=watch')
+    ->cron('0 */6 * * *')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::command('snyk:poll-issues --mode=digest')
+    ->weeklyOn(1, '09:30')
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // Sprint 78 — Health check every 10 minutes (PART 31).
 // Posts Telegram alerts on DB failure / error rate spike / disk pressure /
 // webhook backlog. Cooldown 60 min per condition. No-op when
