@@ -42,6 +42,16 @@ Schedule::command('db:restore-drill --execute')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Sprint H4 — Daily backup verification. Runs ~1 hour after db:backup so the
+// fresh artefact is on disk. Confirms the latest .sql.gz exists, is recent,
+// is large enough, and starts with the gzip magic bytes. When FILES_BACKUP_DIR
+// is set in env, also verifies the most recent zulu-files-*.tar.gz under it.
+// Telegram alert on failure; silent on success.
+Schedule::command('backup:verify')
+    ->dailyAt('03:35')
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // Sprint 78 — Health check every 10 minutes (PART 31).
 // Posts Telegram alerts on DB failure / error rate spike / disk pressure /
 // webhook backlog. Cooldown 60 min per condition. No-op when
