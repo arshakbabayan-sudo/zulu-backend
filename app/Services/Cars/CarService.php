@@ -8,14 +8,12 @@ use App\Models\Offer;
 use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Locations\LocationBusinessValidator;
 use App\Services\Offers\OfferVisibilityService;
-use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -696,55 +694,19 @@ class CarService
             });
         }
 
-        $userEmail = $this->normalizeListingString($filters['user_email'] ?? null);
-        if ($userEmail !== null) {
-            $like = '%'.addcslashes($userEmail, '%_\\').'%';
-            $query->whereHas('offer.bookingItems.booking.user', function (Builder $q) use ($like): void {
-                $q->where('email', 'like', $like);
-            });
-        }
-
-        $invoiceId = $this->normalizeListingInt($filters['invoice_id'] ?? null);
-        if ($invoiceId !== null) {
-            $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($invoiceId): void {
-                $q->whereKey($invoiceId);
-            });
-        }
-
-        $hasCheckIn = Schema::hasColumn('invoices', 'check_in');
-        $hasCheckOut = Schema::hasColumn('invoices', 'check_out');
-
-        $parseDate = function (mixed $v): ?string {
-            if ($v === null || $v === '') {
-                return null;
-            }
-            try {
-                return Carbon::parse((string) $v)->toDateString();
-            } catch (\Throwable) {
-                return null;
-            }
-        };
-
-        $date = array_key_exists('date', $filters) ? $parseDate($filters['date']) : null;
-        $dateFrom = array_key_exists('date_from', $filters) ? $parseDate($filters['date_from']) : null;
-        $dateTo = array_key_exists('date_to', $filters) ? $parseDate($filters['date_to']) : null;
-
-        $applyCheckIn = ($date !== null || $dateFrom !== null) && $hasCheckIn;
-        $applyCheckOut = $dateTo !== null && $hasCheckOut;
-
-        if ($applyCheckIn || $applyCheckOut) {
-            $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $iq) use ($date, $dateFrom, $dateTo, $hasCheckIn, $hasCheckOut): void {
-                if ($date !== null && $hasCheckIn) {
-                    $iq->whereDate('check_in', $date);
-                }
-                if ($dateFrom !== null && $hasCheckIn) {
-                    $iq->whereDate('check_in', '>=', $dateFrom);
-                }
-                if ($dateTo !== null && $hasCheckOut) {
-                    $iq->whereDate('check_out', '<=', $dateTo);
-                }
-            });
-        }
+        // Removed 2026-05-21: the user_email / invoice_id / date_from-to
+        // filters walked Car->offer->bookingItems->booking->user|invoices.
+        // booking_items + bookings tables were dropped in migration
+        // 2026_05_01_000400_drop_legacy_booking_package_schema, so any
+        // request that supplied these params 500'd (caught proactively
+        // alongside the matching DiscoveryService fix on 2026-05-21).
+        //
+        // The new schema is Order->items (OrderItem polymorphic via
+        // item_type='car'/'hotel'/etc + item_id). When admin needs the
+        // "show cars booked by user X" lookup back, the correct path is:
+        //   Car -> OrderItem(item_type=car) -> Order -> User|Invoice
+        // That needs a morphMany on Car + Hotel plus a morph-map
+        // registration; deferring until product surfaces a real need.
     }
 
     /**

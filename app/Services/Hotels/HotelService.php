@@ -573,65 +573,16 @@ class HotelService
             }
         }
 
-        if (array_key_exists('invoice_id', $filters)) {
-            $invoiceId = $filters['invoice_id'];
-            if ($invoiceId !== null && $invoiceId !== '' && is_numeric($invoiceId) && (int) $invoiceId > 0) {
-                $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $q) use ($invoiceId): void {
-                    $q->where('id', (int) $invoiceId);
-                });
-            }
-        }
-
-        if (array_key_exists('user_email', $filters)) {
-            $email = $filters['user_email'];
-            if ($email !== null && $email !== '' && (is_string($email) || is_numeric($email))) {
-                $needle = trim((string) $email);
-                if ($needle !== '') {
-                    $safeNeedle = '%'.addcslashes($needle, '%_\\').'%';
-                    $query->whereHas('offer.bookingItems.booking.user', function (Builder $q) use ($safeNeedle): void {
-                        $q->where('email', 'like', $safeNeedle);
-                    });
-                }
-            }
-        }
-
-        // Date filtering is invoice-based (hotel bookings have no standalone date field).
-        $hasCheckIn = Schema::hasColumn('invoices', 'check_in');
-        $hasCheckOut = Schema::hasColumn('invoices', 'check_out');
-
-        $parseDate = function (mixed $v): ?string {
-            if ($v === null || $v === '') {
-                return null;
-            }
-
-            try {
-                // Always return YYYY-MM-DD string.
-                return Carbon::parse((string) $v)->toDateString();
-            } catch (\Throwable) {
-                return null;
-            }
-        };
-
-        $date = array_key_exists('date', $filters) ? $parseDate($filters['date']) : null;
-        $dateFrom = array_key_exists('date_from', $filters) ? $parseDate($filters['date_from']) : null;
-        $dateTo = array_key_exists('date_to', $filters) ? $parseDate($filters['date_to']) : null;
-
-        $applyCheckIn = ($date !== null || $dateFrom !== null) && $hasCheckIn;
-        $applyCheckOut = $dateTo !== null && $hasCheckOut;
-
-        if ($applyCheckIn || $applyCheckOut) {
-            $query->whereHas('offer.bookingItems.booking.invoices', function (Builder $iq) use ($date, $dateFrom, $dateTo, $hasCheckIn, $hasCheckOut): void {
-                if ($date !== null && $hasCheckIn) {
-                    $iq->whereDate('check_in', $date);
-                }
-                if ($dateFrom !== null && $hasCheckIn) {
-                    $iq->whereDate('check_in', '>=', $dateFrom);
-                }
-                if ($dateTo !== null && $hasCheckOut) {
-                    $iq->whereDate('check_out', '<=', $dateTo);
-                }
-            });
-        }
+        // Removed 2026-05-21: invoice_id / user_email / date / date_from /
+        // date_to filters walked Hotel->offer->bookingItems->booking->
+        // user|invoices. booking_items + bookings tables were dropped in
+        // migration 2026_05_01_000400_drop_legacy_booking_package_schema,
+        // so the filters 500'd whenever admin supplied any of those params.
+        // Same proactive removal as CarService + the DiscoveryService fix
+        // that Sentry first surfaced. Rewriting against the new Order /
+        // OrderItem polymorphic schema is deferred until product asks for
+        // the "hotels booked by user X" / "hotels touching invoice Y"
+        // lookups back — needs a morphMany on Hotel + morph-map registration.
 
         $min = array_key_exists('starting_price_min', $filters)
             ? $this->normalizeListingFloat($filters['starting_price_min'])
