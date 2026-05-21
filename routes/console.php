@@ -52,6 +52,20 @@ Schedule::command('backup:verify')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Sprint H1 follow-up — Sentry → Telegram bridge.
+//   - watch mode every 10 minutes: critical issues + bursts → immediate alert
+//   - digest mode daily at 09:00 UTC: morning roll-up across all three projects
+// Both no-op when SENTRY_API_TOKEN is unset (dev / CI / pre-token state).
+Schedule::command('sentry:poll-issues --mode=watch')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::command('sentry:poll-issues --mode=digest')
+    ->dailyAt('09:00')
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // Sprint 78 — Health check every 10 minutes (PART 31).
 // Posts Telegram alerts on DB failure / error rate spike / disk pressure /
 // webhook backlog. Cooldown 60 min per condition. No-op when
