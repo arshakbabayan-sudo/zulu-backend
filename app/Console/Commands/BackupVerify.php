@@ -100,13 +100,20 @@ class BackupVerify extends Command
             ];
         }
 
+        // Accept both unencrypted (.sql.gz) and GPG-encrypted (.sql.gz.gpg)
+        // dumps. Phase 1.3 added optional GPG-at-rest via BACKUP_GPG_RECIPIENT;
+        // both formats coexist during/after the env flip.
         $files = collect($storage->files($prefix))
-            ->filter(fn (string $f) => str_ends_with(strtolower($f), '.sql.gz'))
+            ->filter(function (string $f): bool {
+                $lower = strtolower($f);
+
+                return str_ends_with($lower, '.sql.gz') || str_ends_with($lower, '.sql.gz.gpg');
+            })
             ->values();
 
         if ($files->isEmpty()) {
             return [
-                'problem' => "DB backup directory `{$prefix}` on disk `{$disk}` contains no .sql.gz files.",
+                'problem' => "DB backup directory `{$prefix}` on disk `{$disk}` contains no .sql.gz / .sql.gz.gpg files.",
                 'summary' => "❌ No DB backup files found on disk={$disk} prefix={$prefix}",
             ];
         }
@@ -133,10 +140,14 @@ class BackupVerify extends Command
             $problems[] = sprintf('too small (%d bytes, threshold %d)', $size, $minBytes);
         }
 
-        // gzip magic check — read only the first 4 bytes via the disk's read API.
-        // For local disks this is a tiny seek; for remote (S3) it's an HTTP Range
-        // read in any well-behaved adapter.
-        $magicProblem = $this->checkGzipMagic($storage, $latestPath);
+        // File-shape check — read the first 4 bytes via the disk's read API.
+        // For local disks this is a tiny seek; for remote (S3) it's an HTTP
+        // Range read in any well-behaved adapter. Encrypted (.gpg) dumps
+        // are validated against the OpenPGP packet header instead of gzip
+        // magic.
+        $magicProblem = str_ends_with(strtolower($latestPath), '.gpg')
+            ? $this->checkGpgMagic($storage, $latestPath)
+            : $this->checkGzipMagic($storage, $latestPath);
         if ($magicProblem !== null) {
             $problems[] = $magicProblem;
         }
@@ -232,6 +243,43 @@ class BackupVerify extends Command
 
         if (! is_string($head) || strlen($head) < 2 || ord($head[0]) !== 0x1f || ord($head[1]) !== 0x8b) {
             return 'not a valid gzip stream (bad magic bytes)';
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate the leading bytes of a GPG-encrypted file. OpenPGP packets
+     * start with a tag-byte whose top bits identify the framing format.
+     * For modern GnuPG the encryption output begins with a public-key
+     * encrypted-session-key packet (tag 1) under either the new (0xC1)
+     * or old (0x84 / 0x85) header form. We accept any of those.
+     */
+    private function checkGpgMagic(\Illuminate\Contracts\Filesystem\Filesystem $storage, string $path): ?string
+    {
+        try {
+            $stream = $storage->readStream($path);
+            if ($stream === null) {
+                return 'unable to open backup for read';
+            }
+            $head = fread($stream, 4);
+            fclose($stream);
+        } catch (\Throwable $e) {
+            return 'read error: '.$e->getMessage();
+        }
+
+        if (! is_string($head) || strlen($head) < 1) {
+            return 'not a valid OpenPGP stream (file too short)';
+        }
+
+        $first = ord($head[0]);
+        // New format: 0b11xxxxxx (top two bits set). Old format with
+        // tag 1 (PK-ESK): 0x84-0x87 depending on length-of-length bits.
+        $isNewFormat = ($first & 0xC0) === 0xC0;
+        $isOldEsk = $first >= 0x84 && $first <= 0x87;
+
+        if (! $isNewFormat && ! $isOldEsk) {
+            return sprintf('not a valid OpenPGP stream (bad packet header 0x%02x)', $first);
         }
 
         return null;

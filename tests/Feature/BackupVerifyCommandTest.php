@@ -128,4 +128,57 @@ class BackupVerifyCommandTest extends TestCase
             '--files-dir' => '/nonexistent/path/'.uniqid(),
         ])->assertExitCode(1);
     }
+
+    public function test_passes_for_gpg_encrypted_dump_with_valid_pgp_header(): void
+    {
+        // 0xC1 = new-format OpenPGP PK-ESK packet header. Real gpg --encrypt
+        // output starts with this in the modern pinentry path.
+        Storage::disk($this->diskName)->put(
+            $this->prefix.'/zulu-20260521-023001.sql.gz.gpg',
+            "\xC1\x4C".str_repeat('e', 4096),
+        );
+
+        $this->artisan('backup:verify', [
+            '--disk' => $this->diskName,
+            '--prefix' => $this->prefix,
+        ])->assertExitCode(0);
+    }
+
+    public function test_fails_for_gpg_file_without_valid_pgp_header(): void
+    {
+        // 0x00 — neither new format nor an ESK tag.
+        Storage::disk($this->diskName)->put(
+            $this->prefix.'/zulu-20260521-023001.sql.gz.gpg',
+            "\x00\x00".str_repeat('e', 4096),
+        );
+
+        $this->artisan('backup:verify', [
+            '--disk' => $this->diskName,
+            '--prefix' => $this->prefix,
+        ])->assertExitCode(1);
+    }
+
+    public function test_picks_newest_across_plain_and_gpg_dumps(): void
+    {
+        // Older plain backup, newer encrypted backup. The newer one is
+        // what backup:verify should evaluate against the freshness budget.
+        Storage::disk($this->diskName)->put(
+            $this->prefix.'/zulu-20260101-023001.sql.gz',
+            "\x1f\x8b".str_repeat('x', 4096),
+        );
+        Storage::disk($this->diskName)->put(
+            $this->prefix.'/zulu-20260521-023001.sql.gz.gpg',
+            "\xC1\x4C".str_repeat('e', 4096),
+        );
+
+        $oldPath = Storage::disk($this->diskName)->path($this->prefix.'/zulu-20260101-023001.sql.gz');
+        $longAgo = strtotime('-3 days');
+        touch($oldPath, $longAgo, $longAgo);
+
+        $this->artisan('backup:verify', [
+            '--disk' => $this->diskName,
+            '--prefix' => $this->prefix,
+            '--max-age-hours' => 26,
+        ])->assertExitCode(0);
+    }
 }
