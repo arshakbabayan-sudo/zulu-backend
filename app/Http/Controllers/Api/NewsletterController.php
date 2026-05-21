@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\NewsletterConfirmationMail;
 use App\Models\NewsletterSubscription;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -42,6 +45,8 @@ class NewsletterController extends Controller
                     'ip' => $request->ip(),
                     'user_agent' => substr((string) $request->userAgent(), 0, 255),
                 ]);
+
+                $this->sendConfirmationMail($record);
             }
 
             return response()->json([
@@ -68,10 +73,7 @@ class NewsletterController extends Controller
             'confirmed_at' => null,
         ]);
 
-        // Emit a job/event to send the confirmation email here. Hook is left
-        // as a TODO because the Mail/NewsletterConfirmation class is a
-        // follow-up — until then the operator can confirm manually.
-        // TODO(phase-3.3-followup): dispatch SendNewsletterConfirmationMail.
+        $this->sendConfirmationMail($subscription);
 
         return response()->json([
             'success' => true,
@@ -81,6 +83,21 @@ class NewsletterController extends Controller
                 'requires_confirmation' => true,
             ],
         ], 201);
+    }
+
+    private function sendConfirmationMail(NewsletterSubscription $subscription): void
+    {
+        try {
+            Mail::to($subscription->email)->queue(new NewsletterConfirmationMail($subscription));
+        } catch (\Throwable $e) {
+            // Never let a mail-driver glitch break the subscribe endpoint —
+            // the row is already persisted and the user can re-trigger by
+            // re-submitting the form. Operator gets the failure in logs.
+            Log::warning('newsletter.confirmation_mail_failed', [
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
