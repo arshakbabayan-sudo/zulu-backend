@@ -81,6 +81,18 @@ return Application::configure(basePath: dirname(__DIR__))
 
             $service = app(ErrorReportService::class);
             $service->captureException($e, request());
+
+            // Sentry — forward the same exception to the cloud error tracker.
+            // No-op when SENTRY_LARAVEL_DSN is unset (dev / CI), so this is
+            // safe everywhere. Wrapped in try/catch so a transient Sentry
+            // outage cannot mask the original error in our own logs.
+            if (app()->bound('sentry')) {
+                try {
+                    \Sentry\Laravel\Integration::captureUnhandledException($e);
+                } catch (\Throwable $sentryErr) {
+                    // swallow — we already logged via ErrorReportService above
+                }
+            }
         });
 
         $exceptions->render(function (ValidationException $e, $request) {

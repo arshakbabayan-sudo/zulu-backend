@@ -17,6 +17,7 @@
         "laravel/tinker": "^2.10.1",
         "meilisearch/meilisearch-php": "^1.16",
         "phpoffice/phpspreadsheet": "^5.5",
+        "sentry/sentry-laravel": "^4.25",
         "spiral/roadrunner-cli": "^2.7",
         "spiral/roadrunner-http": "^4.1",
         "stripe/stripe-php": "^19.4"
