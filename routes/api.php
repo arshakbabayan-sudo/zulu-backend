@@ -700,6 +700,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('banners', [PlatformAdminBannerController::class, 'store']);
         Route::patch('banners/{banner}', [PlatformAdminBannerController::class, 'update'])->whereNumber('banner');
         Route::delete('banners/{banner}', [PlatformAdminBannerController::class, 'destroy'])->whereNumber('banner');
+        // Phase 7.8 — banner bulk ops
+        Route::post('banners/bulk-delete', [PlatformAdminBannerController::class, 'bulkDestroy']);
+        Route::post('banners/reorder', [PlatformAdminBannerController::class, 'reorder']);
 
         // Audit logs (PART 26)
         Route::get('audit-logs', [AdminAuditLogController::class, 'index']);

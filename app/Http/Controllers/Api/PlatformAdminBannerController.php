@@ -111,6 +111,63 @@ class PlatformAdminBannerController extends Controller
         ]);
     }
 
+    /**
+     * Phase 7.8 — delete multiple banners in one call.
+     */
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $banners = Banner::query()->whereIn('id', $validated['ids'])->get();
+        $deleted = 0;
+        foreach ($banners as $banner) {
+            if ($banner->image_path) {
+                Storage::disk('public')->delete($banner->image_path);
+            }
+            $banner->delete();
+            $deleted++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Banners deleted',
+            'data' => ['deleted_count' => $deleted, 'requested_count' => count($validated['ids'])],
+        ]);
+    }
+
+    /**
+     * Phase 7.8 — persist a new sort order after drag&drop on the admin UI.
+     * Accepts { ordered_ids: number[] } and assigns sort_order = index.
+     */
+    public function reorder(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessSuperAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'ordered_ids' => ['required', 'array', 'min:1', 'max:200'],
+            'ordered_ids.*' => ['integer'],
+        ]);
+
+        foreach ($validated['ordered_ids'] as $idx => $id) {
+            Banner::query()->where('id', $id)->update(['sort_order' => $idx]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Banners reordered',
+            'data' => ['count' => count($validated['ordered_ids'])],
+        ]);
+    }
+
     private function bannerPayload(Banner $banner): array
     {
         return [
