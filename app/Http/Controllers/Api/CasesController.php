@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AdminCase;
 use App\Models\CaseReply;
+use App\Models\User;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 /**
@@ -252,13 +255,55 @@ class CasesController extends Controller
             $case->save();
         }
 
+        // A1.notify — notify opener + assignee when not the poster.
+        // Internal-visibility replies only ping the assignee (customer doesn't
+        // see internal notes, so notifying them would surface non-public data).
+        $this->notifyReplyParticipants($case, $reply, $user, $visibility);
+
         return response()->json([
             'success' => true,
             'data' => $this->serializeReply($reply->fresh(['user'])),
         ], 201);
     }
 
-    private function canViewCase(\App\Models\User $user, AdminCase $case): bool
+    private function notifyReplyParticipants(
+        AdminCase $case,
+        CaseReply $reply,
+        User $author,
+        string $visibility,
+    ): void {
+        $service = app(NotificationService::class);
+        $title = mb_substr($case->title ?? "Case #{$case->id}", 0, 120);
+        $excerpt = mb_substr(strip_tags((string) $reply->body), 0, 160);
+        $message = "💬 {$title}: {$excerpt}";
+
+        $recipients = [];
+        if ($case->opened_by_user_id && $case->opened_by_user_id !== $author->id && $visibility === 'public') {
+            $recipients[] = (int) $case->opened_by_user_id;
+        }
+        if ($case->assigned_to_user_id && $case->assigned_to_user_id !== $author->id) {
+            $recipients[] = (int) $case->assigned_to_user_id;
+        }
+
+        foreach (array_unique($recipients) as $recipientId) {
+            try {
+                $service->create([
+                    'user_id' => $recipientId,
+                    'type' => 'case_reply',
+                    'title' => "New reply on case #{$case->id}",
+                    'message' => $message,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('case_reply notification failed', [
+                    'case_id' => $case->id,
+                    'recipient_id' => $recipientId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    private function canViewCase(User $user, AdminCase $case): bool
     {
         if ($this->adminAccessService->isPlatformAdmin($user) || $user->is_super_admin) {
             return true;
@@ -276,7 +321,7 @@ class CasesController extends Controller
         return false;
     }
 
-    private function canSeeInternal(\App\Models\User $user, AdminCase $case): bool
+    private function canSeeInternal(User $user, AdminCase $case): bool
     {
         if ($this->adminAccessService->isPlatformAdmin($user) || $user->is_super_admin) {
             return true;
