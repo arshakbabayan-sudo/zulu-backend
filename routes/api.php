@@ -675,6 +675,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('approvals/{approval}/reject', [PlatformAdminController::class, 'rejectApproval'])->whereNumber('approval');
         Route::get('package-orders', [PlatformAdminController::class, 'packageOrders']);
         Route::get('payments', [PlatformAdminController::class, 'payments']);
+        // Phase 7.7 — CSV export for /platform/payments
+        Route::get('payments/export', [PlatformAdminController::class, 'exportPaymentsCsv']);
         Route::get('finance-summary', [PlatformAdminController::class, 'financeSummary']);
         Route::get('packages', [PlatformAdminController::class, 'packages']);
         Route::post('packages/{package}/deactivate', [PlatformAdminController::class, 'deactivatePackage'])->whereNumber('package');

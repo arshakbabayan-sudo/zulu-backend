@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Packages\PackageService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -264,6 +265,26 @@ class PlatformAdminService
      */
     public function listAllPayments(array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
+        return $this->buildPaymentsQuery($filters)->paginate($perPage);
+    }
+
+    /**
+     * Phase 7.7 — unpaginated payments fetch for CSV export.
+     * Caller responsibility to bound the row count (controller takes(N)).
+     *
+     * @param  array{status?:?string,from?:?string,to?:?string}  $filters
+     * @return Collection<int, Payment>
+     */
+    public function listPaymentsForExport(array $filters = []): Collection
+    {
+        return $this->buildPaymentsQuery($filters)->get();
+    }
+
+    /**
+     * @param  array{status?:?string,from?:?string,to?:?string}  $filters
+     */
+    private function buildPaymentsQuery(array $filters)
+    {
         $query = Payment::query()
             ->with(['invoice'])
             ->orderByDesc('id');
@@ -271,8 +292,15 @@ class PlatformAdminService
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
+        // Phase 7.7 — date range on payments.created_at (paid_at can be null).
+        if (! empty($filters['from'])) {
+            $query->where('created_at', '>=', $filters['from']);
+        }
+        if (! empty($filters['to'])) {
+            $query->where('created_at', '<=', $filters['to'].' 23:59:59');
+        }
 
-        return $query->paginate($perPage);
+        return $query;
     }
 
     public function getFinanceSummary(): array

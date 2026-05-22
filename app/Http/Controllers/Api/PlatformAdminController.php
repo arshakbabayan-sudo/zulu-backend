@@ -33,6 +33,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PlatformAdminController extends Controller
 {
@@ -330,14 +331,71 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
+        // Phase 7.7 — date range filters
         $filters = array_filter([
             'status' => $request->filled('status') ? (string) $request->query('status') : null,
+            'from' => $request->filled('from') ? (string) $request->query('from') : null,
+            'to' => $request->filled('to') ? (string) $request->query('to') : null,
         ], static fn ($v) => $v !== null && $v !== '');
 
         $perPage = $this->commerceListPerPage($request);
         $paginator = $service->listAllPayments($filters, $perPage);
 
         return $this->paginatedPaymentsResponse($request, $paginator);
+    }
+
+    /**
+     * Phase 7.7 — CSV export for /platform/payments with the same filters.
+     */
+    public function exportPaymentsCsv(Request $request, PlatformAdminService $service): StreamedResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            abort($deny->status(), $deny->getData(true)['message'] ?? 'Forbidden');
+        }
+
+        $filters = array_filter([
+            'status' => $request->filled('status') ? (string) $request->query('status') : null,
+            'from' => $request->filled('from') ? (string) $request->query('from') : null,
+            'to' => $request->filled('to') ? (string) $request->query('to') : null,
+        ], static fn ($v) => $v !== null && $v !== '');
+
+        $filename = 'payments-'.now()->format('Y-m-d-His').'.csv';
+
+        return response()->streamDownload(function () use ($service, $filters): void {
+            $fh = fopen('php://output', 'w');
+            fwrite($fh, "\xEF\xBB\xBF"); // UTF-8 BOM for Excel
+            fputcsv($fh, [
+                'id',
+                'invoice_id',
+                'invoice_reference',
+                'amount',
+                'currency',
+                'status',
+                'payment_method',
+                'reference_code',
+                'paid_at',
+                'created_at',
+            ]);
+
+            $payments = $service->listPaymentsForExport($filters);
+            foreach ($payments->take(10000) as $p) {
+                fputcsv($fh, [
+                    $p->id,
+                    $p->invoice_id,
+                    $p->invoice?->unique_booking_reference,
+                    $p->amount,
+                    $p->currency,
+                    $p->status,
+                    $p->payment_method,
+                    $p->reference_code,
+                    $p->paid_at?->toIso8601String(),
+                    $p->created_at?->toIso8601String(),
+                ]);
+            }
+            fclose($fh);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     public function financeSummary(Request $request, PlatformAdminService $service): JsonResponse
