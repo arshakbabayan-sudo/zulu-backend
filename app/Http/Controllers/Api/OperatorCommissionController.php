@@ -164,6 +164,14 @@ class OperatorCommissionController extends Controller
         if ($user === null) {
             return null;
         }
+
+        // Phase 7.3 — platform-admin / super-admin can scope to any company
+        // via ?company_id=N (used by the admin company-detail Commission tab).
+        $explicitId = (int) $request->query('company_id');
+        if ($explicitId > 0 && $this->adminAccessService->isPlatformAdmin($user)) {
+            return Company::query()->find($explicitId);
+        }
+
         $user->loadMissing('companies');
         $first = $user->companies->sortBy('id')->first();
 
