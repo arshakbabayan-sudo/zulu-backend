@@ -244,6 +244,52 @@ class OfferController extends Controller
     }
 
     /**
+     * Phase 7.5 — bulk approve. Super-admin selects multiple pending offers
+     * from /platform/pending-review and approves them in one call.
+     * Returns per-id success/failure so the UI can show partial results.
+     *
+     * @group Offers
+     */
+    public function bulkApprove(Request $request, OfferReviewService $reviewService): JsonResponse
+    {
+        if (! $this->adminAccessService->isSuperAdmin($request->user())) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer', 'exists:offers,id'],
+        ]);
+
+        $results = [];
+        foreach ($validated['ids'] as $offerId) {
+            $offer = Offer::query()->find($offerId);
+            if ($offer === null) {
+                $results[] = ['id' => $offerId, 'status' => 'not_found'];
+
+                continue;
+            }
+            try {
+                $reviewService->approve($offer, $request->user());
+                $results[] = ['id' => $offerId, 'status' => 'approved'];
+            } catch (\Throwable $e) {
+                $results[] = ['id' => $offerId, 'status' => 'failed', 'error' => $e->getMessage()];
+            }
+        }
+
+        $approvedCount = count(array_filter($results, fn ($r) => $r['status'] === 'approved'));
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'approved_count' => $approvedCount,
+                'total' => count($results),
+                'results' => $results,
+            ],
+        ]);
+    }
+
+    /**
      * Super admin rejects a pending_review offer (reason required).
      *
      * @group Offers

@@ -534,6 +534,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('admin/offers/pending-review', [OfferController::class, 'pendingReviewQueue']);
     Route::post('admin/offers/{offer}/approve', [OfferController::class, 'approve'])->middleware('throttle:inventory-write');
     Route::post('admin/offers/{offer}/reject', [OfferController::class, 'reject'])->middleware('throttle:inventory-write');
+    // Phase 7.5 — bulk approve from the pending-review queue
+    Route::post('admin/offers/bulk-approve', [OfferController::class, 'bulkApprove'])->middleware('throttle:inventory-write');
 
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/aggregate', [InvoiceController::class, 'aggregate']);
