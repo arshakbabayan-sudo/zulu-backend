@@ -68,6 +68,7 @@ class PlatformAdminController extends Controller
             'type' => $request->filled('type') ? (string) $request->query('type') : null,
             'sort_by' => $request->filled('sort_by') ? (string) $request->query('sort_by') : null,
             'sort_dir' => $request->filled('sort_dir') ? (string) $request->query('sort_dir') : null,
+            'archive_filter' => $request->filled('archive_filter') ? (string) $request->query('archive_filter') : null,
         ];
 
         $perPage = $this->commerceListPerPage($request);
@@ -622,6 +623,79 @@ class PlatformAdminController extends Controller
             'success' => true,
             'message' => 'User anonymized.',
             'data' => ['id' => $user->id],
+        ]);
+    }
+
+    /**
+     * Phase 7.2 — Archive company (super-admin only, mandatory reason).
+     * Hides the company from default admin listings but preserves linked
+     * orders/contracts/inventory rows for financial/legal continuity.
+     * Reversible via restoreCompany.
+     */
+    public function archiveCompany(Request $request, Company $company, PlatformAdminService $service): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $actor = $request->user();
+        if (! $this->adminAccessService->isSuperAdmin($actor)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Super-admin permission required to archive a company.',
+            ], 403);
+        }
+
+        if ($company->archived_at !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company is already archived.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ]);
+
+        $service->archiveCompany($company, $actor, $validated['reason']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Company archived.',
+            'data' => ['id' => $company->id],
+        ]);
+    }
+
+    /**
+     * Phase 7.2 — Restore archived company (super-admin only).
+     */
+    public function restoreCompany(Request $request, Company $company, PlatformAdminService $service): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $actor = $request->user();
+        if (! $this->adminAccessService->isSuperAdmin($actor)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Super-admin permission required to restore a company.',
+            ], 403);
+        }
+
+        if ($company->archived_at === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company is not archived.',
+            ], 422);
+        }
+
+        $service->restoreCompany($company, $actor);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Company restored.',
+            'data' => ['id' => $company->id],
         ]);
     }
 

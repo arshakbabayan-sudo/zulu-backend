@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\Package;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\Audit\AuditService;
 use App\Services\Packages\PackageService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
@@ -44,7 +45,7 @@ class PlatformAdminService
     }
 
     /**
-     * @param  array{governance_status?:string,is_seller?:bool|null,search?:string,type?:string,sort_by?:string,sort_dir?:string}  $filters
+     * @param  array{governance_status?:string,is_seller?:bool|null,search?:string,type?:string,sort_by?:string,sort_dir?:string,archive_filter?:string}  $filters
      */
     public function listCompanies(array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
@@ -54,6 +55,15 @@ class PlatformAdminService
                     $q->where('status', 'active');
                 },
             ]);
+
+        // Phase 7.2 — archive visibility. Default: hide archived rows.
+        // Accepts archive_filter = active|archived|all.
+        $archiveFilter = $filters['archive_filter'] ?? 'active';
+        if ($archiveFilter === 'archived') {
+            $query->whereNotNull('archived_at');
+        } elseif ($archiveFilter !== 'all') {
+            $query->whereNull('archived_at');
+        }
 
         if (! empty($filters['governance_status'])) {
             $query->where('governance_status', $filters['governance_status']);
@@ -84,6 +94,53 @@ class PlatformAdminService
         $query->orderBy($sortBy, $sortDir);
 
         return $query->paginate($perPage);
+    }
+
+    /**
+     * Phase 7.2 — admin archive: hide from active listings but preserve
+     * orders/contracts/inventory. Reversible via restoreCompany().
+     */
+    public function archiveCompany(Company $company, User $actor, string $reason): Company
+    {
+        $company->archived_at = now();
+        $company->archived_by_user_id = $actor->id;
+        $company->archived_reason = mb_substr($reason, 0, 500);
+        $company->save();
+
+        app(AuditService::class)->log([
+            'category' => 'company_admin_action',
+            'subject_type' => 'Company',
+            'subject_id' => (string) $company->id,
+            'action' => 'archive',
+            'actor' => $actor,
+            'context' => ['reason' => $reason, 'company_name' => $company->name],
+        ]);
+
+        return $company->fresh();
+    }
+
+    /**
+     * Phase 7.2 — undo archive. Clears the archived markers; row reappears
+     * in default admin listings.
+     */
+    public function restoreCompany(Company $company, User $actor): Company
+    {
+        $previousReason = $company->archived_reason;
+        $company->archived_at = null;
+        $company->archived_by_user_id = null;
+        $company->archived_reason = null;
+        $company->save();
+
+        app(AuditService::class)->log([
+            'category' => 'company_admin_action',
+            'subject_type' => 'Company',
+            'subject_id' => (string) $company->id,
+            'action' => 'restore',
+            'actor' => $actor,
+            'context' => ['previous_reason' => $previousReason, 'company_name' => $company->name],
+        ]);
+
+        return $company->fresh();
     }
 
     public function changeCompanyGovernanceStatus(

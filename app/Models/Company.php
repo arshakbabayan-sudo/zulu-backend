@@ -51,6 +51,10 @@ class Company extends Model
         'is_airline',
         'seller_activated_at',
         'profile_completed',
+        // Phase 7.2 — admin archive (soft-delete-style, custom column)
+        'archived_at',
+        'archived_by_user_id',
+        'archived_reason',
     ];
 
     protected function casts(): array
@@ -61,7 +65,25 @@ class Company extends Model
             'is_partner_visible' => 'boolean',
             'profile_completed' => 'boolean',
             'seller_activated_at' => 'datetime',
+            'archived_at' => 'datetime',
         ];
+    }
+
+    /** Active (non-archived) companies — used in default admin listings. */
+    public function scopeActive($query)
+    {
+        return $query->whereNull('archived_at');
+    }
+
+    /** Archived companies — used when admin opts in to see them. */
+    public function scopeArchived($query)
+    {
+        return $query->whereNotNull('archived_at');
+    }
+
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
     }
 
     public function users(): BelongsToMany

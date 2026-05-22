@@ -45,6 +45,10 @@ class CompanyResource extends JsonResource
             ),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
+            // Phase 7.2 — admin archive markers (super-admin UI only)
+            'archived_at' => $this->archived_at?->toIso8601String(),
+            'archived_by_user_id' => $this->archived_by_user_id,
+            'archived_reason' => $this->archived_reason,
         ];
     }
 }
