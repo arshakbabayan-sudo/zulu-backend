@@ -115,6 +115,20 @@ use Illuminate\Support\Facades\Route;
 // The basic Laravel `/up` route stays as the liveness probe.
 Route::get('health/deep', [HealthController::class, 'deep'])->middleware('throttle:api_public');
 
+// Phase 9.1 — Sentry smoke-test endpoint. Throws on purpose so the operator
+// can verify that production exceptions land in Sentry after the DSN is set.
+// Only runs when `?key=<SENTRY_TEST_KEY env>` matches (so it isn't a public DoS).
+Route::get('sentry/test', function () {
+    $expected = (string) config('app.sentry_test_key', env('SENTRY_TEST_KEY', ''));
+    if ($expected === '' || request()->query('key') !== $expected) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Forbidden',
+        ], 403);
+    }
+    throw new RuntimeException('Sentry smoke-test exception — if you see this in Sentry, the integration works.');
+})->middleware('throttle:api_public');
+
 // Phase 3.2 GDPR — universal unsubscribe link in marketing emails.
 // Token in query string is encrypted+self-contained — no auth required.
 Route::get('unsubscribe', [UnsubscribeController::class, 'handle'])
