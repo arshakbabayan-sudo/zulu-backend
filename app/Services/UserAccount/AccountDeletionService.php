@@ -6,9 +6,11 @@ use App\Mail\AccountDeletionCompleted;
 use App\Mail\AccountDeletionConfirmation;
 use App\Models\AccountDeletionRequest;
 use App\Models\User;
+use App\Services\Audit\AuditService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class AccountDeletionService
@@ -185,6 +187,84 @@ class AccountDeletionService
     }
 
     /**
+     * Admin-initiated anonymisation (Phase 7.1 "Ջնջել" button).
+     * Default platform-admin action — preserves financial/contractual history
+     * but blanks PII so the row identity becomes "Անանուն օգտատեր #{id}".
+     * Soft-deletes the user so they vanish from active admin lists but the
+     * row is still recoverable via withTrashed() if anonymisation was a mistake
+     * (data itself is not recoverable, only the marker).
+     */
+    public function adminAnonymize(User $user, User $actor, ?string $reason = null): void
+    {
+        DB::transaction(function () use ($user) {
+            $user->name = 'Անանուն օգտատեր #'.$user->id;
+            $user->email = 'anon-'.$user->id.'@deleted.zulu.am';
+            $user->phone = null;
+            $user->avatar = null;
+            $user->birth_date = null;
+            $user->nationality = null;
+            $user->google_id = null;
+            $user->facebook_id = null;
+            $user->oauth_provider = null;
+            $user->password = bcrypt(Str::random(40));
+            $user->status = User::STATUS_PENDING_DELETION;
+            $user->save();
+
+            if (method_exists($user, 'tokens')) {
+                $user->tokens()->delete();
+            }
+
+            $this->anonymiseRetainedRows($user);
+
+            // Soft-delete so the user disappears from active listings.
+            $user->delete();
+        });
+
+        app(AuditService::class)->log([
+            'category' => 'user_admin_action',
+            'subject_type' => 'User',
+            'subject_id' => (string) $user->id,
+            'action' => 'admin_anonymize',
+            'actor' => $actor,
+            'context' => ['reason' => $reason],
+        ]);
+    }
+
+    /**
+     * Admin-initiated hard delete (Phase 7.1 "Ամբողջությամբ ջնջել" button).
+     * Super-admin only — physically removes the user row. Retained-table PII
+     * is still anonymised first so booking/audit history loses identifying
+     * data even though the rows themselves remain (financial/legal record).
+     */
+    public function adminHardDelete(User $user, User $actor, string $reason): void
+    {
+        $userId = (int) $user->id;
+        $userEmail = (string) $user->email;
+        $userName = (string) ($user->name ?? '');
+
+        DB::transaction(function () use ($user) {
+            if (method_exists($user, 'tokens')) {
+                $user->tokens()->delete();
+            }
+            $this->anonymiseRetainedRows($user);
+            $user->forceDelete();
+        });
+
+        app(AuditService::class)->log([
+            'category' => 'user_admin_action',
+            'subject_type' => 'User',
+            'subject_id' => (string) $userId,
+            'action' => 'admin_hard_delete',
+            'actor' => $actor,
+            'context' => [
+                'reason' => $reason,
+                'deleted_email' => $userEmail,
+                'deleted_name' => $userName,
+            ],
+        ]);
+    }
+
+    /**
      * Rows we cannot drop entirely for legal / financial reasons get
      * their personal identifiers blanked so the foreign user_id can stay
      * (anonymised booking history etc.).
@@ -275,7 +355,7 @@ class AccountDeletionService
                     continue;
                 }
                 try {
-                    \Illuminate\Support\Facades\Storage::disk('local')->delete($relativePath);
+                    Storage::disk('local')->delete($relativePath);
                 } catch (\Throwable $e) {
                     Log::warning('Failed to delete visa file during purge', [
                         'user_id' => $user->id,

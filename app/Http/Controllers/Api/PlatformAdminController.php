@@ -28,6 +28,7 @@ use App\Services\Companies\CompanyService;
 use App\Services\Companies\SellerApplicationService;
 use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Reviews\ReviewService;
+use App\Services\UserAccount\AccountDeletionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -586,6 +587,81 @@ class PlatformAdminController extends Controller
                 'message' => 'User deactivated.',
                 'user' => $this->platformAdminUserRow($user->load('companies')),
             ],
+        ]);
+    }
+
+    /**
+     * Phase 7.1 — "Ջնջել" (default platform-admin action).
+     * Anonymises PII on the user row + retained tables, revokes tokens,
+     * soft-deletes. Reversible only in the sense that the row can be
+     * un-trashed; the original PII is not recoverable.
+     */
+    public function anonymizeUser(Request $request, int $id, AccountDeletionService $deletionService): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $actor = $request->user();
+        $user = User::query()->findOrFail($id);
+
+        if ((int) $actor->id === (int) $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot anonymize yourself.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $deletionService->adminAnonymize($user, $actor, $validated['reason'] ?? null);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'User anonymized.',
+            'data' => ['id' => $user->id],
+        ]);
+    }
+
+    /**
+     * Phase 7.1 — "Ամբողջությամբ ջնջել" (super-admin only).
+     * Anonymises retained-table PII, then force-deletes the user row.
+     * Used for GDPR Right-to-Erasure (Article 17) requests.
+     */
+    public function hardDeleteUser(Request $request, int $id, AccountDeletionService $deletionService): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $actor = $request->user();
+        if (! $this->adminAccessService->isSuperAdmin($actor)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Super-admin permission required for hard delete.',
+            ], 403);
+        }
+
+        $user = User::query()->findOrFail($id);
+
+        if ((int) $actor->id === (int) $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot hard-delete yourself.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ]);
+
+        $deletionService->adminHardDelete($user, $actor, $validated['reason']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'User hard-deleted.',
         ]);
     }
 
