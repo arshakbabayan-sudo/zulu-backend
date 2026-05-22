@@ -871,6 +871,11 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Phase 8.6 — reject reason is now optional (was required:string).
+     * The admin UI rejects low-info applications without a written reason
+     * when the operator has out-of-band context.
+     */
     public function rejectSellerApplication(Request $request, int $id, SellerApplicationService $service): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
@@ -878,11 +883,11 @@ class PlatformAdminController extends Controller
         }
 
         $validated = $request->validate([
-            'rejection_reason' => ['required', 'string', 'max:1000'],
+            'rejection_reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $application = CompanySellerApplication::query()->findOrFail($id);
-        $fresh = $service->reject($application, $request->user()->id, $validated['rejection_reason']);
+        $fresh = $service->reject($application, $request->user()->id, $validated['rejection_reason'] ?? '');
 
         return response()->json([
             'success' => true,
