@@ -100,6 +100,12 @@ Schedule::command('cases:escalate-overdue')
     ->withoutOverlapping()
     ->onOneServer();
 
+// H5 — hourly low-disk-space alert (Telegram). No-op when free >= 10%.
+Schedule::command('alerts:low-disk-space')
+    ->hourly()
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // GDPR — hourly sweep for accounts whose 30-day deletion grace expired.
 // Cheap when nothing's due; runs only on the primary scheduler host.
 Schedule::command('accounts:purge-expired')
