@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\InvoiceResource;
 use App\Models\Invoice;
 use App\Models\Order;
-use Illuminate\Support\Facades\DB;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Invoices\InvoiceService;
 use App\Services\Pdf\InvoicePdfService;
@@ -16,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InvoiceController extends Controller
 {
@@ -33,8 +33,15 @@ class InvoiceController extends Controller
             ? (int) $request->query('booking_id')
             : null;
 
+        // Phase 7.6 — date range + status filter
+        $filters = [
+            'from' => $request->filled('from') ? (string) $request->query('from') : null,
+            'to' => $request->filled('to') ? (string) $request->query('to') : null,
+            'status' => $request->filled('status') ? (string) $request->query('status') : null,
+        ];
+
         if (! $request->filled('page')) {
-            $invoices = $invoiceService->listForCompanies($companyIds, $bookingId);
+            $invoices = $invoiceService->listForCompanies($companyIds, $bookingId, $filters);
 
             return response()->json([
                 'success' => true,
@@ -45,10 +52,69 @@ class InvoiceController extends Controller
         $paginator = $invoiceService->paginateForCompanies(
             $companyIds,
             $this->commerceListPerPage($request),
-            $bookingId
+            $bookingId,
+            $filters
         );
 
         return $this->paginatedCommerceResourceResponse($request, $paginator, InvoiceResource::class);
+    }
+
+    /**
+     * Phase 7.6 — CSV export of invoices matching the same filters as index().
+     * Streams a text/csv response with one row per invoice. Limited to 10 000
+     * rows to keep memory bounded; UI nudges the user to narrow the range
+     * if the result set is larger.
+     */
+    public function exportCsv(Request $request, InvoiceService $invoiceService): StreamedResponse
+    {
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'invoices.view');
+
+        $filters = [
+            'from' => $request->filled('from') ? (string) $request->query('from') : null,
+            'to' => $request->filled('to') ? (string) $request->query('to') : null,
+            'status' => $request->filled('status') ? (string) $request->query('status') : null,
+        ];
+
+        $filename = 'invoices-'.now()->format('Y-m-d-His').'.csv';
+
+        return response()->streamDownload(function () use ($invoiceService, $companyIds, $filters): void {
+            $fh = fopen('php://output', 'w');
+            // UTF-8 BOM so Excel opens Armenian/Cyrillic properly.
+            fwrite($fh, "\xEF\xBB\xBF");
+            fputcsv($fh, [
+                'id',
+                'unique_booking_reference',
+                'status',
+                'total_amount',
+                'currency',
+                'company_id',
+                'company_name',
+                'order_id',
+                'created_at',
+                'issued_at',
+                'paid_at',
+            ]);
+
+            $invoices = $invoiceService->listForCompanies($companyIds, null, $filters);
+            foreach ($invoices->take(10000) as $inv) {
+                fputcsv($fh, [
+                    $inv->id,
+                    $inv->unique_booking_reference,
+                    $inv->status,
+                    $inv->total_amount,
+                    $inv->currency,
+                    $inv->order?->company_id,
+                    $inv->order?->company?->name,
+                    $inv->order_id,
+                    $inv->created_at?->toIso8601String(),
+                    $inv->issued_at?->toIso8601String(),
+                    $inv->paid_at?->toIso8601String() ?? null,
+                ]);
+            }
+            fclose($fh);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     /**

@@ -11,43 +11,58 @@ class InvoiceService
 {
     /**
      * @param  list<int>  $companyIds
+     * @param  array{from?:?string,to?:?string,status?:?string}  $filters
+     */
+    private function buildScopedQuery(array $companyIds, ?int $bookingId, array $filters)
+    {
+        $q = Invoice::query()
+            ->whereHas('order', fn ($q2) => $q2->whereIn('company_id', $companyIds))
+            ->when(
+                $bookingId !== null,
+                fn ($q) => $q->whereHas('order', fn ($q2) => $q2
+                    ->where('metadata->legacy_origin', 'booking')
+                    ->where('metadata->legacy_booking_id', $bookingId))
+            );
+
+        if (! empty($filters['from'])) {
+            $q->where('created_at', '>=', $filters['from']);
+        }
+        if (! empty($filters['to'])) {
+            // Inclusive end-of-day so date pickers behave intuitively.
+            $q->where('created_at', '<=', $filters['to'].' 23:59:59');
+        }
+        if (! empty($filters['status'])) {
+            $q->where('status', $filters['status']);
+        }
+
+        return $q;
+    }
+
+    /**
+     * @param  list<int>  $companyIds
+     * @param  array{from?:?string,to?:?string,status?:?string}  $filters
      * @return Collection<int, Invoice>
      */
-    public function listForCompanies(array $companyIds, ?int $bookingId = null): Collection
+    public function listForCompanies(array $companyIds, ?int $bookingId = null, array $filters = []): Collection
     {
         if ($companyIds === []) {
             return new Collection;
         }
 
-        return Invoice::query()
-            ->whereHas('order', fn ($q2) => $q2->whereIn('company_id', $companyIds))
-            ->when(
-                $bookingId !== null,
-                fn ($q) => $q->whereHas('order', fn ($q2) => $q2
-                    ->where('metadata->legacy_origin', 'booking')
-                    ->where('metadata->legacy_booking_id', $bookingId))
-            )
-            ->orderBy('id')
-            ->get();
+        return $this->buildScopedQuery($companyIds, $bookingId, $filters)->orderBy('id')->get();
     }
 
     /**
      * @param  list<int>  $companyIds
+     * @param  array{from?:?string,to?:?string,status?:?string}  $filters
      */
-    public function paginateForCompanies(array $companyIds, int $perPage = 20, ?int $bookingId = null): LengthAwarePaginator
+    public function paginateForCompanies(array $companyIds, int $perPage = 20, ?int $bookingId = null, array $filters = []): LengthAwarePaginator
     {
         if ($companyIds === []) {
             return Invoice::query()->whereRaw('0 = 1')->paginate($perPage);
         }
 
-        return Invoice::query()
-            ->whereHas('order', fn ($q2) => $q2->whereIn('company_id', $companyIds))
-            ->when(
-                $bookingId !== null,
-                fn ($q) => $q->whereHas('order', fn ($q2) => $q2
-                    ->where('metadata->legacy_origin', 'booking')
-                    ->where('metadata->legacy_booking_id', $bookingId))
-            )
+        return $this->buildScopedQuery($companyIds, $bookingId, $filters)
             ->orderBy('id')
             ->paginate($perPage);
     }

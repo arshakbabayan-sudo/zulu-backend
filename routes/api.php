@@ -539,6 +539,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/aggregate', [InvoiceController::class, 'aggregate']);
+    // Phase 7.6 — CSV export with same filters as index (from/to/status)
+    Route::get('invoices/export', [InvoiceController::class, 'exportCsv']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show']);
     Route::get('invoices/{invoice}/pdf', [InvoiceController::class, 'downloadPdf'])->whereNumber('invoice');
     Route::get('invoices/{invoice}/download', [InvoiceController::class, 'downloadPdf']);
