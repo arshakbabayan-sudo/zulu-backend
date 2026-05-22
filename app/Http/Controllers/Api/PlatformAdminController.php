@@ -450,7 +450,22 @@ class PlatformAdminController extends Controller
             $query->where('status', (string) $request->query('status'));
         }
 
-        // Phase 7.5 — `with_companies=1` filters to staff users only (Bucket-3 Employees view).
+        // Phase 6.4 — Type filter merges the previously-separate user views:
+        //  - "customers" = B2C (no company membership)
+        //  - "staff"     = operator/agent/admin (has company membership)
+        //  - "unverified" = pending email verification
+        $type = $request->filled('type') ? (string) $request->query('type') : null;
+        if ($type === 'customers') {
+            $query->whereDoesntHave('memberships');
+        } elseif ($type === 'staff') {
+            $query->whereHas('memberships');
+        } elseif ($type === 'unverified') {
+            $query->where(function ($q): void {
+                $q->where('status', 'pending')->orWhereNull('email_verified_at');
+            });
+        }
+
+        // Phase 7.5 — legacy `with_companies=1` shortcut (now superseded by type=staff).
         if ($request->boolean('with_companies')) {
             $query->whereHas('memberships');
         }
