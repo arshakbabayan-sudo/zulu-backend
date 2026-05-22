@@ -100,31 +100,148 @@ class CommissionController extends Controller
         ]);
     }
 
-    public function createPolicy(): JsonResponse
+    /**
+     * Phase 7.4 — create a seller-scoped commission rule from the admin UI.
+     * Super-admin or anyone with `commissions.write` on the target company.
+     */
+    public function createPolicy(Request $request): JsonResponse
     {
+        $actor = $request->user();
+        if ($actor === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'service_type' => ['nullable', 'string', 'max:64'],
+            'type' => ['required', 'string', 'in:percentage,fixed'],
+            'percent' => ['required_if:type,percentage', 'nullable', 'numeric', 'min:0', 'max:100'],
+            'fixed_value' => ['required_if:type,fixed', 'nullable', 'numeric', 'min:0'],
+            'fixed_currency' => ['nullable', 'string', 'size:3'],
+            'effective_from' => ['nullable', 'date'],
+            'effective_to' => ['nullable', 'date', 'after_or_equal:effective_from'],
+            'status' => ['nullable', 'string', 'in:active,inactive,scheduled'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $companyId = (int) $validated['company_id'];
+        if (! $this->adminAccessService->isSuperAdmin($actor)) {
+            $allowed = $this->adminAccessService->companyIdsForCommerceList($actor, 'commissions.write');
+            if (! in_array($companyId, $allowed, true)) {
+                return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+            }
+        }
+
+        $rule = CommissionRule::query()->create([
+            'type' => $validated['type'],
+            'level' => 'seller',
+            'scope_id' => $companyId,
+            'service_type' => $validated['service_type'] ?? null,
+            'percentage_value' => $validated['type'] === 'percentage' ? $validated['percent'] : null,
+            'fixed_value' => $validated['type'] === 'fixed' ? $validated['fixed_value'] : null,
+            'fixed_currency' => $validated['type'] === 'fixed' ? ($validated['fixed_currency'] ?? 'AMD') : null,
+            'direction' => 'zulu_from_seller',
+            'priority' => 0,
+            'effective_from' => $validated['effective_from'] ?? now(),
+            'effective_to' => $validated['effective_to'] ?? null,
+            'status' => $validated['status'] ?? 'active',
+            'active' => ($validated['status'] ?? 'active') === 'active',
+            'notes' => $validated['notes'] ?? null,
+            'created_by' => $actor->id,
+        ]);
+
         return response()->json([
-            'success' => false,
-            'message' => 'Commission rule write API is being rewritten as part of Sprint 12 admin UI overhaul. Use database-direct seeding for now.',
-            'code' => 'sprint_12_pending',
-        ], 501);
+            'success' => true,
+            'data' => $this->transformRuleToPolicyShape($rule),
+        ], 201);
     }
 
-    public function updatePolicy(string $ruleId): JsonResponse
+    /**
+     * Phase 7.4 — partial update on a commission rule.
+     */
+    public function updatePolicy(Request $request, string $ruleId): JsonResponse
     {
+        $actor = $request->user();
+        if ($actor === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $rule = CommissionRule::query()->findOrFail($ruleId);
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($actor, 'commissions.write');
+        if (! $this->adminAccessService->isSuperAdmin($actor) && ($rule->scope_id === null || ! in_array((int) $rule->scope_id, $companyIds, true))) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'service_type' => ['nullable', 'string', 'max:64'],
+            'percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'fixed_value' => ['nullable', 'numeric', 'min:0'],
+            'fixed_currency' => ['nullable', 'string', 'size:3'],
+            'effective_from' => ['nullable', 'date'],
+            'effective_to' => ['nullable', 'date'],
+            'status' => ['nullable', 'string', 'in:active,inactive,scheduled'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if (array_key_exists('service_type', $validated)) {
+            $rule->service_type = $validated['service_type'];
+        }
+        if (array_key_exists('percent', $validated) && $rule->type === 'percentage') {
+            $rule->percentage_value = $validated['percent'];
+        }
+        if (array_key_exists('fixed_value', $validated) && $rule->type === 'fixed') {
+            $rule->fixed_value = $validated['fixed_value'];
+        }
+        if (array_key_exists('fixed_currency', $validated)) {
+            $rule->fixed_currency = $validated['fixed_currency'];
+        }
+        if (array_key_exists('effective_from', $validated)) {
+            $rule->effective_from = $validated['effective_from'];
+        }
+        if (array_key_exists('effective_to', $validated)) {
+            $rule->effective_to = $validated['effective_to'];
+        }
+        if (array_key_exists('status', $validated)) {
+            $rule->status = $validated['status'];
+            $rule->active = $validated['status'] === 'active';
+        }
+        if (array_key_exists('notes', $validated)) {
+            $rule->notes = $validated['notes'];
+        }
+        $rule->save();
+
         return response()->json([
-            'success' => false,
-            'message' => 'Commission rule write API is being rewritten as part of Sprint 12 admin UI overhaul. Use database-direct seeding for now.',
-            'code' => 'sprint_12_pending',
-        ], 501);
+            'success' => true,
+            'data' => $this->transformRuleToPolicyShape($rule->fresh()),
+        ]);
     }
 
-    public function deactivatePolicy(string $ruleId): JsonResponse
+    /**
+     * Phase 7.4 — soft-deactivate (status='inactive', active=false). The row
+     * stays in the DB so historical commission_transactions keep their
+     * snapshot reference, but the rule no longer matches new bookings.
+     */
+    public function deactivatePolicy(Request $request, string $ruleId): JsonResponse
     {
+        $actor = $request->user();
+        if ($actor === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $rule = CommissionRule::query()->findOrFail($ruleId);
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($actor, 'commissions.write');
+        if (! $this->adminAccessService->isSuperAdmin($actor) && ($rule->scope_id === null || ! in_array((int) $rule->scope_id, $companyIds, true))) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $rule->status = 'inactive';
+        $rule->active = false;
+        $rule->save();
+
         return response()->json([
-            'success' => false,
-            'message' => 'Commission rule write API is being rewritten as part of Sprint 12 admin UI overhaul. Use database-direct seeding for now.',
-            'code' => 'sprint_12_pending',
-        ], 501);
+            'success' => true,
+            'data' => $this->transformRuleToPolicyShape($rule->fresh()),
+        ]);
     }
 
     /**
