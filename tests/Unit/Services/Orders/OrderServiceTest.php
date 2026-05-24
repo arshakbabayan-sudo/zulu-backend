@@ -88,7 +88,10 @@ class OrderServiceTest extends TestCase
 
         // Snapshot of pricing decision is persisted on the item.
         $snapshot = $item->service_snapshot;
-        $this->assertSame('phase_1_stub_b2c_markup', $snapshot['pricing']['engine']);
+        // C.2 — real resolver. Without a matching pricing_rules row the
+        // resolver falls back to the legacy 15% behaviour (preserves
+        // production semantics until C.5 ships the global seed row).
+        $this->assertSame('phase_1_fallback_legacy_b2c_markup', $snapshot['pricing']['engine']);
         $this->assertSame($this->offers['flight'], $snapshot['offer_id']);
     }
 
