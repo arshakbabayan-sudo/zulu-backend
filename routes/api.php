@@ -787,6 +787,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::patch('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'update']);
         Route::delete('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'destroy']);
 
+        // Phase 1 / Step D.2 — money flow terms CRUD (mirror pattern).
+        Route::get('money-flow-terms', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'index']);
+        Route::post('money-flow-terms', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'store']);
+        Route::patch('money-flow-terms/{moneyFlowTerm}', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'update']);
+        Route::delete('money-flow-terms/{moneyFlowTerm}', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'destroy']);
+
         // Visa application review queue (PART 16, Sprint 63)
         Route::get('visa-applications', [AdminVisaApplicationController::class, 'index']);
         Route::get('visa-applications/stats', [AdminVisaApplicationController::class, 'stats']);
