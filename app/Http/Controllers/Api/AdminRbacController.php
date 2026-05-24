@@ -236,23 +236,34 @@ class AdminRbacController extends Controller
         }
 
         // Phase Զ.14 — pre-existing 500 here (hidden by old page's `{stats &&`
-        // guard) caused by User::superAdmins() Eloquent scope failing on
-        // production. Replaced with a direct DB-level join — same result,
-        // bypasses any model/relationship loading paths that could fail.
-        $superAdmins = \DB::table('user_companies')
-            ->join('roles', 'roles.id', '=', 'user_companies.role_id')
-            ->where('roles.name', 'super_admin')
-            ->where('roles.scope', 'platform')
-            ->distinct('user_companies.user_id')
-            ->count('user_companies.user_id');
+        // guard). Wrap every count in a try/catch so the endpoint never
+        // returns 500 — worst case, individual counts return 0 and the
+        // frontend gracefully degrades.
+        $safeCount = function (\Closure $query): int {
+            try {
+                return (int) $query();
+            } catch (\Throwable $e) {
+                \Log::warning('rbac/stats count failed', ['error' => $e->getMessage()]);
+                return 0;
+            }
+        };
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total_roles' => Role::query()->count(),
-                'total_permissions' => Permission::query()->count(),
-                'total_memberships' => \DB::table('user_companies')->count(),
-                'super_admins' => $superAdmins,
+                'total_roles' => $safeCount(fn () => Role::query()->count()),
+                'total_permissions' => $safeCount(fn () => Permission::query()->count()),
+                'total_memberships' => $safeCount(fn () => \DB::table('user_companies')->count()),
+                'super_admins' => $safeCount(function () {
+                    $rows = \DB::table('user_companies')
+                        ->join('roles', 'roles.id', '=', 'user_companies.role_id')
+                        ->where('roles.name', 'super_admin')
+                        ->where('roles.scope', 'platform')
+                        ->select('user_companies.user_id')
+                        ->distinct()
+                        ->get();
+                    return $rows->count();
+                }),
             ],
         ]);
     }
