@@ -779,6 +779,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('rbac/matrix', [AdminRbacController::class, 'matrix']);
         Route::get('rbac/stats', [AdminRbacController::class, 'stats']);
 
+        // Phase 1 / Step D.1 — pricing rules CRUD + test panel.
+        // Super-admin only (Form Request authorize() + controller guard).
+        Route::get('pricing-rules', [\App\Http\Controllers\Api\PricingRuleController::class, 'index']);
+        Route::post('pricing-rules', [\App\Http\Controllers\Api\PricingRuleController::class, 'store']);
+        Route::post('pricing-rules/test', [\App\Http\Controllers\Api\PricingRuleController::class, 'test']);
+        Route::patch('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'update']);
+        Route::delete('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'destroy']);
+
         // Visa application review queue (PART 16, Sprint 63)
         Route::get('visa-applications', [AdminVisaApplicationController::class, 'index']);
         Route::get('visa-applications/stats', [AdminVisaApplicationController::class, 'stats']);

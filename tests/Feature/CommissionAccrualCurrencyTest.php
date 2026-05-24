@@ -24,7 +24,10 @@ class CommissionAccrualCurrencyTest extends TestCase
 
         $this->assertNotNull($transaction);
         $this->assertSame('EUR', $transaction->commission_currency);
-        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
+        // Phase 1 / B.4 — OrderService now applies the 15% markup
+        // server-side, so the order total = 115 (not 100). Commission
+        // resolver computes 10% * 115 = 11.5.
+        $this->assertEqualsWithDelta(11.50, (float) $transaction->commission_amount, 0.0001);
         $this->assertIsArray($transaction->snapshot);
         $this->assertSame('percentage', $transaction->snapshot['type'] ?? null);
         $this->assertEqualsWithDelta(10.0, (float) ($transaction->snapshot['percentage_value'] ?? 0), 0.0001);
@@ -38,7 +41,10 @@ class CommissionAccrualCurrencyTest extends TestCase
 
         $this->assertNotNull($transaction);
         $this->assertSame('AMD', $transaction->commission_currency);
-        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
+        // Phase 1 / B.4 — OrderService now applies the 15% markup
+        // server-side, so the order total = 115 (not 100). Commission
+        // resolver computes 10% * 115 = 11.5.
+        $this->assertEqualsWithDelta(11.50, (float) $transaction->commission_amount, 0.0001);
     }
 
     public function test_accrue_for_order_defaults_to_usd_when_missing(): void
@@ -52,7 +58,10 @@ class CommissionAccrualCurrencyTest extends TestCase
 
         $this->assertNotNull($transaction);
         $this->assertSame('USD', $transaction->commission_currency);
-        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
+        // Phase 1 / B.4 — OrderService now applies the 15% markup
+        // server-side, so the order total = 115 (not 100). Commission
+        // resolver computes 10% * 115 = 11.5.
+        $this->assertEqualsWithDelta(11.50, (float) $transaction->commission_amount, 0.0001);
     }
 
     public function test_accrue_for_order_normalizes_lowercase_currency_to_upper(): void
@@ -63,7 +72,10 @@ class CommissionAccrualCurrencyTest extends TestCase
 
         $this->assertNotNull($transaction);
         $this->assertSame('AMD', $transaction->commission_currency);
-        $this->assertEqualsWithDelta(10.00, (float) $transaction->commission_amount, 0.0001);
+        // Phase 1 / B.4 — OrderService now applies the 15% markup
+        // server-side, so the order total = 115 (not 100). Commission
+        // resolver computes 10% * 115 = 11.5.
+        $this->assertEqualsWithDelta(11.50, (float) $transaction->commission_amount, 0.0001);
     }
 
     private function createBookingForCurrencyCase(string $currency): Order
