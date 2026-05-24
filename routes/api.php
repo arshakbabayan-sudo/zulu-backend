@@ -778,6 +778,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('rbac/permissions', [AdminRbacController::class, 'permissions']);
         Route::get('rbac/matrix', [AdminRbacController::class, 'matrix']);
         Route::get('rbac/stats', [AdminRbacController::class, 'stats']);
+        // Phase Զ.13 — functional Role CRUD + matrix toggle (v2 redesign)
+        Route::post('rbac/roles', [AdminRbacController::class, 'storeRole']);
+        Route::patch('rbac/roles/{role}', [AdminRbacController::class, 'updateRole']);
+        Route::delete('rbac/roles/{role}', [AdminRbacController::class, 'destroyRole']);
+        Route::put('rbac/roles/{role}/permissions', [AdminRbacController::class, 'syncRolePermissions']);
 
         // Phase 1 / Step D.1 — pricing rules CRUD + test panel.
         // Super-admin only (Form Request authorize() + controller guard).

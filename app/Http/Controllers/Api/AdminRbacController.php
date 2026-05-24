@@ -48,6 +48,8 @@ class AdminRbacController extends Controller
             ->map(fn (Role $r) => [
                 'id' => $r->id,
                 'name' => $r->name,
+                'description' => $r->description,
+                'scope' => $r->scope,
                 'memberships_count' => $r->memberships_count ?? 0,
                 'permissions' => $r->permissions->map(fn (Permission $p) => [
                     'id' => $p->id,
@@ -56,6 +58,120 @@ class AdminRbacController extends Controller
             ]);
 
         return response()->json(['success' => true, 'data' => $roles]);
+    }
+
+    /** POST /api/platform-admin/rbac/roles */
+    public function storeRole(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $data = $request->validate([
+            'name' => 'required|string|max:64|regex:/^[a-z][a-z0-9_]*$/|unique:roles,name',
+            'description' => 'nullable|string|max:255',
+            'scope' => 'required|in:platform,company',
+            'permission_ids' => 'sometimes|array',
+            'permission_ids.*' => 'integer|exists:permissions,id',
+        ]);
+
+        $role = Role::create([
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+            'scope' => $data['scope'],
+        ]);
+
+        if (! empty($data['permission_ids'])) {
+            $role->permissions()->sync($data['permission_ids']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->serializeRole($role->fresh(['permissions'])),
+        ], 201);
+    }
+
+    /** PATCH /api/platform-admin/rbac/roles/{role} */
+    public function updateRole(Request $request, Role $role): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $data = $request->validate([
+            'description' => 'sometimes|nullable|string|max:255',
+            'scope' => 'sometimes|in:platform,company',
+        ]);
+
+        $role->fill($data)->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->serializeRole($role->fresh(['permissions'])),
+        ]);
+    }
+
+    /** DELETE /api/platform-admin/rbac/roles/{role} */
+    public function destroyRole(Request $request, Role $role): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        // Prevent deleting roles that still have user memberships — would
+        // orphan users with no role assignment. Caller must re-assign first.
+        $memberCount = $role->memberships()->count();
+        if ($memberCount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot delete role '{$role->name}' — it has {$memberCount} assigned member(s). Reassign them first.",
+            ], 422);
+        }
+
+        $role->permissions()->detach();
+        $role->delete();
+
+        return response()->json(['success' => true]);
+    }
+
+    /** PUT /api/platform-admin/rbac/roles/{role}/permissions
+     *
+     * Sync the permission set for a role. The request body must include
+     * a `permission_ids` array of permission IDs — anything not in the
+     * array is revoked.
+     */
+    public function syncRolePermissions(Request $request, Role $role): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $data = $request->validate([
+            'permission_ids' => 'required|array',
+            'permission_ids.*' => 'integer|exists:permissions,id',
+        ]);
+
+        $role->permissions()->sync($data['permission_ids']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->serializeRole($role->fresh(['permissions'])),
+        ]);
+    }
+
+    private function serializeRole(Role $role): array
+    {
+        return [
+            'id' => $role->id,
+            'name' => $role->name,
+            'description' => $role->description,
+            'scope' => $role->scope,
+            'memberships_count' => $role->memberships()->count(),
+            'permissions' => $role->permissions->map(fn (Permission $p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+            ])->values(),
+        ];
     }
 
     /** GET /api/platform-admin/rbac/permissions */
