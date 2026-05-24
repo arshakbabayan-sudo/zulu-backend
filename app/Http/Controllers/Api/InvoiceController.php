@@ -233,6 +233,46 @@ class InvoiceController extends Controller
         }
     }
 
+    /**
+     * Phase Զ.15 / Item 8 — bulk monthly statement PDF for one operator.
+     *
+     * GET /api/invoices/statement?company_id=42&month=2026-05
+     *
+     * Returns a single PDF listing every invoice for that operator in
+     * that month (matched against issued_at, falling back to created_at).
+     */
+    public function statement(Request $request, InvoicePdfService $pdfService): Response
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+        ]);
+
+        $companyId = (int) $data['company_id'];
+        $month = (string) $data['month'];
+
+        if ($response = $this->ensureCommerceAccess($request, $companyId, 'invoices.view')) {
+            return $response;
+        }
+
+        $company = \App\Models\Company::query()->findOrFail($companyId);
+
+        try {
+            return $pdfService->generateStatement($company, $month);
+        } catch (\Throwable $e) {
+            Log::warning('Invoice statement PDF failed', [
+                'error' => $e->getMessage(),
+                'company_id' => $companyId,
+                'month' => $month,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Statement generation failed',
+            ], 500);
+        }
+    }
+
     public function store(Request $request, InvoiceService $invoiceService): JsonResponse
     {
         $validated = $request->validate([
