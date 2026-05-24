@@ -235,17 +235,24 @@ class AdminRbacController extends Controller
             return $deny;
         }
 
+        // Phase Զ.14 — pre-existing 500 here (hidden by old page's `{stats &&`
+        // guard) caused by User::superAdmins() Eloquent scope failing on
+        // production. Replaced with a direct DB-level join — same result,
+        // bypasses any model/relationship loading paths that could fail.
+        $superAdmins = \DB::table('user_companies')
+            ->join('roles', 'roles.id', '=', 'user_companies.role_id')
+            ->where('roles.name', 'super_admin')
+            ->where('roles.scope', 'platform')
+            ->distinct('user_companies.user_id')
+            ->count('user_companies.user_id');
+
         return response()->json([
             'success' => true,
             'data' => [
                 'total_roles' => Role::query()->count(),
                 'total_permissions' => Permission::query()->count(),
                 'total_memberships' => \DB::table('user_companies')->count(),
-                // Phase 1 / B.1 — was `where('is_super_admin', true)`,
-                // which errored on a non-existent column. Replaced with
-                // the scopeSuperAdmins() query scope that joins via
-                // memberships.role on (name='super_admin', scope='platform').
-                'super_admins' => User::query()->superAdmins()->count(),
+                'super_admins' => $superAdmins,
             ],
         ]);
     }
