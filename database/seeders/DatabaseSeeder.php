@@ -19,6 +19,9 @@ class DatabaseSeeder extends Seeder
             WidgetSeeder::class,
             LocationSeeder::class,
             ProductsQaSeeder::class,
+            // Phase 1 / C.5 — pricing engine + money-flow defaults
+            // (idempotent; safe on prod re-run via `db:seed --class=PricingDefaultsSeeder`).
+            PricingDefaultsSeeder::class,
         ]);
     }
 }
