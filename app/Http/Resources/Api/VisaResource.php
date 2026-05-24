@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use Illuminate\Http\Request;
@@ -9,6 +10,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class VisaResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
@@ -36,9 +38,11 @@ class VisaResource extends JsonResource
             'name' => $this->getTranslated('name', $lang) ?? $this->name,
             'description' => $this->getTranslated('description', $lang) ?? $this->description,
             'required_documents' => self::requiredDocumentsAsArray($this->required_documents),
-            'visa_price' => $this->price,
-            'offer_price' => $offerPrice,
-            'price' => $offerPrice,
+            // Phase 1 / B.3 — all 3 price fields are supplier net; gate via trait.
+            // Visa's owning operator id flows through the linked Offer's company_id.
+            'visa_price' => $this->safeBasePrice($request, $this->price, $offer?->company_id),
+            'offer_price' => $this->safeBasePrice($request, $offerPrice, $offer?->company_id),
+            'price' => $this->safeBasePrice($request, $offerPrice, $offer?->company_id),
             'currency' => $offer?->currency ?? null,
             'status' => $offer?->status ?? null,
             'created_at' => $this->created_at?->toIso8601String(),

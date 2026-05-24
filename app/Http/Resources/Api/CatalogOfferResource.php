@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Offer;
 use App\Services\Pricing\PriceCalculatorService;
@@ -15,6 +16,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class CatalogOfferResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use ResolvesApiLanguage;
 
     /**
@@ -23,7 +25,13 @@ class CatalogOfferResource extends JsonResource
     public function toArray(Request $request): array
     {
         $b2cPrice = app(PriceCalculatorService::class)->b2cPrice($this->price ?? 0);
-        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->price, $this->currency);
+        // Phase 1 / B.3 — base_price visibility gated by trait.
+        $pricing = $this->safePricing(
+            $request,
+            $this->price,
+            $this->currency,
+            $this->resource->company_id ?? null
+        );
         $lang = $this->apiLang($request);
 
         return [

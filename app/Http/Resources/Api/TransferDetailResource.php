@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Transfer;
 use App\Services\Availability\AvailabilityNormalizerService;
@@ -16,6 +17,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class TransferDetailResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use ResolvesApiLanguage;
 
     /**
@@ -24,7 +26,10 @@ class TransferDetailResource extends JsonResource
     public function toArray(Request $request): array
     {
         $lang = $this->apiLang($request);
-        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->offer?->currency);
+        // Phase 1 / B.3 — base_price visibility gated by trait. Transfer
+        // belongs to a company directly (Transfer.company_id).
+        $ownerId = $this->resource->company_id ?? null;
+        $pricing = $this->safePricing($request, $this->base_price, $this->offer?->currency, $ownerId);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
             'available_from' => $this->availability_window_start ?? $this->service_date,
             'available_to' => $this->availability_window_end,
@@ -79,7 +84,7 @@ class TransferDetailResource extends JsonResource
             'child_seat_required_rule' => $this->child_seat_required_rule,
             'special_assistance_supported' => (bool) $this->special_assistance_supported,
             'pricing_mode' => $this->pricing_mode,
-            'base_price' => $this->base_price !== null ? (float) $this->base_price : null,
+            'base_price' => $this->safeBasePrice($request, $this->base_price, $ownerId),
             'pricing' => $pricing,
             'free_cancellation' => (bool) $this->free_cancellation,
             'cancellation_policy_type' => $this->cancellation_policy_type,

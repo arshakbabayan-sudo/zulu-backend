@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Flight;
 use App\Services\Availability\AvailabilityNormalizerService;
@@ -14,6 +15,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class FlightResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use ResolvesApiLanguage;
 
     /**
@@ -23,7 +25,10 @@ class FlightResource extends JsonResource
     {
         $lang = $this->apiLang($request);
         $base = $this->resource->toOfferEmbedArray();
-        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->adult_price, $this->offer?->currency);
+        // Phase 1 / B.3 — base_price visibility gated by trait. Flight
+        // belongs to a company directly (Flight.company_id).
+        $ownerId = $this->resource->company_id ?? null;
+        $pricing = $this->safePricing($request, $this->adult_price, $this->offer?->currency, $ownerId);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
             'available_from' => $this->departure_at,
             'available_to' => $this->arrival_at,
@@ -58,7 +63,8 @@ class FlightResource extends JsonResource
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
                 'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
-                'price' => $this->offer->price,
+                // Phase 1 / B.3 — nested offer.price gated.
+                'price' => $this->safeBasePrice($request, $this->offer->price, $this->offer->company_id ?? null),
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,
             ]),

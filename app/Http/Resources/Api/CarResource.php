@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Car;
@@ -18,6 +19,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class CarResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
@@ -27,8 +29,11 @@ class CarResource extends JsonResource
     public function toArray(Request $request): array
     {
         $lang = $this->apiLang($request);
+        // Phase 1 / B.3 — base_price visibility gated by trait. Car
+        // ownership flows through the linked Offer's company_id.
+        $ownerId = $this->offer?->company_id;
         $pricing = $this->base_price !== null
-            ? app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->offer?->currency)
+            ? $this->safePricing($request, $this->base_price, $this->offer?->currency, $ownerId)
             : null;
 
         $availability = app(AvailabilityNormalizerService::class)->normalize([
@@ -70,7 +75,7 @@ class CarResource extends JsonResource
             'availability_window_start' => $this->availability_window_start?->toIso8601String(),
             'availability_window_end' => $this->availability_window_end?->toIso8601String(),
             'pricing_mode' => $this->pricing_mode,
-            'base_price' => $this->base_price !== null ? (float) $this->base_price : null,
+            'base_price' => $this->safeBasePrice($request, $this->base_price, $ownerId),
             'pricing' => $pricing,
             'status' => $this->status,
             'availability_status' => $this->availability_status,

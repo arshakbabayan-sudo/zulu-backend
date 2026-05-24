@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Excursion;
@@ -13,6 +14,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class ExcursionResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
@@ -36,7 +38,8 @@ class ExcursionResource extends JsonResource
             'company_id' => $this->whenLoaded('offer', fn () => $this->offer !== null ? (int) $this->offer->company_id : null),
             // Convenience mirrors of commercial fields (same values as nested `offer`) for operator/inventory tables.
             'title' => $this->whenLoaded('offer', fn () => $this->offer !== null ? ($this->offer->getTranslated('title', $lang) ?? $this->offer->title) : null),
-            'price' => $this->whenLoaded('offer', fn () => $this->offer?->price !== null ? (float) $this->offer->price : null),
+            // Phase 1 / B.3 — offer-mirrored price gated by trait.
+            'price' => $this->whenLoaded('offer', fn () => $this->safeBasePrice($request, $this->offer?->price, $this->offer?->company_id)),
             'currency' => $this->whenLoaded('offer', fn () => $this->offer?->currency),
             'location' => $locationLabel,
             'location_id' => $this->location_id,
@@ -74,7 +77,7 @@ class ExcursionResource extends JsonResource
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
                 'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
-                'price' => $this->offer->price,
+                'price' => $this->safeBasePrice($request, $this->offer->price, $this->offer->company_id ?? null),
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,
             ]),

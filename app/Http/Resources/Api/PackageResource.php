@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Package;
 use App\Services\Availability\AvailabilityNormalizerService;
@@ -17,6 +18,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class PackageResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use ResolvesApiLanguage;
 
     /**
@@ -26,7 +28,10 @@ class PackageResource extends JsonResource
     {
         $lang = $this->apiLang($request);
         $componentsLoaded = $this->relationLoaded('components');
-        $pricing = app(PriceCalculatorService::class)->normalizedPrice($this->base_price, $this->currency);
+        // Phase 1 / B.3 — base_price visibility gated by trait. Package
+        // belongs to a company directly (Package.company_id).
+        $ownerId = $this->resource->company_id ?? null;
+        $pricing = $this->safePricing($request, $this->base_price, $this->currency, $ownerId);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
             'capacity' => $this->adults_count,
         ]);
@@ -47,7 +52,7 @@ class PackageResource extends JsonResource
             'adults_count' => $this->adults_count,
             'children_count' => $this->children_count,
             'infants_count' => $this->infants_count,
-            'base_price' => $this->base_price !== null ? (float) $this->base_price : null,
+            'base_price' => $this->safeBasePrice($request, $this->base_price, $ownerId),
             'display_price_mode' => $this->display_price_mode,
             'currency' => $this->currency,
             'pricing' => $pricing,
@@ -62,7 +67,9 @@ class PackageResource extends JsonResource
                 return [
                     'id' => $this->offer->id,
                     'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
-                    'price' => $this->offer->price !== null ? (float) $this->offer->price : null,
+                    // Phase 1 / B.3 — nested offer.price was leaking supplier net to unauth.
+                    // Use the trait's safeBasePrice() with the offer's own company_id.
+                    'price' => $this->safeBasePrice($request, $this->offer->price, $this->offer->company_id ?? null),
                     'currency' => $this->offer->currency,
                     'status' => $this->offer->status,
                 ];

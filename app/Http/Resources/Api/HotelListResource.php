@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api;
 
+use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\DerivesLocationLabels;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Hotel;
@@ -17,6 +18,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class HotelListResource extends JsonResource
 {
+    use AppliesPricingVisibility;
     use DerivesLocationLabels;
     use ResolvesApiLanguage;
 
@@ -55,7 +57,9 @@ class HotelListResource extends JsonResource
     {
         $lang = $this->apiLang($request);
         $minPricing = self::minimumActivePricing($this->resource);
-        $pricing = app(PriceCalculatorService::class)->normalizedPrice($minPricing['starting_price'], $minPricing['currency']);
+        // Phase 1 / B.3 — base_price visibility gated by trait.
+        $ownerId = $this->resource->company_id ?? null;
+        $pricing = $this->safePricing($request, $minPricing['starting_price'], $minPricing['currency'], $ownerId);
         $availability = app(AvailabilityNormalizerService::class)->normalize([
             'rooms' => $this->relationLoaded('rooms') ? $this->rooms->count() : null,
         ]);
@@ -106,7 +110,8 @@ class HotelListResource extends JsonResource
                 'company_id' => $this->offer->company_id,
                 'type' => $this->offer->type,
                 'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
-                'price' => $this->offer->price,
+                // Phase 1 / B.3 — nested offer.price gated.
+                'price' => $this->safeBasePrice($request, $this->offer->price, $this->offer->company_id ?? null),
                 'currency' => $this->offer->currency,
                 'status' => $this->offer->status,
             ]),
