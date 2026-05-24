@@ -40,11 +40,30 @@ class PricingRuleController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
-        if (! $request->user()?->is_super_admin) {
+        // Phase Զ.15 — Item 9. List is now readable by any platform-admin
+        // role (operator_admin / platform_admin / super_admin). Write paths
+        // (store/update/destroy) still gate via Form Request authorize() to
+        // super_admin only. Operators see global rules + rules scoped to
+        // their own company.
+        $user = $request->user();
+        if ($user === null) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
+        $isSuper = $user->is_super_admin;
         $query = PricingRule::query()->with(['operator:id,name', 'agent:id,name']);
+
+        if (! $isSuper) {
+            // Operators only see their own company's rules + platform-wide
+            // rules (global / category). They never see another operator's
+            // private rules or other partnerships.
+            $companyIds = $user->memberships()->pluck('company_id')->all();
+            $query->where(function ($q) use ($companyIds): void {
+                $q->whereIn('scope_type', ['global', 'category'])
+                  ->orWhereIn('operator_id', $companyIds)
+                  ->orWhereIn('agent_id', $companyIds);
+            });
+        }
 
         // Optional filters
         if ($scope = $request->query('scope_type')) {

@@ -792,6 +792,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::patch('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'update']);
         Route::delete('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'destroy']);
 
+        // Phase Զ.15 / Item 16-17 — manual FX rate admin CRUD.
+        Route::get('exchange-rates', [\App\Http\Controllers\Api\ExchangeRateController::class, 'index']);
+        Route::post('exchange-rates', [\App\Http\Controllers\Api\ExchangeRateController::class, 'store']);
+        Route::patch('exchange-rates/{exchangeRate}', [\App\Http\Controllers\Api\ExchangeRateController::class, 'update']);
+        Route::delete('exchange-rates/{exchangeRate}', [\App\Http\Controllers\Api\ExchangeRateController::class, 'destroy']);
+
         // Phase 1 / Step D.2 — money flow terms CRUD (mirror pattern).
         Route::get('money-flow-terms', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'index']);
         Route::post('money-flow-terms', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'store']);

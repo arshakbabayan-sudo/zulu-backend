@@ -20,7 +20,14 @@ use SimpleXMLElement;
  */
 class CbaRateProvider
 {
-    private const URL = 'https://api.cba.am/exchangerates.asmx/ExchangeRatesLatest';
+    // Phase Զ.15 — try the SOAP endpoint first, then the public XML
+    // dump as a fallback. The ASMX wrapper has been intermittently
+    // returning ASP.NET runtime error HTML in 2026; the .xml endpoint
+    // is the same data but more stable.
+    private const URLS = [
+        'https://api.cba.am/exchangerates.asmx/ExchangeRatesLatest',
+        'https://www.cba.am/_layouts/15/cba/main/exchangerates.xml',
+    ];
 
     /**
      * @return string|null  the rate with up to 6 decimals, or null if unavailable
@@ -34,18 +41,36 @@ class CbaRateProvider
             return '1.000000';
         }
 
-        try {
-            $response = Http::timeout(8)->get(self::URL);
-        } catch (\Throwable) {
+        $body = null;
+        foreach (self::URLS as $url) {
+            try {
+                $response = Http::timeout(6)->get($url);
+            } catch (\Throwable) {
+                continue;
+            }
+            if (! $response->successful()) {
+                continue;
+            }
+            $candidate = $response->body();
+            // Detect the ASP.NET runtime error page (returned with 200 OK
+            // sometimes) and skip — these don't contain valid <Rates>.
+            if (str_contains($candidate, 'Runtime Error') || str_contains($candidate, 'YSOD')) {
+                continue;
+            }
+            // Quick sanity: must contain an <ExchangeRate> or <Rate> tag.
+            if (! str_contains($candidate, '<ExchangeRate') && ! str_contains($candidate, '<Rate')) {
+                continue;
+            }
+            $body = $candidate;
+            break;
+        }
+
+        if ($body === null) {
             return null;
         }
 
-        if (! $response->successful()) {
-            return null;
-        }
-
         try {
-            $xml = new SimpleXMLElement($response->body());
+            $xml = new SimpleXMLElement($body);
         } catch (\Throwable) {
             return null;
         }
