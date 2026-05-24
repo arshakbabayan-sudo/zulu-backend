@@ -155,6 +155,15 @@ class CompanyController extends Controller
             ], 422);
         }
 
+        // Phase 1 / B.2 — scope whitelist. Even if the role name passes the
+        // COMPANY_ROLE_NAMES filter above, a platform-scoped role (e.g.
+        // operator_admin per the spec) cannot be granted by a non-super-admin
+        // caller. Fixes the audit §7 hole where any company-manager could
+        // assign platform-scoped roles via this endpoint.
+        if ($deny = $this->denyIfCannotGrantScope($caller, $role)) {
+            return $deny;
+        }
+
         $user = DB::transaction(function () use ($validated, $company, $role): User {
             $user = User::query()->create([
                 'name' => $validated['name'],
@@ -204,6 +213,21 @@ class CompanyController extends Controller
                 'success' => false,
                 'message' => 'Role not found',
             ], 422);
+        }
+
+        // Phase 1 / B.2 — scope whitelist (also enforced on addUser above).
+        // Prevents a company manager from PROMOTING someone to a platform-
+        // scoped role via the role-edit path.
+        $caller = $request->user();
+        if (! $this->callerCanGrantRole($caller, $company, $validated['role_name'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot grant a role higher than your own.',
+                'errors' => ['role_name' => ['Role rank exceeds your privilege ceiling.']],
+            ], 403);
+        }
+        if ($deny = $this->denyIfCannotGrantScope($caller, $role)) {
+            return $deny;
         }
 
         $membership = UserCompany::query()
@@ -698,5 +722,49 @@ class CompanyController extends Controller
         $callerRank = self::ROLE_RANK[$callerRoleName] ?? 0;
 
         return $callerRank >= $grantedRank;
+    }
+
+    /**
+     * Phase 1 / B.2 — RBAC scope whitelist.
+     *
+     * A platform-scoped role (roles.scope = 'platform') may only be granted
+     * by a super-admin caller. Returns a 403 JsonResponse when the caller
+     * cannot grant the target role's scope, or null when the grant is OK.
+     *
+     * NOTE: backend-only enforcement. The admin UI also hides platform-
+     * scoped roles for non-super viewers (Phase 0 sidebar work,
+     * zulu-admin-next /platform/rbac/page.tsx).
+     *
+     * @return JsonResponse|null  null when allowed; 403 response when denied
+     */
+    private function denyIfCannotGrantScope(?User $caller, Role $targetRole): ?JsonResponse
+    {
+        // Anonymous / no caller — let the upstream auth guard handle it.
+        if ($caller === null) {
+            return null;
+        }
+
+        // Company-scoped roles: anyone who passed the upstream guards can
+        // grant. The COMPANY_ROLE_NAMES allow-list + callerCanGrantRole
+        // privilege ceiling already restrict who can call here.
+        if (! $targetRole->isPlatformScoped()) {
+            return null;
+        }
+
+        // Platform-scoped roles: super-admin only.
+        if ($caller->is_super_admin) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'You cannot assign a platform-scoped role.',
+            'errors' => [
+                'role_name' => [sprintf(
+                    "Role '%s' is platform-scoped and may only be granted by a super-admin.",
+                    $targetRole->name
+                )],
+            ],
+        ], 403);
     }
 }
