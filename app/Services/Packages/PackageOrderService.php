@@ -163,14 +163,18 @@ class PackageOrderService
                 ],
                 $components->map(function ($component) use ($package, $currency): array {
                     $offer = $component->offer;
-                    $linePrice = $component->price_override ?? $offer->price;
                     $itemCurrency = $package->currency ?? $offer->currency ?? $currency;
 
+                    // Phase 1 / B.4 — caller no longer passes unit_price.
+                    // Pass offer_id + optional price_override (operator-
+                    // configured component override); resolver applies
+                    // markup uniformly.
                     return [
                         'item_type' => $component->module_type,
                         'item_id' => $this->resolveOfferItemId($offer, $component->module_type),
                         'package_id' => $package->id,
-                        'unit_price' => $linePrice,
+                        'offer_id' => $offer->id,
+                        'price_override' => $component->price_override,
                         'currency' => $itemCurrency,
                         'service_snapshot' => [
                             'legacy_offer_id' => $offer->id,

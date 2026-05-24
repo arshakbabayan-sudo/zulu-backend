@@ -292,11 +292,17 @@ class BookingService
                 $passengerData = $sharedPassengers;
             }
 
+            // Phase 1 / B.4 — caller no longer passes unit_price. Service
+            // resolves the price internally via PricingResolver from
+            // offer_id. The legacy `itemData.price` value (from the API
+            // request body) is IGNORED for security; the resolved price is
+            // authoritative. If frontends still send `price`, it's
+            // harmless — just no longer trusted.
             $payload[] = [
                 'item_type' => 'flight',
                 'item_id' => $flightId,
                 'currency' => $currency,
-                'unit_price' => (float) ($itemData['price'] ?? 0),
+                'offer_id' => (int) ($itemData['offer_id'] ?? 0),
                 'quantity' => 1,
                 'service_snapshot' => [
                     'legacy_offer_id' => (int) ($itemData['offer_id'] ?? 0),
