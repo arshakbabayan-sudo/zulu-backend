@@ -188,7 +188,7 @@ return new class extends Migration
 
         $now = now();
         $insertRows = array_map(fn ($r) => [
-            'lang' => $r[0],
+            'language_code' => $r[0],
             'key' => $r[1],
             'value' => $r[2],
             'created_at' => $now,
@@ -197,7 +197,7 @@ return new class extends Migration
 
         DB::table('ui_translations')->upsert(
             $insertRows,
-            ['lang', 'key'],
+            ['language_code', 'key'],
             ['value', 'updated_at']
         );
 
