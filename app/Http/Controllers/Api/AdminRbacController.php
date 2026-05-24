@@ -253,13 +253,13 @@ class AdminRbacController extends Controller
             'data' => [
                 'total_roles' => $safeCount(fn () => Role::query()->count()),
                 'total_permissions' => $safeCount(fn () => Permission::query()->count()),
-                'total_memberships' => $safeCount(fn () => \DB::table('user_companies')->count()),
+                'total_memberships' => $safeCount(fn () => \DB::table('user_company')->count()),
                 'super_admins' => $safeCount(function () {
-                    $rows = \DB::table('user_companies')
-                        ->join('roles', 'roles.id', '=', 'user_companies.role_id')
+                    $rows = \DB::table('user_company')
+                        ->join('roles', 'roles.id', '=', 'user_company.role_id')
                         ->where('roles.name', 'super_admin')
                         ->where('roles.scope', 'platform')
-                        ->select('user_companies.user_id')
+                        ->select('user_company.user_id')
                         ->distinct()
                         ->get();
                     return $rows->count();
