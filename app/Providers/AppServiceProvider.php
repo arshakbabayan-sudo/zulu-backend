@@ -6,6 +6,12 @@ use App\Models\Invoice;
 use App\Models\User;
 use App\Observers\InvoiceObserver;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Notifications\FirebasePushProvider;
+use App\Services\Notifications\NoopPushProvider;
+use App\Services\Notifications\NoopSmsProvider;
+use App\Services\Notifications\PushProvider;
+use App\Services\Notifications\SmsProvider;
+use App\Services\Notifications\TwilioSmsProvider;
 use App\Services\Packages\Saga\ComponentReserverRegistry;
 use App\Services\Packages\Saga\Reservers\AmadeusFlightReserver;
 use App\Services\Packages\Saga\Reservers\SupplierApiReserver;
@@ -47,6 +53,30 @@ class AppServiceProvider extends ServiceProvider
 
             return $registry;
         });
+
+        // Multi-channel notifications — bind interfaces to real providers
+        // when credentials are present, otherwise fall back to the Noop
+        // implementations so the bulk-send flow still completes.
+        $this->app->bind(SmsProvider::class, function () {
+            $sid = (string) config('services.twilio.sid', '');
+            $token = (string) config('services.twilio.token', '');
+            $from = (string) config('services.twilio.from', '');
+            if ($sid !== '') {
+                return new TwilioSmsProvider($sid, $token, $from);
+            }
+
+            return new NoopSmsProvider;
+        });
+
+        $this->app->bind(PushProvider::class, function () {
+            $projectId = (string) config('services.firebase.project_id', '');
+            $serverKey = config('services.firebase.server_key');
+            if ($projectId !== '') {
+                return new FirebasePushProvider($projectId, is_string($serverKey) ? $serverKey : null);
+            }
+
+            return new NoopPushProvider;
+        });
     }
 
     public function boot(): void
@@ -80,6 +110,18 @@ class AppServiceProvider extends ServiceProvider
                 return response()->json([
                     'success' => false,
                     'message' => 'Too many registration attempts. Please try again later.',
+                ], 429);
+            });
+        });
+
+        // Change password (authenticated): 5/min per user
+        RateLimiter::for('change-password', function (Request $request) {
+            return Limit::perMinute(5)->by(
+                $request->user()?->id ?: $request->ip()
+            )->response(function () {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many password-change attempts. Please try again in a minute.',
                 ], 429);
             });
         });

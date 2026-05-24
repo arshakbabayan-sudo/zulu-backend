@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Phase 7.7 — agent → operator special booking request.
@@ -54,5 +55,10 @@ class AgentOperatorRequest extends Model
     public function resolvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'resolved_by_user_id');
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(RequestMessage::class, 'request_id');
     }
 }

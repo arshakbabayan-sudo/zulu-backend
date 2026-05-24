@@ -61,6 +61,7 @@ use App\Http\Controllers\Api\DiscoveryController;
 use App\Http\Controllers\Api\EmailVerificationController;
 use App\Http\Controllers\Api\ErrorReportController;
 use App\Http\Controllers\Api\ExcursionController;
+use App\Http\Controllers\Api\FileAssetController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FlightController;
 use App\Http\Controllers\Api\FooterController;
@@ -237,6 +238,9 @@ Route::prefix('catalog')->middleware('throttle:api_public')->group(function () {
     Route::get('offers/{id}', [CatalogController::class, 'show'])->whereNumber('id');
     Route::get('offers', [CatalogController::class, 'offers']);
     Route::get('banners', [BannerController::class, 'index']);
+    // Phase Զ.16 / Item 13 — service-catalog items exposed to storefront
+    // search (e.g. meet-and-greet, luggage storage, late check-in).
+    Route::get('services', [ServiceCatalogController::class, 'publicSearch']);
 });
 
 // Storefront package detail + pricing (public; auth seller routes remain under auth:sanctum).
@@ -402,6 +406,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('agent-operator-requests', [AgentOperatorRequestController::class, 'store']);
     Route::get('agent-operator-requests/{id}', [AgentOperatorRequestController::class, 'show'])->whereNumber('id');
     Route::patch('agent-operator-requests/{id}/status', [AgentOperatorRequestController::class, 'updateStatus'])->whereNumber('id');
+    Route::get('agent-operator-requests/{id}/messages', [AgentOperatorRequestController::class, 'listMessages'])->whereNumber('id');
+    Route::post('agent-operator-requests/{id}/messages', [AgentOperatorRequestController::class, 'storeMessage'])->whereNumber('id');
 
     // Operator commission settings (Phase 6B — operator → agent split)
     Route::get('operator/commission-settings', [OperatorCommissionController::class, 'index']);
@@ -495,6 +501,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('account/saved-items', [AccountController::class, 'savedItems']);
     Route::post('account/saved-items', [AccountController::class, 'saveItem']);
     Route::delete('account/saved-items/{item}', [AccountController::class, 'removeSavedItem'])->whereNumber('item');
+
+    // Multi-device sessions (Sanctum tokens) + self-service password change.
+    Route::get('account/sessions', [AccountController::class, 'listSessions']);
+    Route::delete('account/sessions/{id}', [AccountController::class, 'revokeSession'])->whereNumber('id');
+    Route::post('account/change-password', [AccountController::class, 'changePassword'])
+        ->middleware('throttle:change-password');
 
     // GDPR — account deletion + data export
     Route::post('account/delete-request', [AccountController::class, 'requestDeletion']);
@@ -666,6 +678,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('notifications/paginated', [NotificationController::class, 'paginatedIndex']);
     Route::post('notifications/{notification}/read', [NotificationController::class, 'markRead'])->whereNumber('notification');
 
+    // File manager (Phase Ե, 2026-05-25) — Laravel default disk via FILESYSTEM_DISK.
+    Route::get('files', [FileAssetController::class, 'index']);
+    Route::post('files/upload', [FileAssetController::class, 'upload']);
+    Route::post('files/folder', [FileAssetController::class, 'createFolder']);
+    Route::get('files/storage-stats', [FileAssetController::class, 'storageStats']);
+    Route::get('files/{id}/download', [FileAssetController::class, 'download'])->whereNumber('id');
+    Route::delete('files/{id}', [FileAssetController::class, 'destroy'])->whereNumber('id');
+
     // I1 audit F-4: group-level platform-admin guard. The in-controller
     // denyUnlessPlatformAdmin() helpers remain in place as defence-in-depth.
     Route::prefix('platform-admin')->middleware('platform-admin')->group(function () {
@@ -703,6 +723,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('settings', [PlatformAdminController::class, 'getSettings']);
         Route::patch('settings/{key}', [PlatformAdminController::class, 'updateSetting']);
         Route::post('reviews/{review}/moderate', [ReviewController::class, 'moderateReview'])->whereNumber('review');
+        Route::get('users/stats', [PlatformAdminController::class, 'userStats']);
         Route::get('users', [PlatformAdminController::class, 'listUsers']);
         Route::get('customers', [PlatformAdminController::class, 'listCustomers']);
         Route::get('unverified-accounts', [PlatformAdminController::class, 'listUnverifiedAccounts']);

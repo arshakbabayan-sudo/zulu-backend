@@ -429,6 +429,42 @@ class PlatformAdminController extends Controller
 
     // ─── User Management ────────────────────────────────────────────
 
+    /**
+     * Phase Զ.16 — true platform-wide user stats for the Users page's 4
+     * stat cards (was current-page-only counts before).
+     *
+     * GET /api/platform-admin/users/stats
+     *   → { total, active_today, new_7d, pending_verification }
+     */
+    public function userStats(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $oneDayAgo = now()->subDay();
+        $sevenDaysAgo = now()->subDays(7);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'total' => User::query()->count(),
+                'active_today' => User::query()
+                    ->where('last_login_at', '>=', $oneDayAgo)
+                    ->count(),
+                'new_7d' => User::query()
+                    ->where('created_at', '>=', $sevenDaysAgo)
+                    ->count(),
+                'pending_verification' => User::query()
+                    ->where(function ($q): void {
+                        $q->where('status', 'pending')
+                            ->orWhereNull('email_verified_at');
+                    })
+                    ->count(),
+            ],
+        ]);
+    }
+
     public function listUsers(Request $request): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {

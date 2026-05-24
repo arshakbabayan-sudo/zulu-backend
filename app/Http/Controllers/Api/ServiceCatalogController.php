@@ -145,6 +145,55 @@ class ServiceCatalogController extends Controller
         return response()->json(['success' => true, 'data' => ['deleted_id' => $id]]);
     }
 
+    /**
+     * Phase Զ.16 / Item 13 — public storefront search for service-catalog
+     * items (meet-and-greet, luggage storage, late check-in, etc.).
+     *
+     * GET /api/catalog/services?search=&category=&company_id=&limit=
+     *
+     * Returns only `is_active=true` rows. Public endpoint — no auth.
+     */
+    public function publicSearch(Request $request): JsonResponse
+    {
+        $query = ServiceCatalogItem::query()
+            ->with('company:id,name')
+            ->where('is_active', true)
+            ->orderBy('name');
+
+        if ($request->filled('search')) {
+            $term = (string) $request->query('search');
+            $query->where(function ($q) use ($term): void {
+                $q->where('name', 'like', "%{$term}%")
+                    ->orWhere('description', 'like', "%{$term}%");
+            });
+        }
+        if ($request->filled('category')) {
+            $query->where('category', (string) $request->query('category'));
+        }
+        if ($request->filled('company_id')) {
+            $query->where('company_id', (int) $request->query('company_id'));
+        }
+
+        $limit = max(1, min(100, (int) $request->query('limit', 50)));
+
+        return response()->json([
+            'success' => true,
+            'data' => $query->limit($limit)->get()->map(fn ($r) => [
+                'id' => $r->id,
+                'name' => $r->name,
+                'description' => $r->description,
+                'category' => $r->category,
+                'unit_price' => $r->unit_price,
+                'currency' => $r->currency,
+                'unit' => $r->unit,
+                'company' => $r->company ? [
+                    'id' => $r->company->id,
+                    'name' => $r->company->name,
+                ] : null,
+            ])->all(),
+        ]);
+    }
+
     private function resolveOwned(Request $request, int $id): ?ServiceCatalogItem
     {
         $user = $request->user();

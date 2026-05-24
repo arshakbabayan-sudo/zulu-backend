@@ -62,6 +62,22 @@ return [
         'redirect' => env('FACEBOOK_REDIRECT_URI'),
     ],
 
+    // Twilio — SMS gateway. Empty by default; presence of `sid` flips
+    // SmsProvider binding from NoopSmsProvider to TwilioSmsProvider.
+    'twilio' => [
+        'sid' => env('TWILIO_ACCOUNT_SID'),
+        'token' => env('TWILIO_AUTH_TOKEN'),
+        'from' => env('TWILIO_FROM_NUMBER'),
+    ],
+
+    // Firebase Cloud Messaging — push gateway. Empty by default;
+    // presence of `project_id` flips PushProvider binding from
+    // NoopPushProvider to FirebasePushProvider.
+    'firebase' => [
+        'project_id' => env('FIREBASE_PROJECT_ID'),
+        'server_key' => env('FIREBASE_SERVER_KEY'),
+    ],
+
     'oauth' => [
         // Where to redirect the browser after a successful provider exchange.
         // The OAuthController will issue a Sanctum token and append it to a

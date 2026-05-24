@@ -7,13 +7,13 @@ use App\Http\Resources\Api\UserResource;
 use App\Models\AuditLog;
 use App\Models\DataExportRequest;
 use App\Models\SavedItem;
-use Illuminate\Support\Facades\Hash;
 use App\Services\Pricing\PriceCalculatorService;
 use App\Services\UserAccount\AccountDeletionService;
 use App\Services\UserAccount\DataExportService;
 use App\Services\UserAccount\UserAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -186,6 +186,130 @@ class AccountController extends Controller
         return response()->json([
             'success' => true,
             'data' => UserResource::make($user)->toArray($request),
+        ]);
+    }
+
+    // ─── Sessions (Sanctum personal access tokens) ─────────────────────
+
+    /**
+     * GET /api/account/sessions — list the current user's Sanctum tokens.
+     * Each row carries enough metadata to render a multi-device session
+     * list with a "(this device)" pill on the current token and a revoke
+     * button on the others.
+     */
+    public function listSessions(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $current = $request->user()->currentAccessToken();
+        $currentId = $current?->id;
+
+        $data = $user->tokens()
+            ->orderByDesc('last_used_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($t) => [
+                'id' => (int) $t->id,
+                'name' => (string) $t->name,
+                'last_used_at' => $t->last_used_at?->toIso8601String(),
+                'expires_at' => $t->expires_at?->toIso8601String(),
+                'created_at' => $t->created_at?->toIso8601String(),
+                'is_current' => $currentId !== null && (int) $t->id === (int) $currentId,
+            ])
+            ->values()
+            ->all();
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * DELETE /api/account/sessions/{id} — revoke a personal access token.
+     * Returns 422 when the caller tries to revoke their own current token
+     * (use sign-out instead).
+     */
+    public function revokeSession(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $current = $request->user()->currentAccessToken();
+        if ($current !== null && (int) $current->id === $id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot revoke the current session. Sign out instead.',
+            ], 422);
+        }
+
+        $token = $user->tokens()->whereKey($id)->first();
+        if ($token === null) {
+            return response()->json(['success' => false, 'message' => 'Session not found'], 404);
+        }
+
+        $token->delete();
+
+        return response()->json(['success' => true, 'data' => ['revoked_id' => $id]]);
+    }
+
+    // ─── Change password ────────────────────────────────────────────────
+
+    /**
+     * POST /api/account/change-password — verify current password, hash
+     * + persist the new one, then revoke every other Sanctum token so the
+     * other devices need to re-authenticate. The current token is kept so
+     * the caller's session survives the change.
+     *
+     * Rate-limit is enforced at the route via `throttle:5,1` (5/min/user).
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'new_password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        if (! Hash::check($validated['current_password'], (string) $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Current password is incorrect.',
+                'errors' => ['current_password' => ['Current password is incorrect.']],
+            ], 422);
+        }
+
+        if (Hash::check($validated['new_password'], (string) $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'New password must be different from the current password.',
+                'errors' => ['new_password' => ['New password must be different from the current password.']],
+            ], 422);
+        }
+
+        $user->password = $validated['new_password']; // hashed via cast
+        $user->save();
+
+        // Invalidate all OTHER tokens. Keep current so this session stays
+        // authenticated; user signs out / back in on other devices.
+        $currentId = $request->user()->currentAccessToken()?->id;
+        $query = $user->tokens();
+        if ($currentId !== null) {
+            $query->where('id', '!=', $currentId);
+        }
+        $revokedCount = $query->delete();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'revoked_other_sessions' => (int) $revokedCount,
+            ],
         ]);
     }
 

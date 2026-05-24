@@ -55,6 +55,48 @@ class FxConverter
         return bcmul($amount, $rate, 4);
     }
 
+    /**
+     * Phase Զ.16 / Item 18 — convert with a per-partnership FX premium.
+     *
+     * Looks up a row in fx_partnership_premiums for the (operator, agent,
+     * source, target) tuple and applies the premium_percent to the base
+     * rate before converting. Falls back to plain ::convert() if no row.
+     */
+    public function convertWithPartnership(
+        int $operatorId,
+        ?int $agentId,
+        string $amount,
+        string $source,
+        string $target,
+    ): ?string {
+        $source = strtoupper($source);
+        $target = strtoupper($target);
+
+        $baseRate = $this->rate($source, $target);
+        if ($baseRate === null) {
+            return null;
+        }
+
+        // Prefer agent-specific row; fall back to operator-wide (agent_id IS NULL).
+        $premium = \App\Models\FxPartnershipPremium::query()
+            ->where('operator_id', $operatorId)
+            ->where('source_currency', $source)
+            ->where('target_currency', $target)
+            ->where('is_active', true)
+            ->orderByRaw('CASE WHEN agent_id = ? THEN 0 WHEN agent_id IS NULL THEN 1 ELSE 2 END', [$agentId])
+            ->first();
+
+        if ($premium === null) {
+            return bcmul($amount, $baseRate, 4);
+        }
+
+        // Apply premium: rate * (1 + premium_percent / 100)
+        $multiplier = bcadd('1', bcdiv((string) $premium->premium_percent, '100', 6), 6);
+        $effectiveRate = bcmul($baseRate, $multiplier, 6);
+
+        return bcmul($amount, $effectiveRate, 4);
+    }
+
     private function lookupBestRate(string $source, string $target): ?string
     {
         $rows = ExchangeRate::query()

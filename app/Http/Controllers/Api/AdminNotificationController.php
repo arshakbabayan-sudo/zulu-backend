@@ -3,13 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendBulkNotificationJob;
 use App\Models\Notification;
 use App\Models\User;
 use App\Models\UserCompany;
 use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Platform-admin notification oversight (Sprint 59, PART 23).
@@ -151,6 +151,8 @@ class AdminNotificationController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'message' => ['required', 'string', 'max:5000'],
             'priority' => ['nullable', 'string', 'in:low,normal,high'],
+            'channels' => ['nullable', 'array'],
+            'channels.*' => ['string', 'in:in_app,email,sms,push'],
         ]);
 
         $userIds = $this->resolveBulkRecipients($validated);
@@ -161,30 +163,48 @@ class AdminNotificationController extends Controller
             ], 422);
         }
 
-        $now = now();
-        $rows = [];
-        foreach ($userIds as $uid) {
-            $rows[] = [
-                'user_id' => $uid,
-                'type' => 'admin_broadcast',
-                'title' => $validated['title'],
-                'message' => $validated['message'],
-                'status' => 'unread',
-                'event_type' => 'admin_broadcast',
-                'priority' => $validated['priority'] ?? 'normal',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-        }
+        $channels = $this->resolveChannels($validated['channels'] ?? null);
 
-        DB::table('notifications')->insert($rows);
+        SendBulkNotificationJob::dispatch(
+            $userIds,
+            $channels,
+            (string) $validated['title'],
+            (string) $validated['message'],
+            (string) ($validated['priority'] ?? 'normal'),
+        );
 
         return response()->json([
             'success' => true,
             'data' => [
                 'sent_count' => count($userIds),
+                'channels' => $channels,
             ],
         ]);
+    }
+
+    /**
+     * Normalise the channels selector. Empty / missing collapses to
+     * ['in_app'] so older clients (and the API contract pre-channels)
+     * keep delivering an in-app row by default.
+     *
+     * @param  mixed  $input
+     * @return list<string>
+     */
+    private function resolveChannels($input): array
+    {
+        $allowed = ['in_app', 'email', 'sms', 'push'];
+        if (! is_array($input) || $input === []) {
+            return ['in_app'];
+        }
+        $picked = array_values(array_unique(array_filter(
+            $input,
+            static fn ($c) => in_array($c, $allowed, true),
+        )));
+        if ($picked === []) {
+            return ['in_app'];
+        }
+
+        return $picked;
     }
 
     /** @param array<string, mixed> $validated @return list<int> */
@@ -199,6 +219,7 @@ class AdminNotificationController extends Controller
             if ($companyId <= 0) {
                 return [];
             }
+
             return UserCompany::query()
                 ->where('company_id', $companyId)
                 ->pluck('user_id')

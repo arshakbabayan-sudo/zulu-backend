@@ -23,6 +23,7 @@ class UserAccountService
             'avatar' => $user->avatar,
             'birth_date' => $user->birth_date?->format('Y-m-d'),
             'nationality' => $user->nationality,
+            'location' => $user->location,
             'status' => $user->status,
             'created_at' => $user->created_at?->toIso8601String(),
         ];
@@ -37,6 +38,7 @@ class UserAccountService
             'avatar' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'birth_date' => ['sometimes', 'nullable', 'date'],
             'nationality' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'location' => ['sometimes', 'nullable', 'string', 'max:120'],
         ])->validate();
 
         $user->fill($validated);

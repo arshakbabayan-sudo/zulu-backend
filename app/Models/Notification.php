@@ -50,6 +50,12 @@ class Notification extends Model
         'subject_id',
         'related_company_id',
         'priority',
+        'delivered_channels',
+    ];
+
+    /** @var array<string, string> */
+    protected $casts = [
+        'delivered_channels' => 'array',
     ];
 
     public function user(): BelongsTo

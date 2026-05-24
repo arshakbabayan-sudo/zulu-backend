@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AgentOperatorRequest;
-use App\Models\Company;
+use App\Models\RequestMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -152,6 +152,85 @@ class AgentOperatorRequestController extends Controller
             'success' => true,
             'data' => $this->serialize($row->fresh(['requester', 'requesterCompany', 'targetCompany', 'resolvedBy'])),
         ]);
+    }
+
+    /**
+     * GET /api/agent-operator-requests/{id}/messages
+     * Returns the thread of replies, oldest → newest.
+     */
+    public function listMessages(Request $request, int $id): JsonResponse
+    {
+        $row = $this->resolveVisible($request, $id);
+        if ($row === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $messages = RequestMessage::query()
+            ->with(['sender:id,name,email,avatar'])
+            ->where('request_id', $row->id)
+            ->orderBy('created_at')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $messages->map(fn ($m) => $this->serializeMessage($m))->all(),
+        ]);
+    }
+
+    /**
+     * POST /api/agent-operator-requests/{id}/messages
+     * Appends a reply to the thread.
+     */
+    public function storeMessage(Request $request, int $id): JsonResponse
+    {
+        $row = $this->resolveVisible($request, $id);
+        if ($row === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:10000'],
+        ]);
+
+        $message = RequestMessage::query()->create([
+            'request_id' => $row->id,
+            'sender_id' => $request->user()->id,
+            'body' => $validated['body'],
+        ]);
+
+        // Posting on a rejected/resolved request re-opens it so the
+        // conversation can continue, mirroring CasesController behavior.
+        if (in_array($row->status, ['resolved', 'rejected'], true)) {
+            $row->status = 'open';
+            $row->resolved_by_user_id = null;
+            $row->resolved_at = null;
+            $row->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->serializeMessage($message->fresh(['sender'])),
+        ], 201);
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeMessage(RequestMessage $m): array
+    {
+        return [
+            'id' => $m->id,
+            'request_id' => $m->request_id,
+            'body' => $m->body,
+            'sender' => $m->sender
+                ? [
+                    'id' => $m->sender->id,
+                    'name' => $m->sender->name,
+                    'email' => $m->sender->email,
+                    'avatar' => $m->sender->avatar,
+                ]
+                : null,
+            'created_at' => $m->created_at?->toIso8601String(),
+            'updated_at' => $m->updated_at?->toIso8601String(),
+        ];
     }
 
     private function resolveVisible(Request $request, int $id): ?AgentOperatorRequest

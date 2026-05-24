@@ -187,6 +187,29 @@ class OrderService
         $snapshotJson = $pricing->snapshotPayload;
         $snapshotJson['money_flow'] = $moneyFlow->snapshotPayload;
 
+        // Phase Զ.16 / Item 19 — agent-net split.
+        // When an order has an agent_company_id, the markup (customer - supplier)
+        // is split 50/50 by default between the operator and the agent:
+        //   agent_net    = supplier_net + (markup * 0.5)   // what agent owes operator
+        //   agent_margin = customer_paid - agent_net       // agent's profit slice
+        // No agent → both fields stay null.
+        $agentNet = null;
+        $agentMargin = null;
+        if ($order->agent_company_id !== null) {
+            $markup = $pricing->customerPrice - $pricing->supplierNet;
+            if ($markup > 0) {
+                // Default 50/50 split. Future enhancement: read agent_share_pct
+                // off a pricing-rule or partnership row.
+                $agentShare = 0.5;
+                $agentNet = round($pricing->supplierNet + ($markup * $agentShare), 2);
+                $agentMargin = round($pricing->customerPrice - $agentNet, 2);
+            } else {
+                // No markup → no margin for the agent either.
+                $agentNet = $pricing->supplierNet;
+                $agentMargin = 0.0;
+            }
+        }
+
         OrderPricingSnapshot::create([
             'order_id' => $order->id,
             'order_item_id' => $item->id,
@@ -201,9 +224,9 @@ class OrderService
             ),
             'zulu_markup_type' => $snapshotJson['rule']['markup_type']
                 ?? ($pricing->ruleIdApplied === null ? 'legacy' : 'percentage'),
-            'agent_net' => null,         // Phase 2: when agent-net split lands
+            'agent_net' => $agentNet,
             'customer_paid' => $pricing->customerPrice,
-            'agent_margin' => null,      // Phase 2
+            'agent_margin' => $agentMargin,
             'rule_id_applied' => $pricing->ruleIdApplied,
             'currency' => $pricing->currency,
             'snapshot_json' => $snapshotJson,
