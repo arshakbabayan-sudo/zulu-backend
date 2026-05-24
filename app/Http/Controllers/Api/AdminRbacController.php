@@ -125,7 +125,11 @@ class AdminRbacController extends Controller
                 'total_roles' => Role::query()->count(),
                 'total_permissions' => Permission::query()->count(),
                 'total_memberships' => \DB::table('user_companies')->count(),
-                'super_admins' => User::query()->where('is_super_admin', true)->count(),
+                // Phase 1 / B.1 — was `where('is_super_admin', true)`,
+                // which errored on a non-existent column. Replaced with
+                // the scopeSuperAdmins() query scope that joins via
+                // memberships.role on (name='super_admin', scope='platform').
+                'super_admins' => User::query()->superAdmins()->count(),
             ],
         ]);
     }

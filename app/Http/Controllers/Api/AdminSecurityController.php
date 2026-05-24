@@ -46,7 +46,13 @@ class AdminSecurityController extends Controller
 
         $query = UserTwoFactor::query()
             ->whereNotNull('confirmed_at')
-            ->with('user:id,name,email,role,is_super_admin')
+            // Phase 1 / B.1 — `is_super_admin` dropped from this column
+            // list (it was never a real DB column, just an accessor).
+            // Eager-load is_super_admin via the accessor by appending it
+            // to the user's serialized output instead.
+            ->with(['user' => function ($q): void {
+                $q->select(['id', 'name', 'email', 'role']);
+            }])
             ->orderByDesc('confirmed_at');
 
         if (is_string($q = $request->query('q')) && trim($q) !== '') {

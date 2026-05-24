@@ -6,6 +6,8 @@ use Database\Factories\UserFactory;
 use Illuminate\Auth\Passwords\CanResetPassword;
 use Illuminate\Contracts\Auth\CanResetPassword as CanResetPasswordContract;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -132,5 +134,68 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
     public function reviews(): HasMany
     {
         return $this->hasMany(Review::class);
+    }
+
+    // ─── Phase 1 / Step B.1 — is_super_admin computed accessor ──────────
+    //
+    // Background: `is_super_admin` was referenced across the codebase as
+    // if it were a real DB column (`$user->is_super_admin`,
+    // `User::where('is_super_admin', true)`). The column never existed.
+    // Eloquent magic returned NULL for property reads (silently falsy),
+    // and any SQL WHERE/SELECT clause errored at runtime. See Phase 1
+    // audit doc §6 for the inventory of call sites.
+    //
+    // Definition: a user is super-admin if they hold a role named
+    // `super_admin` with scope=`platform` via any of their company
+    // memberships (or via a future direct user-role pivot if added).
+    //
+    // For SQL contexts (controllers that ran WHERE/SELECT), use the
+    // scopeSuperAdmins() query scope below.
+
+    /**
+     * Computed: true if this user holds the platform-scoped super_admin
+     * role via any company membership.
+     *
+     * Caller can also write `$user->is_super_admin = true;` in test
+     * fixtures — the attribute setter writes to the in-memory attribute
+     * bag, mirroring the legacy "dynamic attr" pattern used in existing
+     * feature tests (see tests/Feature/AdminBulkNotificationTest.php).
+     */
+    protected function isSuperAdmin(): Attribute
+    {
+        return Attribute::make(
+            get: function (mixed $value, array $attributes): bool {
+                // Test fixtures may set the dynamic attr explicitly.
+                if (array_key_exists('is_super_admin', $attributes)) {
+                    return (bool) $attributes['is_super_admin'];
+                }
+
+                // Otherwise compute from role memberships.
+                if (! $this->exists) {
+                    return false;
+                }
+
+                return $this->memberships()
+                    ->whereHas('role', function (Builder $query): void {
+                        $query->where('name', 'super_admin')
+                            ->where('scope', Role::SCOPE_PLATFORM);
+                    })
+                    ->exists();
+            },
+            set: fn (mixed $value): array => ['is_super_admin' => (bool) $value],
+        );
+    }
+
+    /**
+     * Query scope replacing the broken `where('is_super_admin', true)`
+     * SQL clauses (audit doc §6). Returns users who hold the platform-
+     * scoped super_admin role via any company membership.
+     */
+    public function scopeSuperAdmins(Builder $query): Builder
+    {
+        return $query->whereHas('memberships.role', function (Builder $roleQuery): void {
+            $roleQuery->where('name', 'super_admin')
+                ->where('scope', Role::SCOPE_PLATFORM);
+        });
     }
 }
