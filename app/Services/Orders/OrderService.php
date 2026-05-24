@@ -4,6 +4,10 @@ namespace App\Services\Orders;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderPricingSnapshot;
+use App\Services\Payments\DTOs\MoneyFlowResolutionResult;
+use App\Services\Payments\MoneyFlowResolver;
+use App\Services\Pricing\DTOs\PricingResolutionResult;
 use App\Services\Pricing\PricingResolver;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -12,6 +16,7 @@ class OrderService
 {
     public function __construct(
         private PricingResolver $pricingResolver,
+        private MoneyFlowResolver $moneyFlowResolver,
     ) {}
 
     /**
@@ -103,7 +108,15 @@ class OrderService
             $resolvedByIndex[$idx] = $this->pricingResolver->resolve($offerId, $quantity, $buyerContext);
         }
 
-        return DB::transaction(function () use ($orderData, $itemsData, $resolvedByIndex): Order {
+        // Resolve money flow once for the whole order (it depends on the
+        // order-level operator/agent/buyer triple, not on individual items).
+        $moneyFlow = $this->moneyFlowResolver->resolve([
+            'operator_id' => $orderData['company_id'] ?? null,
+            'agent_company_id' => $orderData['agent_company_id'] ?? null,
+            'buyer_type' => $orderData['buyer_type'] ?? 'client',
+        ]);
+
+        return DB::transaction(function () use ($orderData, $itemsData, $resolvedByIndex, $moneyFlow): Order {
             $subtotal = 0.0;
             foreach ($resolvedByIndex as $resolved) {
                 $subtotal += $resolved->lineTotal();
@@ -132,7 +145,9 @@ class OrderService
                     continue;
                 }
 
-                $idByIndex[$idx] = $this->createItem($order, $item, $resolvedByIndex[$idx], null)->id;
+                $createdItem = $this->createItem($order, $item, $resolvedByIndex[$idx], null);
+                $idByIndex[$idx] = $createdItem->id;
+                $this->writeSnapshot($order, $createdItem, $resolvedByIndex[$idx], $moneyFlow);
             }
 
             foreach ($itemsData as $idx => $item) {
@@ -145,11 +160,55 @@ class OrderService
                         "itemsData[{$idx}].parent_index points to a non-top-level item - only one level of nesting is supported."
                     );
 
-                $idByIndex[$idx] = $this->createItem($order, $item, $resolvedByIndex[$idx], $parentUuid)->id;
+                $createdItem = $this->createItem($order, $item, $resolvedByIndex[$idx], $parentUuid);
+                $idByIndex[$idx] = $createdItem->id;
+                $this->writeSnapshot($order, $createdItem, $resolvedByIndex[$idx], $moneyFlow);
             }
 
             return $order->fresh(['items']);
         });
+    }
+
+    /**
+     * Phase 1 / Step F — persist the immutable pricing snapshot for an
+     * order item into the dedicated `order_pricing_snapshots` table.
+     *
+     * The full resolver payloads (pricing + money-flow) are merged into
+     * snapshot_json so finance audits can reconstruct exactly how the
+     * line price was computed, including which rule won at which scope
+     * level and the FX rate (if any) used.
+     */
+    private function writeSnapshot(
+        Order $order,
+        OrderItem $item,
+        PricingResolutionResult $pricing,
+        MoneyFlowResolutionResult $moneyFlow,
+    ): void {
+        $snapshotJson = $pricing->snapshotPayload;
+        $snapshotJson['money_flow'] = $moneyFlow->snapshotPayload;
+
+        OrderPricingSnapshot::create([
+            'order_id' => $order->id,
+            'order_item_id' => $item->id,
+            'offer_id' => $pricing->offerId,
+            'supplier_net' => $pricing->supplierNet,
+            // Markup VALUE recorded matches what the rule applied: for
+            // percentage rules it's the % (e.g. 15), for fixed it's the
+            // added amount. Resolver knows; snapshot stores both.
+            'zulu_markup_value' => (string) (
+                ($snapshotJson['rule']['markup_value'] ?? null)
+                ?? ($pricing->customerPrice - $pricing->supplierNet)
+            ),
+            'zulu_markup_type' => $snapshotJson['rule']['markup_type']
+                ?? ($pricing->ruleIdApplied === null ? 'legacy' : 'percentage'),
+            'agent_net' => null,         // Phase 2: when agent-net split lands
+            'customer_paid' => $pricing->customerPrice,
+            'agent_margin' => null,      // Phase 2
+            'rule_id_applied' => $pricing->ruleIdApplied,
+            'currency' => $pricing->currency,
+            'snapshot_json' => $snapshotJson,
+            'created_at' => now(),
+        ]);
     }
 
     /**
