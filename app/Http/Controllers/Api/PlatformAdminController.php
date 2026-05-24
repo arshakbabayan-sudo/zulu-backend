@@ -1145,6 +1145,7 @@ class PlatformAdminController extends Controller
             'status' => $user->status,
             'created_at' => $user->created_at?->toIso8601String(),
             'updated_at' => $user->updated_at?->toIso8601String(),
+            'last_login_at' => $user->last_login_at?->toIso8601String(),
             'companies' => $user->companies->map(fn ($c) => [
                 'id' => $c->id,
                 'name' => $c->name,

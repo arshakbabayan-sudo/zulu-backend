@@ -93,6 +93,7 @@ class UserResource extends JsonResource
             'intended_role' => $user->intended_role ?? null,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
+            'last_login_at' => $user->last_login_at,
             'roles' => $roleNames,
             'canonical_roles' => $canonicalRoles,
             'canonical_role' => $canonicalRole,

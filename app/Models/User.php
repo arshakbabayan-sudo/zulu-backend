@@ -70,6 +70,7 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
             'password' => 'hashed',
             'birth_date' => 'date',
             'pin_set_at' => 'datetime',

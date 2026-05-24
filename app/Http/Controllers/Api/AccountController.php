@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
+use App\Models\AuditLog;
 use App\Models\DataExportRequest;
 use App\Models\SavedItem;
 use Illuminate\Support\Facades\Hash;
@@ -24,6 +25,55 @@ class AccountController extends Controller
         return response()->json([
             'success' => true,
             'data' => UserResource::make($request->user())->toArray($request),
+        ]);
+    }
+
+    /**
+     * Phase Զ.15 / Item 15 follow-up — recent activity for the current
+     * user. Powers /admin-redesign/profile activity chart + recent list.
+     *
+     * Returns audit log entries where actor_id = the authenticated user,
+     * plus a 29-day daily histogram for the bar chart.
+     */
+    public function activity(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $limit = max(1, min(50, (int) $request->query('limit', 10)));
+
+        $recent = AuditLog::query()
+            ->where('actor_id', $user->id)
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get(['id', 'category', 'action', 'subject_type', 'subject_id', 'created_at']);
+
+        // 29-day daily histogram for the activity bar chart.
+        $since = now()->subDays(28)->startOfDay();
+        $byDay = AuditLog::query()
+            ->where('actor_id', $user->id)
+            ->where('created_at', '>=', $since)
+            ->selectRaw("date_trunc('day', created_at) as day, count(*) as c")
+            ->groupBy('day')
+            ->pluck('c', 'day');
+
+        $histogram = [];
+        for ($i = 28; $i >= 0; $i--) {
+            $day = now()->subDays($i)->startOfDay();
+            $key = $day->format('Y-m-d 00:00:00');
+            $altKey = $day->format('Y-m-d 00:00:00+00');
+            $count = (int) ($byDay->get($key) ?? $byDay->get($altKey) ?? 0);
+            $histogram[] = $count;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'recent' => $recent,
+                'histogram' => $histogram,
+            ],
         ]);
     }
 

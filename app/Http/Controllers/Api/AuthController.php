@@ -52,12 +52,16 @@ class AuthController extends Controller
 
         $token = $user->createToken('api', ['*'], $expiresAt)->plainTextToken;
 
+        // Phase Զ.15 — record last_login_at so "Active today" stat card
+        // + profile "Last seen" row can light up.
+        $user->forceFill(['last_login_at' => now()])->saveQuietly();
+
         return response()->json([
             'success' => true,
             'data' => [
                 'token' => $token,
                 'expires_at' => $expiresAt->toIso8601String(),
-                'user' => UserResource::make($user)->toArray($request),
+                'user' => UserResource::make($user->refresh())->toArray($request),
             ],
         ]);
     }

@@ -339,6 +339,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodesStatus']);
 
     // Per-user PIN for sensitive admin actions (Phase 7.14)
+    Route::get('account/activity', [AccountController::class, 'activity']);
     Route::get('account/pin', [AccountController::class, 'pinStatus']);
     Route::post('account/pin', [AccountController::class, 'setPin'])->middleware('throttle:10,1');
     Route::post('account/pin/verify', [AccountController::class, 'verifyPin'])->middleware('throttle:10,1');
