@@ -118,3 +118,12 @@ Schedule::command('accounts:purge-expired-data-exports')
     ->dailyAt('01:30')
     ->withoutOverlapping()
     ->onOneServer();
+
+// Phase 1 / Step C.4 — daily FX refresh. Pulls USD/EUR/RUB/GBP ↔ AMD and
+// cross pairs from CBA (primary) → ECB → exchangerate-api fallback chain.
+// Non-zero exit only when EVERY pair fails (rare; partial failures stay
+// silent and log via the per-provider Log::warning).
+Schedule::command('fx:refresh --quiet-success')
+    ->dailyAt('02:00')
+    ->withoutOverlapping()
+    ->onOneServer();
