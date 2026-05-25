@@ -581,6 +581,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     Route::get('payments', [PaymentController::class, 'index']);
     Route::get('payments/{payment}', [PaymentController::class, 'show']);
+    Route::get('payments/{payment}/receipt-pdf', [PaymentController::class, 'receiptPdf'])->whereNumber('payment');
     Route::post('payments', [PaymentController::class, 'store']);
     Route::post('payments/{payment}/pay', [PaymentController::class, 'pay']);
     Route::post('payments/{payment}/capture', [PaymentController::class, 'capture']);

@@ -188,6 +188,35 @@ class PaymentController extends Controller
         ]);
     }
 
+    /**
+     * Finance group v2 — payment receipt PDF download.
+     *
+     * Returns a generated PDF (`receipt-{id}-{ref}.pdf`) for the given payment.
+     * Visible to: super admin, the operator company on the linked invoice's
+     * order, or the customer who owns the order. All others get 403.
+     */
+    public function receiptPdf(
+        Request $request,
+        Payment $payment,
+        \App\Services\Pdf\PaymentReceiptPdfService $pdfService
+    ): \Illuminate\Http\Response {
+        $payment->loadMissing('invoice.order');
+        $user = $request->user();
+        $orderCompanyId = $payment->invoice?->order?->company_id;
+        $orderUserId = $payment->invoice?->order?->user_id;
+
+        $allowed = $user !== null && (
+            ($user->is_super_admin ?? false)
+            || ($orderCompanyId !== null && $this->ensureCommerceAccess($request, (int) $orderCompanyId, 'payments.view') === null)
+            || ($orderUserId !== null && (int) $user->id === (int) $orderUserId)
+        );
+        if (! $allowed) {
+            abort(403, 'Forbidden');
+        }
+
+        return $pdfService->generate($payment);
+    }
+
     public function refund(Request $request, PaymentService $paymentService, Payment $payment): JsonResponse
     {
         $payment->loadMissing('invoice.order');
