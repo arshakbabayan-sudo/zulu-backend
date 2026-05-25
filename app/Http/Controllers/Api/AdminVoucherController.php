@@ -95,6 +95,43 @@ class AdminVoucherController extends Controller
     }
 
     /**
+     * Finance group v2 — Phase 2e (Item 4.1).
+     *
+     * POST /api/platform-admin/vouchers
+     *
+     * Admin-side manual voucher issue. Used for compensation, gifts, and
+     * one-off cases outside the normal booking flow. Generates a voucher
+     * with `ADM-` prefix and status='issued'.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'service_type' => ['required', 'string', 'in:'.implode(',', Voucher::SERVICE_TYPES)],
+            'holder_name' => ['required', 'string', 'max:255'],
+            'holder_passport' => ['nullable', 'string', 'max:64'],
+            'language' => ['nullable', 'string', 'in:hy,en,ru'],
+            'valid_from' => ['nullable', 'date'],
+            'valid_to' => ['nullable', 'date', 'after_or_equal:valid_from'],
+            'issuer_company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'order_id' => ['nullable', 'integer', 'exists:orders,id'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+            'amount' => ['nullable', 'numeric', 'min:0'],
+            'currency' => ['nullable', 'string', 'size:3'],
+        ]);
+
+        $voucher = $this->voucherService->createManual($validated, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => $voucher,
+        ], 201);
+    }
+
+    /**
      * POST /api/platform-admin/vouchers/{voucher}/void
      * Marks the voucher void (e.g., after refund / cancellation).
      */

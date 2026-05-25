@@ -925,6 +925,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // Vouchers (PART 09)
         Route::get('vouchers', [AdminVoucherController::class, 'index']);
+        Route::post('vouchers', [AdminVoucherController::class, 'store']);
         Route::get('vouchers/{voucher}', [AdminVoucherController::class, 'show'])
             ->where('voucher', '[0-9a-f-]{36}');
         Route::post('vouchers/{voucher}/void', [AdminVoucherController::class, 'void'])

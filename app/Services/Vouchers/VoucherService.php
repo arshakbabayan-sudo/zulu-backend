@@ -209,6 +209,79 @@ class VoucherService
      *
      * @param  array<string, mixed>  $overrides  fillable Voucher fields to override
      */
+    /**
+     * Finance group v2 — Phase 2e (Item 4.1).
+     *
+     * Admin-side manual voucher issue. Used for compensation, gifts, and
+     * one-off cases outside the normal booking → confirmed → voucher flow.
+     *
+     * The voucher number gets an `ADM-` prefix to distinguish from
+     * order-derived vouchers (e.g. `ADM-2026-0042`).
+     *
+     * @param  array{
+     *     service_type: string,
+     *     holder_name: string,
+     *     holder_passport?: ?string,
+     *     language?: string,
+     *     valid_from?: ?string,
+     *     valid_to?: ?string,
+     *     issuer_company_id?: ?int,
+     *     order_id?: ?int,
+     *     notes?: ?string,
+     *     amount?: ?float,
+     *     currency?: ?string,
+     *  }  $payload
+     */
+    public function createManual(array $payload, ?\App\Models\User $issuingAdmin = null): Voucher
+    {
+        return DB::transaction(function () use ($payload, $issuingAdmin): Voucher {
+            $year = now()->format('Y');
+            $seq = (int) Voucher::query()
+                ->where('voucher_number', 'like', "ADM-{$year}-%")
+                ->count() + 1;
+            $voucherNumber = sprintf('ADM-%s-%04d', $year, $seq);
+
+            $voucher = Voucher::query()->create([
+                'voucher_number' => $voucherNumber,
+                'order_id' => $payload['order_id'] ?? null,
+                'order_item_id' => null,
+                'service_type' => $payload['service_type'],
+                'issuer_company_id' => $payload['issuer_company_id'] ?? null,
+                'holder_name' => $payload['holder_name'],
+                'holder_passport' => $payload['holder_passport'] ?? null,
+                'passenger_data' => null,
+                'service_snapshot' => [
+                    'manual_issue' => true,
+                    'issued_by_admin_id' => $issuingAdmin?->id,
+                    'notes' => $payload['notes'] ?? null,
+                    'amount' => isset($payload['amount']) ? (float) $payload['amount'] : null,
+                    'currency' => $payload['currency'] ?? null,
+                ],
+                'qr_token' => $this->generateQrToken(),
+                'status' => 'issued',
+                'language' => $payload['language'] ?? 'en',
+                'valid_from' => $payload['valid_from'] ?? null,
+                'valid_to' => $payload['valid_to'] ?? null,
+            ]);
+
+            $this->audit()->log([
+                'category' => 'data_change',
+                'subject_type' => 'Voucher',
+                'subject_id' => (string) $voucher->id,
+                'action' => 'manual_issued',
+                'context' => [
+                    'voucher_number' => $voucher->voucher_number,
+                    'service_type' => $voucher->service_type,
+                    'holder_name' => $voucher->holder_name,
+                    'issued_by_admin_id' => $issuingAdmin?->id,
+                    'reason' => $payload['notes'] ?? null,
+                ],
+            ]);
+
+            return $voucher;
+        });
+    }
+
     public function reissue(Voucher $original, array $overrides = []): Voucher
     {
         return DB::transaction(function () use ($original, $overrides): Voucher {
