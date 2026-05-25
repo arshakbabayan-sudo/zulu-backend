@@ -275,6 +275,110 @@ class FinanceStatsController extends Controller
     }
 
     /**
+     * GET /platform-admin/finance/revenue-by-service?range=30d
+     *
+     * Powers the Finance summary "Revenue by service" widget. Returns the
+     * sum of paid payments grouped by the linked offer's service type
+     * (hotel / flight / transfer / car / excursion / visa / package).
+     * Computed by walking payments → invoice → order → orderItems → offer.
+     *
+     * Returns:
+     *   [{ service: "hotel", amount: 64280.5, pct: 43.3 }, ...]
+     */
+    public function revenueByService(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $range = (string) $request->query('range', '30d');
+        $rangeStart = $this->rangeStart($range);
+
+        $data = Cache::remember("platform_revenue_by_service_{$range}", 120, function () use ($rangeStart) {
+            // Join chain: payments → invoices → orders → order_items → offers
+            // We aggregate by offers.service_type (or the offer.offerable_type
+            // fallback when service_type is null on legacy rows).
+            if (! Schema::hasTable('order_items') || ! Schema::hasTable('offers')) {
+                return [];
+            }
+
+            $rows = DB::table('payments')
+                ->join('invoices', 'invoices.id', '=', 'payments.invoice_id')
+                ->join('orders', 'orders.id', '=', 'invoices.order_id')
+                ->join('order_items', 'order_items.order_id', '=', 'orders.id')
+                ->leftJoin('offers', 'offers.id', '=', 'order_items.offer_id')
+                ->where('payments.status', Payment::STATUS_PAID)
+                ->where('payments.paid_at', '>=', $rangeStart)
+                ->selectRaw('COALESCE(offers.service_type, order_items.item_type, ?) AS service, SUM(order_items.total) AS amount', ['other'])
+                ->groupBy('service')
+                ->orderByDesc('amount')
+                ->get();
+
+            $total = $rows->sum('amount');
+            if ($total <= 0) {
+                return [];
+            }
+
+            return $rows->map(function ($r) use ($total) {
+                return [
+                    'service' => (string) $r->service,
+                    'amount' => (float) $r->amount,
+                    'pct' => round(((float) $r->amount / $total) * 100, 1),
+                ];
+            })->values()->toArray();
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * GET /platform-admin/finance/payment-methods?range=30d
+     *
+     * Powers the Finance summary "Payment methods" widget. Sums paid amounts
+     * grouped by payments.payment_method.
+     *
+     * Returns:
+     *   { total: 148000, breakdown: [{ method: "bank_transfer", amount: 71000, pct: 48.0 }, ...] }
+     */
+    public function paymentMethods(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $range = (string) $request->query('range', '30d');
+        $rangeStart = $this->rangeStart($range);
+
+        $data = Cache::remember("platform_payment_methods_{$range}", 120, function () use ($rangeStart) {
+            $rows = DB::table('payments')
+                ->where('status', Payment::STATUS_PAID)
+                ->where('paid_at', '>=', $rangeStart)
+                ->selectRaw('COALESCE(payment_method, ?) AS method, SUM(amount) AS amount', ['unknown'])
+                ->groupBy('method')
+                ->orderByDesc('amount')
+                ->get();
+
+            $total = (float) $rows->sum('amount');
+            if ($total <= 0) {
+                return ['total' => 0.0, 'breakdown' => []];
+            }
+
+            return [
+                'total' => $total,
+                'breakdown' => $rows->map(function ($r) use ($total) {
+                    return [
+                        'method' => (string) $r->method,
+                        'amount' => (float) $r->amount,
+                        'pct' => round(((float) $r->amount / $total) * 100, 1),
+                    ];
+                })->values()->toArray(),
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
      * GET /platform-admin/finance-summary/v2?range=30d
      *
      * Extends the existing /platform-admin/finance-summary endpoint with
