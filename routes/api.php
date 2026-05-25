@@ -62,6 +62,7 @@ use App\Http\Controllers\Api\EmailVerificationController;
 use App\Http\Controllers\Api\ErrorReportController;
 use App\Http\Controllers\Api\ExcursionController;
 use App\Http\Controllers\Api\FileAssetController;
+use App\Http\Controllers\Api\GoogleDriveAuthController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FinanceStatsController;
 use App\Http\Controllers\Api\FlightController;
@@ -158,6 +159,13 @@ Route::prefix('auth/oauth')->group(function (): void {
     Route::get('{provider}/callback', [OAuthController::class, 'callback'])
         ->whereIn('provider', ['google', 'facebook']);
 });
+
+// Phase Է, 2026-05-25 — Google Drive OAuth callback.
+// Stays OUTSIDE auth:sanctum because the browser comes back without
+// auth headers. The state parameter (HMAC-signed company_id + user_id +
+// nonce) is what binds the callback to the original initiator; the
+// controller verifies that signature before persisting tokens.
+Route::get('auth/google-drive/callback', [GoogleDriveAuthController::class, 'callback']);
 
 $registerPublicDiscoveryRoutes = static function (): void {
     Route::get('search', [DiscoveryController::class, 'search'])->name('search');
@@ -690,6 +698,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('files/storage-stats', [FileAssetController::class, 'storageStats']);
     Route::get('files/{id}/download', [FileAssetController::class, 'download'])->whereNumber('id');
     Route::delete('files/{id}', [FileAssetController::class, 'destroy'])->whereNumber('id');
+
+    // Phase Է, 2026-05-25 — per-tenant Google Drive OAuth + connection status.
+    // Redirect/callback are GET (browser flow), status is GET, disconnect is DELETE.
+    // All four routes inherit auth:sanctum from the surrounding group.
+    Route::get('auth/google-drive/redirect', [GoogleDriveAuthController::class, 'redirect']);
+    Route::get('companies/{company}/google-drive/status', [GoogleDriveAuthController::class, 'status'])->whereNumber('company');
+    Route::delete('companies/{company}/google-drive', [GoogleDriveAuthController::class, 'disconnect'])->whereNumber('company');
 
     // I1 audit F-4: group-level platform-admin guard. The in-controller
     // denyUnlessPlatformAdmin() helpers remain in place as defence-in-depth.

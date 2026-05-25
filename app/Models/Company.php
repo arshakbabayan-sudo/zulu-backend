@@ -55,6 +55,24 @@ class Company extends Model
         'archived_at',
         'archived_by_user_id',
         'archived_reason',
+        // Phase Է — per-tenant Google Drive integration
+        'google_access_token',
+        'google_refresh_token',
+        'google_token_expires_at',
+        'google_drive_folder_id',
+        'google_drive_connected_at',
+        'google_drive_connected_email',
+    ];
+
+    /**
+     * Token columns are NEVER serialized to API responses — even an admin
+     * fetching a company row must not see another tenant's bearer.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'google_access_token',
+        'google_refresh_token',
     ];
 
     protected function casts(): array
@@ -66,7 +84,26 @@ class Company extends Model
             'profile_completed' => 'boolean',
             'seller_activated_at' => 'datetime',
             'archived_at' => 'datetime',
+            // Phase Է — token columns encrypted at rest. DB dumps + replica
+            // exports won't leak usable Google bearers.
+            'google_access_token' => 'encrypted',
+            'google_refresh_token' => 'encrypted',
+            'google_token_expires_at' => 'integer',
+            'google_drive_connected_at' => 'datetime',
         ];
+    }
+
+    /**
+     * True if this company has finished the Drive OAuth flow and has a
+     * root folder ID we can write into. Used by FileAssetController to
+     * gate uploads (per the user decision 2026-05-25: block upload until
+     * Drive is connected, do not fall back to local disk).
+     */
+    public function hasGoogleDriveConnected(): bool
+    {
+        return $this->google_refresh_token !== null
+            && $this->google_drive_folder_id !== null
+            && $this->google_drive_folder_id !== '';
     }
 
     /** Active (non-archived) companies — used in default admin listings. */

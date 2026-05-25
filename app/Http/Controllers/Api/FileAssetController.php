@@ -3,10 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\FileAsset;
+use App\Services\GoogleDrive\GoogleDriveException;
+use App\Services\GoogleDrive\GoogleDriveService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -43,6 +48,8 @@ class FileAssetController extends Controller
         'msi', 'scr', 'cpl', 'pif', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh',
         'ps1', 'psm1', 'jar',
     ];
+
+    public function __construct(private readonly GoogleDriveService $drive) {}
 
     /** GET /api/files?folder=/&company_id=N */
     public function index(Request $request): JsonResponse
@@ -110,6 +117,24 @@ class FileAssetController extends Controller
             ], 422);
         }
 
+        // ─── Phase Է, 2026-05-25 ────────────────────────────────────
+        // Multi-tenant Google Drive routing: when a company is in scope,
+        // the file MUST go into that company's own Google Drive. We do
+        // NOT fall back to local disk if Drive isn't connected — per
+        // user decision, the upload is hard-blocked until an admin
+        // links Drive. Personal/super-admin uploads (no company_id)
+        // continue to use the legacy local/S3 disk path.
+        if ($companyId !== null) {
+            return $this->uploadToCompanyDrive(
+                $request,
+                (int) $companyId,
+                $uploaded,
+                $folder,
+                $visibility,
+                $ext
+            );
+        }
+
         $disk = (string) config('filesystems.default', 'local');
         $stamp = now()->format('Ymd_His');
         $safeName = Str::slug(pathinfo($uploaded->getClientOriginalName(), PATHINFO_FILENAME), '_')
@@ -150,6 +175,78 @@ class FileAssetController extends Controller
         ], 201);
     }
 
+    /**
+     * Upload onto a company's own Google Drive. Returns 422 with
+     * `code: drive_not_connected` when the company hasn't linked Drive
+     * — the frontend surfaces a "Connect Google Drive" prompt to the
+     * company admin in that case.
+     */
+    private function uploadToCompanyDrive(
+        Request $request,
+        int $companyId,
+        UploadedFile $uploaded,
+        string $folder,
+        string $visibility,
+        string $ext
+    ): JsonResponse {
+        $company = Company::query()->find($companyId);
+        if ($company === null) {
+            return response()->json(['success' => false, 'message' => 'Company not found'], 404);
+        }
+
+        if (! $company->hasGoogleDriveConnected()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'drive_not_connected',
+                'message' => 'Google Drive is not connected for this company. A company admin must connect it before files can be uploaded.',
+            ], 422);
+        }
+
+        try {
+            $driveResult = $this->drive->uploadFile($company, $uploaded, $folder);
+        } catch (GoogleDriveException $e) {
+            Log::warning('Google Drive upload failed', [
+                'company_id' => $companyId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'code' => 'drive_upload_failed',
+                'message' => 'Failed to upload to Google Drive: '.$e->getMessage(),
+            ], 502);
+        }
+
+        $safeName = Str::slug(pathinfo($uploaded->getClientOriginalName(), PATHINFO_FILENAME), '_')
+            ?: 'file';
+
+        $asset = FileAsset::create([
+            'uploaded_by' => $request->user()->id,
+            'company_id' => $companyId,
+            'folder' => $folder,
+            'filename' => $uploaded->getClientOriginalName() ?: 'file',
+            'mime_type' => $uploaded->getMimeType() ?: 'application/octet-stream',
+            'size_bytes' => $driveResult['size'] > 0 ? $driveResult['size'] : ($uploaded->getSize() ?: 0),
+            'disk' => 'google_drive',
+            'path' => '', // empty for Drive-hosted; drive_file_id is the locator
+            'drive_file_id' => $driveResult['id'],
+            'drive_web_view_link' => $driveResult['web_view_link'],
+            'visibility' => $visibility,
+            'metadata' => [
+                'original_name' => $uploaded->getClientOriginalName(),
+                'extension' => $ext,
+                'uploaded_via' => 'admin-file-manager',
+                'safe_slug' => $safeName,
+                'storage_backend' => 'google_drive',
+            ],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->toRow($asset),
+        ], 201);
+    }
+
     /** GET /api/files/{id}/download */
     public function download(Request $request, int $id): StreamedResponse|JsonResponse
     {
@@ -160,6 +257,50 @@ class FileAssetController extends Controller
 
         if (! $this->userCanAccess($request->user(), $asset)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        // Drive-hosted file → stream bytes through the service. We still
+        // gate via the same userCanAccess() visibility rules above so
+        // a Drive file can't be sniffed by a non-member.
+        if ($asset->drive_file_id !== null && $asset->drive_file_id !== '') {
+            $company = $asset->company_id !== null ? Company::query()->find($asset->company_id) : null;
+            if ($company === null || ! $company->hasGoogleDriveConnected()) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'drive_not_connected',
+                    'message' => 'Owning company has disconnected Drive — file is unreachable',
+                ], 410);
+            }
+
+            try {
+                $payload = $this->drive->downloadFile($company, (string) $asset->drive_file_id);
+            } catch (GoogleDriveException $e) {
+                Log::warning('Google Drive download failed', [
+                    'asset_id' => $asset->id,
+                    'company_id' => $company->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'code' => 'drive_download_failed',
+                    'message' => $e->getMessage(),
+                ], 502);
+            }
+
+            $stream = $payload['stream'];
+            $filename = $asset->filename;
+            $mime = $payload['mime_type'] !== '' ? $payload['mime_type'] : $asset->mime_type;
+
+            return response()->stream(function () use ($stream): void {
+                while (! feof($stream)) {
+                    echo fread($stream, 8192);
+                }
+                fclose($stream);
+            }, 200, [
+                'Content-Type' => $mime,
+                'Content-Disposition' => 'attachment; filename="'.addslashes($filename).'"',
+            ]);
         }
 
         $disk = Storage::disk($asset->disk);
@@ -190,10 +331,18 @@ class FileAssetController extends Controller
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
-        try {
-            Storage::disk($asset->disk)->delete($asset->path);
-        } catch (\Throwable $e) {
-            // We still soft-delete the row even if the bytes are already gone.
+        // Drive-hosted file → best-effort delete from Drive then soft-delete row.
+        if ($asset->drive_file_id !== null && $asset->drive_file_id !== '') {
+            $company = $asset->company_id !== null ? Company::query()->find($asset->company_id) : null;
+            if ($company !== null && $company->hasGoogleDriveConnected()) {
+                $this->drive->deleteFile($company, (string) $asset->drive_file_id);
+            }
+        } else {
+            try {
+                Storage::disk($asset->disk)->delete($asset->path);
+            } catch (\Throwable $e) {
+                // We still soft-delete the row even if the bytes are already gone.
+            }
         }
 
         $asset->delete();
@@ -319,6 +468,7 @@ class FileAssetController extends Controller
                     $q->where('company_id', $companyIdHint)->orWhereNull('company_id');
                 });
             }
+
             return;
         }
 
@@ -356,6 +506,7 @@ class FileAssetController extends Controller
         if ($asset->company_id !== null && $user->belongsToCompany((int) $asset->company_id)) {
             return true;
         }
+
         return false;
     }
 
@@ -377,6 +528,7 @@ class FileAssetController extends Controller
             explode('/', $folder),
             fn ($s) => $s !== '' && $s !== '..' && $s !== '.'
         ));
+
         return '/'.implode('/', $segments);
     }
 
@@ -442,6 +594,8 @@ class FileAssetController extends Controller
             'size_bytes' => (int) $f->size_bytes,
             'visibility' => $f->visibility,
             'metadata' => $f->metadata,
+            'storage_backend' => ($f->drive_file_id !== null && $f->drive_file_id !== '') ? 'google_drive' : 'local',
+            'drive_web_view_link' => $f->drive_web_view_link,
             'created_at' => optional($f->created_at)->toIso8601String(),
             'updated_at' => optional($f->updated_at)->toIso8601String(),
         ];

@@ -88,4 +88,36 @@ return [
         'failure_path' => env('OAUTH_FAILURE_PATH', '/login'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Google Drive (multi-tenant — Phase Է, 2026-05-25)
+    |--------------------------------------------------------------------------
+    |
+    | DELIBERATELY SEPARATE from the `google` block above (which is the
+    | Socialite social-login client with scopes openid+profile+email).
+    | Drive requires `https://www.googleapis.com/auth/drive.file` plus
+    | `access_type=offline` + `prompt=consent` to get a refresh token,
+    | which would worsen the login UX if reused for sign-in.
+    |
+    | Credentials are issued from the zuluspin26@gmail.com Google Cloud
+    | project (Authorized redirect URIs MUST list both
+    | http://127.0.0.1:8000/api/auth/google-drive/callback (local dev)
+    | and https://api.zulu.am/api/auth/google-drive/callback (prod) —
+    | Google checks the exact string).
+    |
+    | `drive.file` (not `drive`) scope means we can only see/edit files
+    | our own app created — we cannot read the user's existing Drive
+    | contents. This is the right tenant-isolation default.
+    */
+    'google_drive' => [
+        'client_id' => env('GOOGLE_DRIVE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_DRIVE_CLIENT_SECRET'),
+        'redirect_uri' => env('GOOGLE_DRIVE_REDIRECT_URI'),
+        'root_folder_name' => env('GOOGLE_DRIVE_ROOT_FOLDER', 'ZULU_Spin_Files'),
+        // After successful Drive connection the controller bounces back
+        // to {frontend host}/settings/integrations?google_drive=connected.
+        // Reuses oauth.allowed_frontend_hosts for the host allow-list.
+        'success_path' => env('GOOGLE_DRIVE_SUCCESS_PATH', '/admin/settings/integrations'),
+    ],
+
 ];

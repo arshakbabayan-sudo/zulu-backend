@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 /**
  * file_assets row — see 2026_05_25_000010_create_file_assets_table migration
@@ -21,11 +22,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $size_bytes
  * @property string $disk
  * @property string $path
+ * @property string|null $drive_file_id
+ * @property string|null $drive_web_view_link
  * @property string $visibility
  * @property array<string,mixed>|null $metadata
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property Carbon|null $deleted_at
  */
 class FileAsset extends Model
 {
@@ -47,6 +50,9 @@ class FileAsset extends Model
         'size_bytes',
         'disk',
         'path',
+        // Phase Է — Drive-hosted file locator (null = local/S3-hosted)
+        'drive_file_id',
+        'drive_web_view_link',
         'visibility',
         'metadata',
     ];
@@ -72,6 +78,7 @@ class FileAsset extends Model
     public function mimeBucket(): string
     {
         $prefix = strtok($this->mime_type ?? '', '/') ?: 'other';
+
         return match ($prefix) {
             'image', 'video', 'audio', 'text', 'application' => $prefix,
             default => 'other',
