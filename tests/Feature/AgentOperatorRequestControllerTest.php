@@ -163,6 +163,91 @@ class AgentOperatorRequestControllerTest extends TestCase
         $this->assertNotNull($row->fresh()->resolved_at);
     }
 
+    public function test_list_and_store_messages_thread(): void
+    {
+        $agent = $this->makeCompany('agent');
+        $operator = $this->makeCompany('operator');
+        $agentUser = $this->makeUserForCompany($agent);
+        $operatorUser = $this->makeUserForCompany($operator);
+
+        $row = AgentOperatorRequest::query()->create([
+            'requester_user_id' => $agentUser->id,
+            'requester_company_id' => $agent->id,
+            'target_company_id' => $operator->id,
+            'subject' => 'Need help',
+            'body' => 'Original message body',
+            'status' => 'open',
+        ]);
+
+        // Empty thread initially.
+        Sanctum::actingAs($agentUser);
+        $this->getJson("/api/agent-operator-requests/{$row->id}/messages")
+            ->assertOk()
+            ->assertJsonPath('data', []);
+
+        // Agent posts first reply.
+        $this->postJson("/api/agent-operator-requests/{$row->id}/messages", [
+            'body' => 'Adding more context',
+        ])->assertCreated()->assertJsonPath('data.body', 'Adding more context');
+
+        // Operator posts second reply.
+        Sanctum::actingAs($operatorUser);
+        $this->postJson("/api/agent-operator-requests/{$row->id}/messages", [
+            'body' => 'We are on it',
+        ])->assertCreated();
+
+        // Both replies show, oldest first.
+        $list = $this->getJson("/api/agent-operator-requests/{$row->id}/messages")->assertOk()->json('data');
+        $this->assertCount(2, $list);
+        $this->assertSame('Adding more context', $list[0]['body']);
+        $this->assertSame('We are on it', $list[1]['body']);
+        $this->assertSame($operatorUser->id, $list[1]['sender']['id']);
+    }
+
+    public function test_outsider_cannot_read_or_post_messages(): void
+    {
+        $agent = $this->makeCompany('agent');
+        $operator = $this->makeCompany('operator');
+        $row = AgentOperatorRequest::query()->create([
+            'requester_user_id' => $this->makeUser()->id,
+            'requester_company_id' => $agent->id,
+            'target_company_id' => $operator->id,
+            'subject' => 'X',
+            'body' => 'Y',
+            'status' => 'open',
+        ]);
+
+        Sanctum::actingAs($this->makeUser());
+
+        $this->getJson("/api/agent-operator-requests/{$row->id}/messages")->assertStatus(404);
+        $this->postJson("/api/agent-operator-requests/{$row->id}/messages", ['body' => 'x'])->assertStatus(404);
+    }
+
+    public function test_replying_reopens_resolved_request(): void
+    {
+        $agent = $this->makeCompany('agent');
+        $operator = $this->makeCompany('operator');
+        $agentUser = $this->makeUserForCompany($agent);
+
+        $row = AgentOperatorRequest::query()->create([
+            'requester_user_id' => $agentUser->id,
+            'requester_company_id' => $agent->id,
+            'target_company_id' => $operator->id,
+            'subject' => 'X',
+            'body' => 'Y',
+            'status' => 'resolved',
+            'resolved_at' => now(),
+        ]);
+
+        Sanctum::actingAs($agentUser);
+        $this->postJson("/api/agent-operator-requests/{$row->id}/messages", ['body' => 'Wait, one more thing'])
+            ->assertCreated();
+
+        $row->refresh();
+        $this->assertSame('open', $row->status);
+        $this->assertNull($row->resolved_at);
+    }
+
     public function test_show_returns_404_for_non_party_user(): void
     {
         $agent = $this->makeCompany('agent');
