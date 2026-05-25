@@ -355,6 +355,45 @@ class InvoiceController extends Controller
     }
 
     /**
+     * Finance group v2 — Phase 2d.
+     *
+     * Sends a reminder email + in-app notification for an overdue invoice.
+     * The expensive work (mailer + notification create) runs async via
+     * SendInvoiceReminderJob, so the endpoint returns immediately.
+     *
+     * Throttling: rejects with 429 if last_reminder_sent_at is within the
+     * last 24 hours, so admins can't accidentally spam the customer by
+     * double-clicking the button.
+     */
+    public function sendReminder(Request $request, Invoice $invoice): JsonResponse
+    {
+        $companyId = $this->resolveInvoiceCommerceCompanyId($invoice);
+        if ($companyId === null) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+        if ($response = $this->ensureCommerceAccess($request, (int) $companyId, 'invoices.send_reminder')) {
+            return $response;
+        }
+
+        // Throttle: 24h cooldown per invoice.
+        if ($invoice->last_reminder_sent_at !== null
+            && $invoice->last_reminder_sent_at->gt(now()->subHours(24))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A reminder was already sent in the last 24 hours.',
+                'last_reminder_sent_at' => $invoice->last_reminder_sent_at->toIso8601String(),
+            ], 429);
+        }
+
+        \App\Jobs\SendInvoiceReminderJob::dispatch($invoice->id);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Reminder queued for delivery.',
+        ]);
+    }
+
+    /**
      * Booking-backed invoices use booking.company_id; order-backed invoices use order.company_id.
      */
     private function resolveInvoiceCommerceCompanyId(Invoice $invoice): ?int

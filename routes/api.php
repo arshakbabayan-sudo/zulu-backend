@@ -578,6 +578,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('invoices/{invoice}/issue', [InvoiceController::class, 'issue']);
     Route::post('invoices/{invoice}/pay', [InvoiceController::class, 'pay']);
     Route::post('invoices/{invoice}/cancel', [InvoiceController::class, 'cancel']);
+    Route::post('invoices/{invoice}/send-reminder', [InvoiceController::class, 'sendReminder']);
 
     Route::get('payments', [PaymentController::class, 'index']);
     Route::get('payments/{payment}', [PaymentController::class, 'show']);

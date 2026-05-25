@@ -56,6 +56,8 @@ class Invoice extends Model
         'supplier_id',
         'order_source',
         'promo_code',
+        // Finance group v2 — Phase 2d
+        'last_reminder_sent_at',
     ];
 
     protected function casts(): array
@@ -78,6 +80,7 @@ class Invoice extends Model
             'adults_count' => 'integer',
             'children_count' => 'integer',
             'cancellation_without_penalty' => 'boolean',
+            'last_reminder_sent_at' => 'datetime',
         ];
     }
 
