@@ -728,6 +728,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('finance-summary/v2', [FinanceStatsController::class, 'summaryV2']);
         Route::get('finance/revenue-by-service', [FinanceStatsController::class, 'revenueByService']);
         Route::get('finance/payment-methods', [FinanceStatsController::class, 'paymentMethods']);
+        Route::get('finance/recent-transactions', [FinanceStatsController::class, 'recentTransactions']);
         Route::get('packages', [PlatformAdminController::class, 'packages']);
         Route::post('packages/{package}/deactivate', [PlatformAdminController::class, 'deactivatePackage'])->whereNumber('package');
         Route::get('packages/{package}/homepage-features', [PlatformAdminController::class, 'listPackageHomepageFeatures'])->whereNumber('package');

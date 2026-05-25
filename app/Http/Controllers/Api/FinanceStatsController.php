@@ -275,6 +275,157 @@ class FinanceStatsController extends Controller
     }
 
     /**
+     * GET /platform-admin/finance/recent-transactions?limit=10
+     *
+     * Powers the Finance summary "Recent transactions" card. Unified feed
+     * mixing payment-in, commission, refund, voucher-issued, payout.
+     * Sorted by occurred_at DESC.
+     *
+     * Returns an array of:
+     *   { id: "TX-PAY-2841", type: "payment_in", amount: 1240, currency: "USD",
+     *     company: { id, name }, when: "2026-05-25T16:42:00Z", status: "settled" }
+     *
+     * Implementation note: rather than a UNION query (which is fragile under
+     * Postgres column-type coercion), we fetch each kind capped at `limit`
+     * separately and merge in PHP. Result is the top `limit` overall.
+     */
+    public function recentTransactions(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $limit = (int) $request->query('limit', 10);
+        $limit = max(1, min($limit, 50));
+
+        $data = Cache::remember("platform_recent_transactions_{$limit}", 30, function () use ($limit) {
+            $rows = collect();
+
+            // ── Payments (payment_in / refund) ─────────────────────────────
+            $payments = DB::table('payments')
+                ->leftJoin('invoices', 'invoices.id', '=', 'payments.invoice_id')
+                ->leftJoin('orders', 'orders.id', '=', 'invoices.order_id')
+                ->leftJoin('companies', 'companies.id', '=', 'orders.company_id')
+                ->whereIn('payments.status', [Payment::STATUS_PAID, Payment::STATUS_FAILED, Payment::STATUS_REFUNDED ?? 'refunded'])
+                ->orderByDesc('payments.created_at')
+                ->limit($limit)
+                ->get([
+                    'payments.id',
+                    'payments.amount',
+                    'payments.currency',
+                    'payments.status',
+                    'payments.paid_at',
+                    'payments.created_at AS pcreated',
+                    'companies.id AS company_id',
+                    'companies.name AS company_name',
+                ]);
+            foreach ($payments as $p) {
+                $type = $p->status === 'refunded' ? 'refund' : 'payment_in';
+                $rows->push([
+                    'id' => 'TX-PAY-'.$p->id,
+                    'type' => $type,
+                    'amount' => $type === 'refund' ? -1 * (float) $p->amount : (float) $p->amount,
+                    'currency' => (string) $p->currency,
+                    'company' => $p->company_id ? ['id' => (int) $p->company_id, 'name' => (string) $p->company_name] : null,
+                    'when' => ($p->paid_at ?? $p->pcreated),
+                    'status' => $p->status === Payment::STATUS_PAID ? 'settled' : ($p->status === 'refunded' ? 'settled' : 'failed'),
+                ]);
+            }
+
+            // ── Commission transactions ────────────────────────────────────
+            if (Schema::hasTable('commission_transactions')) {
+                $companyCol = Schema::hasColumn('commission_transactions', 'agent_id') ? 'agent_id' : null;
+                $commissions = DB::table('commission_transactions')
+                    ->orderByDesc('created_at')
+                    ->limit($limit)
+                    ->get();
+                foreach ($commissions as $c) {
+                    $rows->push([
+                        'id' => 'TX-CMS-'.$c->id,
+                        'type' => 'commission',
+                        'amount' => (float) ($c->commission_amount ?? 0),
+                        'currency' => (string) ($c->currency ?? 'USD'),
+                        'company' => $companyCol && $c->{$companyCol}
+                            ? ['id' => (int) $c->{$companyCol}, 'name' => '—']
+                            : null,
+                        'when' => $c->created_at,
+                        'status' => $c->status ?? 'pending',
+                    ]);
+                }
+            }
+
+            // ── Settlements (payout) ───────────────────────────────────────
+            if (Schema::hasTable('settlements')) {
+                $settlements = DB::table('settlements')
+                    ->leftJoin('companies', 'companies.id', '=', 'settlements.company_id')
+                    ->orderByDesc('settlements.created_at')
+                    ->limit($limit)
+                    ->get([
+                        'settlements.id',
+                        'settlements.total_net_amount',
+                        'settlements.currency',
+                        'settlements.status',
+                        'settlements.settled_at',
+                        'settlements.created_at',
+                        'companies.id AS company_id',
+                        'companies.name AS company_name',
+                    ]);
+                foreach ($settlements as $s) {
+                    $rows->push([
+                        'id' => 'TX-SET-'.$s->id,
+                        'type' => 'payout',
+                        'amount' => -1 * (float) ($s->total_net_amount ?? 0),
+                        'currency' => (string) ($s->currency ?? 'USD'),
+                        'company' => $s->company_id ? ['id' => (int) $s->company_id, 'name' => (string) $s->company_name] : null,
+                        'when' => ($s->settled_at ?? $s->created_at),
+                        'status' => match ($s->status ?? 'pending') {
+                            'completed' => 'settled',
+                            'failed' => 'failed',
+                            default => 'pending',
+                        },
+                    ]);
+                }
+            }
+
+            // ── Vouchers (voucher_issued) ──────────────────────────────────
+            if (Schema::hasTable('vouchers')) {
+                $vouchers = DB::table('vouchers')
+                    ->leftJoin('companies', 'companies.id', '=', 'vouchers.issuer_company_id')
+                    ->where('vouchers.status', 'issued')
+                    ->orderByDesc('vouchers.created_at')
+                    ->limit($limit)
+                    ->get([
+                        'vouchers.id',
+                        'vouchers.voucher_number',
+                        'vouchers.created_at',
+                        'companies.id AS company_id',
+                        'companies.name AS company_name',
+                    ]);
+                foreach ($vouchers as $v) {
+                    $rows->push([
+                        'id' => 'TX-VCH-'.$v->id,
+                        'type' => 'voucher_issued',
+                        'amount' => 0.0,
+                        'currency' => 'USD',
+                        'company' => $v->company_id ? ['id' => (int) $v->company_id, 'name' => (string) $v->company_name] : null,
+                        'when' => $v->created_at,
+                        'status' => 'processing',
+                    ]);
+                }
+            }
+
+            // Sort merged feed by `when` desc and slice to limit.
+            return $rows
+                ->sortByDesc(fn ($row) => $row['when'])
+                ->take($limit)
+                ->values()
+                ->all();
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
      * GET /platform-admin/finance/revenue-by-service?range=30d
      *
      * Powers the Finance summary "Revenue by service" widget. Returns the
