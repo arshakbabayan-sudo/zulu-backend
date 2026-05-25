@@ -63,6 +63,7 @@ use App\Http\Controllers\Api\ErrorReportController;
 use App\Http\Controllers\Api\ExcursionController;
 use App\Http\Controllers\Api\FileAssetController;
 use App\Http\Controllers\Api\FinanceController;
+use App\Http\Controllers\Api\FinanceStatsController;
 use App\Http\Controllers\Api\FlightController;
 use App\Http\Controllers\Api\FooterController;
 use App\Http\Controllers\Api\HeaderMenuController;
@@ -600,6 +601,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('settlements', [FinanceController::class, 'settlements']);
         Route::post('settlements', [FinanceController::class, 'createSettlement']);
         Route::patch('settlements/{settlement}/status', [FinanceController::class, 'updateSettlementStatus'])->whereNumber('settlement');
+        // Finance group v2 — Transactions page Export CSV (entitlements + settlements).
+        Route::get('export-csv', [FinanceController::class, 'exportCsv']);
     });
 
     Route::get('visas', [VisaController::class, 'index']);
@@ -715,6 +718,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Phase 7.7 — CSV export for /platform/payments
         Route::get('payments/export', [PlatformAdminController::class, 'exportPaymentsCsv']);
         Route::get('finance-summary', [PlatformAdminController::class, 'financeSummary']);
+        // Finance group v2 — stat-card endpoints for the 4 list pages + extended summary.
+        // See app/Http/Controllers/Api/FinanceStatsController.php.
+        Route::get('payments/stats', [FinanceStatsController::class, 'payments']);
+        Route::get('invoices/stats', [FinanceStatsController::class, 'invoices']);
+        Route::get('commissions/stats', [FinanceStatsController::class, 'commissions']);
+        Route::get('vouchers/stats', [FinanceStatsController::class, 'vouchers']);
+        Route::get('finance-summary/v2', [FinanceStatsController::class, 'summaryV2']);
         Route::get('packages', [PlatformAdminController::class, 'packages']);
         Route::post('packages/{package}/deactivate', [PlatformAdminController::class, 'deactivatePackage'])->whereNumber('package');
         Route::get('packages/{package}/homepage-features', [PlatformAdminController::class, 'listPackageHomepageFeatures'])->whereNumber('package');

@@ -13,6 +13,7 @@ use App\Services\Finance\FinanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FinanceController extends Controller
 {
@@ -191,5 +192,74 @@ class FinanceController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Finance group v2 — Transactions page Export button.
+     *
+     * Streams a CSV combining entitlements (status='pending'|'payable') and
+     * settlements for the given company. Each row carries a `kind` column so
+     * downstream tooling can split them again. Bounded to 10 000 rows.
+     *
+     * GET /api/finance/export-csv?company_id={id}&kind={entitlements|settlements|all}
+     */
+    public function exportCsv(Request $request, FinanceService $service): StreamedResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'kind' => ['nullable', 'string', Rule::in(['entitlements', 'settlements', 'all'])],
+        ]);
+        $companyId = (int) $validated['company_id'];
+        $kind = (string) ($validated['kind'] ?? 'all');
+
+        if ($deny = $this->ensureAccess($request, $companyId, 'finance.view')) {
+            abort($deny->status(), $deny->getData(true)['message'] ?? 'Forbidden');
+        }
+
+        $filename = "finance-{$kind}-{$companyId}-".now()->format('Y-m-d-His').'.csv';
+
+        $company = Company::findOrFail($companyId);
+
+        return response()->streamDownload(function () use ($service, $company, $kind): void {
+            $fh = fopen('php://output', 'w');
+            fwrite($fh, "\xEF\xBB\xBF"); // Excel-friendly UTF-8 BOM
+            fputcsv($fh, ['kind', 'id', 'amount', 'currency', 'status', 'company_id', 'date', 'notes']);
+
+            if ($kind === 'entitlements' || $kind === 'all') {
+                $entitlements = $service->listEntitlementsForCompany($company, [], 10000)->getCollection();
+                foreach ($entitlements as $e) {
+                    fputcsv($fh, [
+                        'entitlement',
+                        $e->id,
+                        (float) $e->net_amount,
+                        $e->currency,
+                        $e->status,
+                        $e->company_id,
+                        $e->payable_at,
+                        $e->notes ?? '',
+                    ]);
+                }
+            }
+            if ($kind === 'settlements' || $kind === 'all') {
+                $settlements = $service->listSettlementsForCompany($company, 10000)->getCollection();
+                foreach ($settlements as $s) {
+                    fputcsv($fh, [
+                        'settlement',
+                        $s->id,
+                        (float) $s->total_net_amount,
+                        $s->currency,
+                        $s->status,
+                        $s->company_id,
+                        $s->settled_at,
+                        $s->notes ?? '',
+                    ]);
+                }
+            }
+
+            fclose($fh);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
     }
 }

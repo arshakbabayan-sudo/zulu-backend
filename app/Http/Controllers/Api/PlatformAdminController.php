@@ -1315,6 +1315,25 @@ class PlatformAdminController extends Controller
                     'status' => $payment->invoice->status,
                     'unique_booking_reference' => $payment->invoice->unique_booking_reference,
                 ];
+                // Finance group v2 — surface order.company on the payment row
+                // so the Payments table can render an avatar per row without
+                // a second round-trip.
+                if ($payment->invoice->relationLoaded('order') && $payment->invoice->order !== null) {
+                    $order = $payment->invoice->order;
+                    $row['invoice']['order_id'] = $order->id;
+                    if ($order->relationLoaded('company') && $order->company !== null) {
+                        $row['invoice']['company'] = [
+                            'id' => $order->company->id,
+                            'name' => $order->company->name,
+                        ];
+                    }
+                    if ($order->relationLoaded('agentCompany') && $order->agentCompany !== null) {
+                        $row['invoice']['agent_company'] = [
+                            'id' => $order->agentCompany->id,
+                            'name' => $order->agentCompany->name,
+                        ];
+                    }
+                }
             }
 
             return $row;

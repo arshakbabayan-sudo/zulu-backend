@@ -285,8 +285,13 @@ class PlatformAdminService
      */
     private function buildPaymentsQuery(array $filters)
     {
+        // Finance group v2 — eager-load invoice→order→company so the Payments
+        // table can render an avatar + company name per row (the chain is
+        // Payment.invoice (BelongsTo Invoice) → Invoice.order (BelongsTo Order)
+        // → Order.company (BelongsTo Company). Invoice itself has no
+        // company_id column, so the join walks through Order.
         $query = Payment::query()
-            ->with(['invoice'])
+            ->with(['invoice.order.company:id,name', 'invoice.order.agentCompany:id,name'])
             ->orderByDesc('id');
 
         if (! empty($filters['status'])) {
