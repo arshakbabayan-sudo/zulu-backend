@@ -23,6 +23,8 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
 
     public const STATUS_ACTIVE = 'active';
 
+    public const STATUS_PENDING = 'pending';
+
     public const STATUS_PENDING_DELETION = 'pending_deletion';
 
     /**

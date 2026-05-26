@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\CasesController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommissionController;
 use App\Http\Controllers\Api\CompanyApplicationController;
+use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\CustomerCartController;
@@ -295,6 +296,15 @@ Route::post('payments/webhook', [PaymentWebhookController::class, 'handle'])
 Route::post('payments/webhook/{driver}', [PaymentWebhookController::class, 'handleForDriver'])
     ->where('driver', 'stripe|arca|idram')
     ->withoutMiddleware([VerifyCsrfToken::class]);
+
+// Bucket D Phase D.1 — invitation flow (public, rate-limited).
+// Manager invites employee → emailed link → invitee verifies + sets password.
+Route::get('auth/invitation/{token}/verify', [InvitationController::class, 'verify'])
+    ->middleware('throttle:api_public')
+    ->where('token', '[A-Za-z0-9]{48}');
+Route::post('auth/accept-invitation/{token}', [InvitationController::class, 'accept'])
+    ->middleware('throttle:6,1')
+    ->where('token', '[A-Za-z0-9]{48}');
 
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])

@@ -9,9 +9,11 @@ use App\Models\Company;
 use App\Models\CompanyCountryPermission;
 use App\Models\CompanyModulePermission;
 use App\Models\CompanySellerPermission;
+use App\Mail\EmployeeInvitationMail;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserCompany;
+use App\Models\UserInvitation;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Admin\CompanyAccessService;
 use App\Services\Companies\CompanyService;
@@ -20,8 +22,11 @@ use App\Services\Pdf\ContractPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -126,12 +131,23 @@ class CompanyController extends Controller
             return $deny;
         }
 
-        $validated = $request->validate([
+        // Bucket D Phase D.1 — invite mode added. When `mode=invite` is set,
+        // the new user gets a random password + status=pending and an
+        // invitation email with a single-use token link instead of being
+        // handed a password by the inviting manager. Default mode (direct)
+        // keeps prior behaviour for back-compat and super-admin emergency use.
+        $mode = $request->input('mode', 'direct') === 'invite' ? 'invite' : 'direct';
+
+        $rules = [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
-            'password' => ['required', 'string', 'min:8'],
             'role_name' => ['required', 'string', Rule::in(self::COMPANY_ROLE_NAMES)],
-        ]);
+            'phone' => ['nullable', 'string', 'max:32'],
+        ];
+        if ($mode === 'direct') {
+            $rules['password'] = ['required', 'string', 'min:8'];
+        }
+        $validated = $request->validate($rules);
 
         // I1 audit F-7: privilege ceiling. denyUnlessCanManageCompany returns
         // true for company_operator (per AdminAccessService::ROLE_OPERATOR_ADMIN
@@ -164,12 +180,20 @@ class CompanyController extends Controller
             return $deny;
         }
 
-        $user = DB::transaction(function () use ($validated, $company, $role): User {
+        $result = DB::transaction(function () use ($validated, $company, $role, $mode, $caller): array {
+            // For invite mode, the password is a random scrambled string the
+            // user never sees. The invitation flow's accept endpoint resets it
+            // when the invitee chooses their own password on landing.
+            $passwordValue = $mode === 'invite'
+                ? Str::random(40)
+                : $validated['password'];
+
             $user = User::query()->create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
-                'password' => $validated['password'],
-                'status' => User::STATUS_ACTIVE,
+                'password' => $passwordValue,
+                'phone' => $validated['phone'] ?? null,
+                'status' => $mode === 'invite' ? User::STATUS_PENDING : User::STATUS_ACTIVE,
             ]);
 
             UserCompany::query()->create([
@@ -178,18 +202,53 @@ class CompanyController extends Controller
                 'role_id' => $role->id,
             ]);
 
-            return $user->fresh();
+            $invitation = null;
+            if ($mode === 'invite') {
+                $invitation = UserInvitation::query()->create([
+                    'user_id' => $user->id,
+                    'company_id' => $company->id,
+                    'role_id' => $role->id,
+                    'invited_by_user_id' => $caller?->id,
+                    'token' => Str::random(48),
+                    'expires_at' => now()->addDays(7),
+                ]);
+            }
+
+            return ['user' => $user->fresh(), 'invitation' => $invitation];
         });
+
+        if ($mode === 'invite' && $result['invitation'] instanceof UserInvitation) {
+            try {
+                Mail::to($result['user']->email)->send(
+                    new EmployeeInvitationMail(
+                        user: $result['user'],
+                        company: $company,
+                        role: $role,
+                        invitation: $result['invitation'],
+                        invitedBy: $caller,
+                    )
+                );
+            } catch (\Throwable $e) {
+                Log::error('EmployeeInvitationMail send failed', [
+                    'invitation_id' => $result['invitation']->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the request — invitation row is created; resend
+                // action can re-trigger send later.
+            }
+        }
 
         return response()->json([
             'success' => true,
             'data' => [
                 'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'status' => $user->status,
+                    'id' => $result['user']->id,
+                    'name' => $result['user']->name,
+                    'email' => $result['user']->email,
+                    'status' => $result['user']->status,
                 ],
+                'mode' => $mode,
+                'invitation_pending' => $mode === 'invite',
             ],
         ], 201);
     }
