@@ -27,6 +27,7 @@ use App\Services\Approvals\CompanyApplicationApprovalService;
 use App\Services\Companies\CompanyService;
 use App\Services\Companies\SellerApplicationService;
 use App\Services\Infrastructure\PlatformSettingsService;
+use Illuminate\Support\Facades\Cache;
 use App\Services\Reviews\ReviewService;
 use App\Services\UserAccount\AccountDeletionService;
 use Illuminate\Http\JsonResponse;
@@ -323,6 +324,95 @@ class PlatformAdminController extends Controller
         $paginator = $service->listAllPackageOrders($filters, $perPage);
 
         return $this->paginatedCommerceResourceResponse($request, $paginator, OrderResource::class);
+    }
+
+    /**
+     * Bookings group v2 — GET /platform-admin/bookings.
+     *
+     * "All bookings" view: lists `orders` excluding package orders.
+     * Filters: status / from / to / search / company_id / service_type.
+     */
+    public function bookings(Request $request, PlatformAdminService $service): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $filters = array_filter([
+            'status' => $request->filled('status') ? (string) $request->query('status') : null,
+            'from' => $request->filled('from') ? (string) $request->query('from') : null,
+            'to' => $request->filled('to') ? (string) $request->query('to') : null,
+            'search' => $request->filled('search') ? (string) $request->query('search') : null,
+            'company_id' => $request->filled('company_id') ? (int) $request->query('company_id') : null,
+            'service_type' => $request->filled('service_type') ? (string) $request->query('service_type') : null,
+        ], static fn ($v) => $v !== null && $v !== '');
+
+        $perPage = $this->commerceListPerPage($request);
+        $paginator = $service->listAllBookings($filters, $perPage);
+
+        return $this->paginatedCommerceResourceResponse($request, $paginator, OrderResource::class);
+    }
+
+    /**
+     * Bookings group v2 — POST /platform-admin/bookings/{id}/confirm.
+     *
+     * Transitions Order status pending_payment → confirmed. Idempotent for
+     * already-confirmed/paid orders (no-op + 200).
+     */
+    public function confirmBooking(Request $request, string $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $order = \App\Models\Order::query()->whereKey($id)->first();
+        if ($order === null) {
+            return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
+        }
+
+        if (! in_array($order->status, ['cart', 'pending_payment', 'paid', 'confirmed'], true)) {
+            return response()->json(['success' => false, 'message' => 'Booking cannot be confirmed from status ' . $order->status], 422);
+        }
+
+        $order->status = 'confirmed';
+        $order->save();
+
+        Cache::forget('bookings_stats_7d');
+        Cache::forget('bookings_stats_30d');
+        Cache::forget('bookings_stats_90d');
+
+        return response()->json(['success' => true, 'data' => new OrderResource($order->refresh()->load(['user:id,name,email', 'company:id,name', 'items']))]);
+    }
+
+    /**
+     * Bookings group v2 — POST /platform-admin/bookings/{id}/cancel.
+     *
+     * Transitions any non-terminal status to `cancelled`. Refunded/failed
+     * already-terminal orders return 422.
+     */
+    public function cancelBooking(Request $request, string $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $order = \App\Models\Order::query()->whereKey($id)->first();
+        if ($order === null) {
+            return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
+        }
+
+        if (in_array($order->status, ['cancelled', 'refunded'], true)) {
+            return response()->json(['success' => false, 'message' => 'Booking already in terminal status'], 422);
+        }
+
+        $order->status = 'cancelled';
+        $order->save();
+
+        Cache::forget('bookings_stats_7d');
+        Cache::forget('bookings_stats_30d');
+        Cache::forget('bookings_stats_90d');
+
+        return response()->json(['success' => true, 'data' => new OrderResource($order->refresh()->load(['user:id,name,email', 'company:id,name', 'items']))]);
     }
 
     public function payments(Request $request, PlatformAdminService $service): JsonResponse

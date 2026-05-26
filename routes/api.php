@@ -66,6 +66,7 @@ use App\Http\Controllers\Api\GoogleDriveAuthController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FinanceStatsController;
 use App\Http\Controllers\Api\MarketplaceStatsController;
+use App\Http\Controllers\Api\BookingsStatsController;
 use App\Http\Controllers\Api\FlightController;
 use App\Http\Controllers\Api\FooterController;
 use App\Http\Controllers\Api\HeaderMenuController;
@@ -756,6 +757,20 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('contract-templates/stats', [MarketplaceStatsController::class, 'contractTemplates']);
         Route::get('audit-logs/stats', [MarketplaceStatsController::class, 'auditLogs']);
         Route::get('unverified-accounts/stats', [MarketplaceStatsController::class, 'unverifiedAccounts']);
+
+        // Bookings group v2 — stats endpoints (4 stat cards per page).
+        // See app/Http/Controllers/Api/BookingsStatsController.php.
+        Route::get('bookings/stats', [BookingsStatsController::class, 'bookings']);
+        Route::get('package-orders/stats', [BookingsStatsController::class, 'packageOrders']);
+
+        // Bookings group v2 — admin list + state transitions on orders
+        // (the canonical "All bookings" surface; package orders live in the
+        // pre-existing PlatformAdminController::packageOrders method).
+        Route::get('bookings', [PlatformAdminController::class, 'bookings']);
+        Route::post('bookings/{id}/confirm', [PlatformAdminController::class, 'confirmBooking'])
+            ->where('id', '[0-9a-f-]{36}');
+        Route::post('bookings/{id}/cancel', [PlatformAdminController::class, 'cancelBooking'])
+            ->where('id', '[0-9a-f-]{36}');
         Route::get('packages', [PlatformAdminController::class, 'packages']);
         Route::post('packages/{package}/deactivate', [PlatformAdminController::class, 'deactivatePackage'])->whereNumber('package');
         Route::get('packages/{package}/homepage-features', [PlatformAdminController::class, 'listPackageHomepageFeatures'])->whereNumber('package');

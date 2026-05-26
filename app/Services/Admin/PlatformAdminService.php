@@ -261,6 +261,50 @@ class PlatformAdminService
     }
 
     /**
+     * Bookings group v2 — list "All bookings" (non-package orders).
+     *
+     * @param  array{status?:?string,from?:?string,to?:?string,search?:?string,company_id?:?int,service_type?:?string}  $filters
+     */
+    public function listAllBookings(array $filters = [], int $perPage = 20): LengthAwarePaginator
+    {
+        $query = Order::query()
+            ->whereNull('deleted_at')
+            ->where(function ($q) {
+                // Exclude package orders — those belong to /platform/package-orders.
+                $q->whereNull('metadata')
+                    ->orWhereRaw("(metadata->>'legacy_origin') IS DISTINCT FROM 'package_order'");
+            })
+            ->with(['user:id,name,email', 'company:id,name', 'agentCompany:id,name', 'items'])
+            ->orderByDesc('created_at');
+
+        if (! empty($filters['status'])) {
+            $query->where('status', (string) $filters['status']);
+        }
+        if (! empty($filters['from'])) {
+            $query->where('created_at', '>=', (string) $filters['from']);
+        }
+        if (! empty($filters['to'])) {
+            $query->where('created_at', '<=', (string) $filters['to'] . ' 23:59:59');
+        }
+        if (! empty($filters['company_id'])) {
+            $query->where('company_id', (int) $filters['company_id']);
+        }
+        if (! empty($filters['search'])) {
+            $needle = '%' . str_replace('%', '\\%', (string) $filters['search']) . '%';
+            $query->where(function ($q) use ($needle) {
+                $q->where('order_number', 'ILIKE', $needle)
+                    ->orWhereHas('user', fn ($qq) => $qq->where('name', 'ILIKE', $needle)->orWhere('email', 'ILIKE', $needle))
+                    ->orWhereHas('company', fn ($qq) => $qq->where('name', 'ILIKE', $needle));
+            });
+        }
+        if (! empty($filters['service_type'])) {
+            $query->whereHas('items', fn ($qq) => $qq->where('module_type', (string) $filters['service_type']));
+        }
+
+        return $query->paginate($perPage);
+    }
+
+    /**
      * @param  array{status?:string}  $filters
      */
     public function listAllPayments(array $filters = [], int $perPage = 20): LengthAwarePaginator
