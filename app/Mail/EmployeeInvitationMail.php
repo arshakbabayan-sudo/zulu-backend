@@ -39,7 +39,10 @@ class EmployeeInvitationMail extends Mailable
 
     public function content(): Content
     {
-        $frontendUrl = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+        // Invitation lands on the admin panel — that's where employees do
+        // their work. app.admin_url falls back through frontend_url → app.url
+        // (see config/app.php).
+        $adminUrl = rtrim((string) config('app.admin_url', config('app.frontend_url', config('app.url'))), '/');
 
         return new Content(
             view: 'emails.employee-invitation',
@@ -49,7 +52,7 @@ class EmployeeInvitationMail extends Mailable
                 'role' => $this->role,
                 'invitation' => $this->invitation,
                 'invitedBy' => $this->invitedBy,
-                'acceptUrl' => "{$frontendUrl}/accept-invitation/{$this->invitation->token}",
+                'acceptUrl' => "{$adminUrl}/accept-invitation/{$this->invitation->token}",
                 'expiresAt' => $this->invitation->expires_at,
             ],
         );
