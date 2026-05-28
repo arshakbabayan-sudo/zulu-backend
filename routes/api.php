@@ -799,6 +799,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Phase 7.1 — admin-initiated deletion (2-button approach)
         Route::post('users/{id}/anonymize', [PlatformAdminController::class, 'anonymizeUser'])->whereNumber('id');
         Route::delete('users/{id}/hard', [PlatformAdminController::class, 'hardDeleteUser'])->whereNumber('id');
+        // Phase Բ.3 — bulk ops for the unverified-accounts cleanup workflow
+        Route::post('users/bulk-remind', [PlatformAdminController::class, 'bulkRemindUnverifiedUsers']);
+        Route::post('users/bulk-delete', [PlatformAdminController::class, 'bulkDeleteUsers']);
 
         Route::get('banners', [PlatformAdminBannerController::class, 'index']);
         Route::post('banners', [PlatformAdminBannerController::class, 'store']);

@@ -938,6 +938,91 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Phase Բ.3 — bulk resend email-verification reminders.
+     *
+     * Accepts { ids: int[] }. Skips users that already verified their email.
+     * Mail failures never abort the batch (logged-and-skipped) so one bad
+     * address can't block reminders to the rest.
+     */
+    public function bulkRemindUnverifiedUsers(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $users = User::query()->whereIn('id', $validated['ids'])->get();
+        $reminded = 0;
+        $skipped = 0;
+        foreach ($users as $user) {
+            if ($user->hasVerifiedEmail()) {
+                $skipped++;
+                continue;
+            }
+            try {
+                $user->sendEmailVerificationNotification();
+                $reminded++;
+            } catch (\Throwable $e) {
+                // A single bad address must not break the batch.
+                $skipped++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Reminded {$reminded} user(s); skipped {$skipped}.",
+            'data' => ['reminded' => $reminded, 'skipped' => $skipped],
+        ]);
+    }
+
+    /**
+     * Phase Բ.3 — bulk-delete (anonymize) users.
+     *
+     * Uses the same reversible-safe AccountDeletionService::adminAnonymize as
+     * the single-user action — bulk paths NEVER hard-delete. The actor's own
+     * id is skipped defensively.
+     */
+    public function bulkDeleteUsers(Request $request, AccountDeletionService $deletionService): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $actor = $request->user();
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*' => ['integer'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $users = User::query()->whereIn('id', $validated['ids'])->get();
+        $processed = 0;
+        $skipped = 0;
+        foreach ($users as $user) {
+            if ((int) $actor->id === (int) $user->id) {
+                $skipped++;
+                continue;
+            }
+            $deletionService->adminAnonymize(
+                $user,
+                $actor,
+                $validated['reason'] ?? 'Bulk cleanup of unverified accounts'
+            );
+            $processed++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Anonymized {$processed} user(s); skipped {$skipped}.",
+            'data' => ['processed' => $processed, 'skipped' => $skipped],
+        ]);
+    }
+
     // ─── Seller Applications ──────────────────────────────────────
 
     public function listSellerApplications(Request $request): JsonResponse
