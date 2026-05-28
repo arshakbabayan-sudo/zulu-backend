@@ -707,6 +707,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('files', [FileAssetController::class, 'index']);
     Route::post('files/upload', [FileAssetController::class, 'upload']);
     Route::post('files/folder', [FileAssetController::class, 'createFolder']);
+    Route::delete('files/folder', [FileAssetController::class, 'deleteFolder']);
     Route::get('files/storage-stats', [FileAssetController::class, 'storageStats']);
     Route::get('files/{id}/download', [FileAssetController::class, 'download'])->whereNumber('id');
     Route::delete('files/{id}', [FileAssetController::class, 'destroy'])->whereNumber('id');

@@ -403,6 +403,74 @@ class FileAssetController extends Controller
         ], 201);
     }
 
+    /**
+     * DELETE /api/files/folder — delete an (empty) folder.
+     *
+     * Phase Ժ.2 — safe default: a folder can only be deleted when it has no
+     * files and no sub-folders. This avoids cascading file loss; the caller
+     * must empty the folder first. Permission mirrors createFolder.
+     */
+    public function deleteFolder(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'folder' => ['required', 'string', 'max:255'],
+            'company_id' => ['nullable', 'integer'],
+        ]);
+
+        $folder = $this->normalizeFolder($validated['folder']);
+        if ($folder === '/') {
+            return response()->json(['success' => false, 'message' => 'Cannot delete root folder'], 422);
+        }
+
+        $user = $request->user();
+        $companyId = $validated['company_id'] ?? null;
+
+        if ($companyId !== null && ! $user->is_super_admin && ! $user->belongsToCompany((int) $companyId)) {
+            return response()->json(['success' => false, 'message' => 'Not a member of that company'], 403);
+        }
+
+        $marker = FileAsset::where('folder', $folder)
+            ->where('filename', FileAsset::FOLDER_MARKER)
+            ->first();
+        if (! $marker) {
+            return response()->json(['success' => false, 'message' => 'Folder not found'], 404);
+        }
+
+        $canDelete = ((int) $marker->uploaded_by === (int) $user->id)
+            || $user->is_super_admin
+            || ($marker->company_id !== null && $user->belongsToCompany((int) $marker->company_id));
+        if (! $canDelete) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        // Block if the folder still holds files or sub-folders (exclude the marker itself).
+        $contentCount = FileAsset::where('filename', '!=', FileAsset::FOLDER_MARKER)
+            ->where(function (Builder $q) use ($folder) {
+                $q->where('folder', $folder)
+                    ->orWhere('folder', 'like', $folder.'/%');
+            })
+            ->count();
+        $subfolderCount = FileAsset::where('filename', FileAsset::FOLDER_MARKER)
+            ->where('folder', 'like', $folder.'/%')
+            ->count();
+
+        if ($contentCount > 0 || $subfolderCount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Folder is not empty. Remove its files and sub-folders first.',
+            ], 409);
+        }
+
+        try {
+            Storage::disk($marker->disk)->delete($marker->path);
+        } catch (\Throwable $e) {
+            // Soft-delete the row even if the marker bytes are already gone.
+        }
+        $marker->delete();
+
+        return response()->json(['success' => true, 'data' => ['folder' => $folder]]);
+    }
+
     /** GET /api/files/storage-stats — total + by mime bucket. */
     public function storageStats(Request $request): JsonResponse
     {
