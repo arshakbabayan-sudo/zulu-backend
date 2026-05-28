@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\CommissionController;
 use App\Http\Controllers\Api\CompanyApplicationController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\CompanyController;
+use App\Http\Controllers\Api\CompanyRbacController;
 use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
@@ -555,6 +556,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('companies/{company}/users', [CompanyController::class, 'addUser'])->whereNumber('company');
     Route::patch('companies/{company}/users/{user}/role', [CompanyController::class, 'updateUserRole'])->whereNumber('company')->whereNumber('user');
     Route::patch('companies/{company}/users/{user}/deactivate', [CompanyController::class, 'deactivateUser'])->whereNumber('company')->whereNumber('user');
+    // Phase Գ.6 / Bucket D.4 — per-employee permission overrides (tenant-scoped).
+    Route::get('companies/{company}/users/{user}/permissions', [CompanyRbacController::class, 'show'])->whereNumber('company')->whereNumber('user');
+    Route::put('companies/{company}/users/{user}/permissions', [CompanyRbacController::class, 'sync'])->whereNumber('company')->whereNumber('user');
     Route::patch('companies/{company}/profile', [CompanyController::class, 'updateProfile'])->whereNumber('company');
     Route::get('companies/{company}/dashboard', [CompanyController::class, 'dashboard'])->whereNumber('company');
     Route::get('companies/{company}/seller-permissions', [CompanyController::class, 'sellerPermissions'])->whereNumber('company');

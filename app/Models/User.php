@@ -98,6 +98,21 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
 
     public function hasCompanyPermission(int $companyId, string $permission): bool
     {
+        // Phase Գ.6 / Bucket D.4 — a per-employee override wins over the
+        // role-derived baseline: 'deny' revokes, 'allow' grants. No row =
+        // pure role behaviour (unchanged for existing tenants).
+        $override = $this->permissionOverrides()
+            ->where('company_id', $companyId)
+            ->whereHas('permission', fn ($q) => $q->where('name', $permission))
+            ->value('effect');
+
+        if ($override === UserPermissionOverride::EFFECT_DENY) {
+            return false;
+        }
+        if ($override === UserPermissionOverride::EFFECT_ALLOW) {
+            return true;
+        }
+
         $membership = $this->memberships()
             ->where('company_id', $companyId)
             ->first();
@@ -114,9 +129,55 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
             ->exists();
     }
 
+    /**
+     * Phase Գ.6 / Bucket D.4 — effective permission names for one company:
+     * (role grants ∪ allow-overrides) − deny-overrides. Used to project the
+     * frontend `permissions` array and by the CheckPermission middleware.
+     *
+     * @return list<string>
+     */
+    public function effectivePermissionsForCompany(int $companyId): array
+    {
+        $membership = $this->memberships()
+            ->where('company_id', $companyId)
+            ->with('role.permissions')
+            ->first();
+
+        $rolePerms = ($membership && $membership->role)
+            ? $membership->role->permissions->pluck('name')->all()
+            : [];
+
+        $overrides = $this->permissionOverrides()
+            ->where('company_id', $companyId)
+            ->with('permission')
+            ->get();
+
+        $allow = $overrides->where('effect', UserPermissionOverride::EFFECT_ALLOW)
+            ->map(fn (UserPermissionOverride $o) => $o->permission?->name)
+            ->filter()
+            ->all();
+        $deny = $overrides->where('effect', UserPermissionOverride::EFFECT_DENY)
+            ->map(fn (UserPermissionOverride $o) => $o->permission?->name)
+            ->filter()
+            ->all();
+
+        $effective = array_values(array_diff(
+            array_unique(array_merge($rolePerms, $allow)),
+            $deny
+        ));
+        sort($effective);
+
+        return $effective;
+    }
+
     public function memberships(): HasMany
     {
         return $this->hasMany(UserCompany::class);
+    }
+
+    public function permissionOverrides(): HasMany
+    {
+        return $this->hasMany(UserPermissionOverride::class);
     }
 
     /** Phase 7.1 — orders placed by this user (as B2C customer). */

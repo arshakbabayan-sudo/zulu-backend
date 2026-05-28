@@ -5,6 +5,7 @@ use App\Console\Commands\ExportUiTranslationsCsv;
 use App\Console\Commands\ImportUiTranslationsCsv;
 use App\Console\Commands\PruneExpiredTokens;
 use App\Console\Commands\PruneOrphanOffers;
+use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\ResolveLanguage;
 use App\Services\ErrorReporting\ErrorReportService;
@@ -39,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'resolve.language' => ResolveLanguage::class,
             'platform-admin' => EnsurePlatformAdmin::class,
+            'permission' => CheckPermission::class,
         ]);
         $middleware->redirectGuestsTo(function ($request) {
             if ($request->is('api/*') || $request->expectsJson()) {
