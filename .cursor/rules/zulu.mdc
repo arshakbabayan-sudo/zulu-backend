@@ -1,0 +1,51 @@
+---
+description: ZULU platform working contract — always apply. Mirrors the Claude Code agent's setup so Cursor works the same way.
+alwaysApply: true
+---
+
+# ZULU — Agent Working Contract
+
+You are an autonomous engineering agent on the ZULU travel-booking platform.
+Work exactly like the Claude Code agent does. Full detail:
+- `D:/zulu-platform/docs/cursor/AGENT_GUIDE.md`
+- Canonical memory: `C:/Users/HP/.claude/projects/D--zulu-platform/memory/`
+  (read `_START_HERE.md` + `MEMORY.md` first)
+
+## The user
+Product-side, not an engineer. Native Armenian speaker. Hands-off — keep going
+autonomously, don't ask "what's next".
+
+## Non-negotiable rules
+1. **ARMENIAN-FIRST.** All chat/explanations to the user in Armenian. English only
+   for code, paths, URLs, proper names. Explain every technical term in plain Armenian.
+2. **DEPLOY FLOW.** Edit locally → `git commit` → `git push origin main`. Pushing
+   auto-deploys: backend→Hetzner (GitHub Actions ~12s), admin+frontend→Vercel (~5min).
+   Never deploy to Hetzner/Vercel directly — only push to GitHub.
+3. **ADMIN PUSH GATE.** Before pushing `zulu-admin-next`, run `npm run lint` AND
+   `npx tsc --noEmit` (no `--skipLibCheck`) and confirm both pass clean. ONE ESLint error
+   silently blocks the whole Vercel deploy (old bundle keeps serving, curl still 200).
+   Verify the real change with a login + screenshot, never trust a curl 200.
+4. **ONE REPO PER COMMIT.** Never mix files from different sub-repos in one commit.
+   Root `D:/zulu-platform` and `docs/` are NOT git repos.
+5. **FIGMA = ASK FIRST.** Before editing any UI/design, ask the user for the Figma
+   frame URL. Verify pixel-by-pixel (text, brands, counts).
+6. **FIX IN PLACE, NEVER DELETE** UI/content unprompted. "X is messed up" = fix.
+7. **HETZNER ARTISAN as www-data:** `sudo -u www-data php artisan ...`, never root.
+8. **git in sub-repos:** `git -C <path> ...`, never `cd <path> && git ...`.
+9. After raw SQL inserts to `ui_translations`, run `cache:forget ui_translations_<lang>`.
+10. **SELF-VERIFY UI** with Playwright (screenshot + console). Save shots to
+    `docs/scrinshots/`. Super-admin test login: `claude.admin@zulu.am`.
+11. **CYCLE MODE.** Work continuously; make engineering decisions yourself. Escalate
+    only business/scope/Figma decisions, destructive prod ops, or deploy.yml changes.
+
+## Repos
+- `backend/` → GitHub `zulu-backend` (Laravel/PHP/PostgreSQL → Hetzner `api.zulu.am`)
+- `zulu-admin-next/` → GitHub `zulu-admin-next` (Next.js → Vercel `admin.zulu.am`)
+- `zulu-frontend-next/` → GitHub `zulu-frontend-next` (Next.js → Vercel `zulu.am`)
+
+## Verify before claiming done
+- backend: `php vendor/phpunit/phpunit/phpunit` (NOT `php artisan test` — broken here);
+  if classes missing: `composer dump-autoload --no-scripts` first.
+- admin: `npm run lint` + `npx tsc --noEmit` must pass before pushing zulu-admin-next
+- UI: Playwright login + screenshot
+- After push: backend deploy posts a Telegram ✅; confirm it landed.
