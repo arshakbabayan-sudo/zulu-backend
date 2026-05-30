@@ -1,0 +1,123 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\CompanyApplication;
+use App\Models\Role;
+use App\Models\User;
+use App\Models\UserCompany;
+use App\Services\Approvals\CompanyApplicationApprovalService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * Locks in the owner-role assignment on company-application approval (Block 2.2).
+ *
+ * The owner of a newly-approved company must become company_admin (rank 3 in
+ * CompanyRbacController::ROLE_RANK), NOT operator_admin (rank 2). If the owner
+ * were operator_admin they'd be rank-equal to the staff they later add, and the
+ * "can this caller grant this role" ceiling in the permissions drawer breaks.
+ */
+class CompanyApplicationApprovalOwnerRoleTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function approveSvc(): CompanyApplicationApprovalService
+    {
+        return app(CompanyApplicationApprovalService::class);
+    }
+
+    private function reviewer(): User
+    {
+        return User::query()->create([
+            'name' => 'Reviewer',
+            'email' => 'reviewer-'.uniqid().'@test.local',
+            'password' => 'secret123',
+            'status' => User::STATUS_ACTIVE,
+        ]);
+    }
+
+    private function pendingApplication(array $overrides = []): CompanyApplication
+    {
+        return CompanyApplication::query()->create(array_merge([
+            'company_name' => 'Acme Travel '.uniqid(),
+            'company_type' => CompanyApplication::TYPE_OPERATOR,
+            'business_email' => 'owner-'.uniqid().'@test.local',
+            'legal_address' => '1 Legal St',
+            'actual_address' => '1 Actual St',
+            'country' => 'Armenia',
+            'city' => 'Yerevan',
+            'phone' => '+37400000000',
+            'tax_id' => '0000'.random_int(1000, 9999),
+            'contact_person' => 'Owner Person',
+            'position' => 'CEO',
+            'status' => CompanyApplication::STATUS_PENDING,
+        ], $overrides));
+    }
+
+    /** When BOTH roles exist, the owner must get company_admin, not operator_admin. */
+    public function test_owner_gets_company_admin_when_both_roles_exist(): void
+    {
+        Role::query()->firstOrCreate(['name' => 'operator_admin']);
+        Role::query()->firstOrCreate(['name' => 'company_admin']);
+
+        $app = $this->pendingApplication();
+        $result = $this->approveSvc()->approve($app, $this->reviewer());
+
+        $membership = UserCompany::query()
+            ->where('user_id', $result['user']->id)
+            ->where('company_id', $result['company']->id)
+            ->with('role')
+            ->first();
+
+        $this->assertNotNull($membership);
+        $this->assertSame('company_admin', $membership->role->name);
+    }
+
+    /** Pre-registered (Phase-8) owner: attaches to existing user, still company_admin. */
+    public function test_preregistered_owner_gets_company_admin(): void
+    {
+        Role::query()->firstOrCreate(['name' => 'operator_admin']);
+        Role::query()->firstOrCreate(['name' => 'company_admin']);
+
+        $owner = User::query()->create([
+            'name' => 'Pre Reg',
+            'email' => 'prereg-'.uniqid().'@test.local',
+            'password' => 'secret123',
+            'status' => User::STATUS_ACTIVE,
+            'intended_role' => 'operator',
+        ]);
+
+        $app = $this->pendingApplication(['user_id' => $owner->id]);
+        $result = $this->approveSvc()->approve($app, $this->reviewer());
+
+        $this->assertSame($owner->id, $result['user']->id);
+
+        $membership = UserCompany::query()
+            ->where('user_id', $owner->id)
+            ->where('company_id', $result['company']->id)
+            ->with('role')
+            ->first();
+
+        $this->assertNotNull($membership);
+        $this->assertSame('company_admin', $membership->role->name);
+    }
+
+    /** Fallback: if company_admin row is absent, operator_admin is still accepted. */
+    public function test_falls_back_to_operator_admin_when_company_admin_missing(): void
+    {
+        Role::query()->firstOrCreate(['name' => 'operator_admin']);
+
+        $app = $this->pendingApplication();
+        $result = $this->approveSvc()->approve($app, $this->reviewer());
+
+        $membership = UserCompany::query()
+            ->where('user_id', $result['user']->id)
+            ->where('company_id', $result['company']->id)
+            ->with('role')
+            ->first();
+
+        $this->assertNotNull($membership);
+        $this->assertSame('operator_admin', $membership->role->name);
+    }
+}

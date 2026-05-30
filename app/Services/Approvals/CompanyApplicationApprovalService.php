@@ -71,11 +71,18 @@ class CompanyApplicationApprovalService
             ]);
         }
 
+        // The owner of a newly-approved company must be company_admin (rank 3 in
+        // CompanyRbacController::ROLE_RANK), NOT operator_admin (rank 2). The owner
+        // has to outrank the staff they later add via the permissions drawer; if
+        // they were operator_admin they'd be rank-equal to their own employees and
+        // the "can this caller grant this role" ceiling would break. Phase R model:
+        // company_admin = owner. We still fall back through the compat names in case
+        // a deployment lacks the company_admin role row.
         $operatorRole = Role::query()
             ->whereIn('name', self::OPERATOR_ROLE_COMPAT_NAMES)
             ->orderByRaw("CASE name
-                WHEN 'operator_admin' THEN 0
-                WHEN 'company_admin' THEN 1
+                WHEN 'company_admin' THEN 0
+                WHEN 'operator_admin' THEN 1
                 WHEN 'company_operator' THEN 2
                 WHEN 'admin' THEN 3
                 ELSE 99
@@ -84,7 +91,7 @@ class CompanyApplicationApprovalService
 
         if ($operatorRole === null) {
             throw ValidationException::withMessages([
-                'role' => ['operator_admin compatibility role is not configured.'],
+                'role' => ['company_admin compatibility role is not configured.'],
             ]);
         }
 
