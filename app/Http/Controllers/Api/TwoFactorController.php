@@ -37,9 +37,17 @@ class TwoFactorController extends Controller
     /** GET /api/account/2fa/status */
     public function status(Request $request): JsonResponse
     {
+        $user = $request->user();
+
         return response()->json([
             'success' => true,
-            'data' => ['enabled' => $this->service->isEnabled($request->user())],
+            'data' => [
+                'enabled' => $this->service->isEnabled($user),
+                // 2FA hierarchy (2026-05-31) — `method` is the user's pick;
+                // `required` is the manager-controlled enforcement flag.
+                'method' => $user->two_factor_method ?? ($this->service->isEnabled($user) ? 'totp' : 'email'),
+                'required' => (bool) $user->two_factor_required,
+            ],
         ]);
     }
 

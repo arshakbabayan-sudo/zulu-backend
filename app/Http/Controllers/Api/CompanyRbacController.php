@@ -88,6 +88,11 @@ class CompanyRbacController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'role_name' => $this->roleNameFor($user, $companyId),
+                    // 2FA hierarchy (2026-05-31) — surfaced here so the
+                    // Permissions drawer can render the "Two-factor
+                    // authentication" toggle without a second round-trip.
+                    'two_factor_required' => (bool) $user->two_factor_required,
+                    'two_factor_method' => $user->two_factor_method,
                 ],
                 'company_id' => $companyId,
                 'can_edit' => true,
