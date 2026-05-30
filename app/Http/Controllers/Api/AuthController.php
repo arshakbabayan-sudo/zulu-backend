@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
 use App\Models\User;
+use App\Services\Security\TwoFactorService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,10 @@ use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
+    public function __construct(
+        private TwoFactorService $twoFactor,
+    ) {}
+
     public function login(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -40,6 +45,27 @@ class AuthController extends Controller
                 'success' => false,
                 'message' => 'Invalid credentials',
             ], 401);
+        }
+
+        // 2FA gate — if the account has confirmed two-factor auth, DO NOT
+        // issue a full session token yet. Hand back a short-lived challenge
+        // token whose only ability is "2fa:challenge", and signal the frontend
+        // to collect the TOTP/recovery code. The real session token is minted
+        // only after TwoFactorController::verify() succeeds.
+        if ($this->twoFactor->isEnabled($user)) {
+            $challenge = $user->createToken(
+                '2fa_challenge',
+                ['2fa:challenge'],
+                now()->addMinutes(10)
+            )->plainTextToken;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'requires_2fa' => true,
+                    'challenge_token' => $challenge,
+                ],
+            ]);
         }
 
         // Remember me: extend token lifetime to 30 days vs default 1 day.

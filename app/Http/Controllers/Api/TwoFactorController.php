@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\UserResource;
 use App\Services\Security\TwoFactorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -56,19 +57,59 @@ class TwoFactorController extends Controller
         return response()->json(['success' => true, 'data' => ['enabled' => true]]);
     }
 
-    /** POST /api/account/2fa/verify (used during login challenge) */
+    /**
+     * POST /api/account/2fa/verify — login challenge exchange.
+     *
+     * Called with the short-lived CHALLENGE token (ability "2fa:challenge")
+     * issued by AuthController::login() when the account has 2FA on. On a
+     * valid code we consume the challenge token and mint a real session
+     * token, returning it together with the user — exactly the shape the
+     * normal login endpoint returns, so the frontend can store it and proceed.
+     */
     public function verify(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'code' => ['required', 'string'],
         ]);
 
-        $ok = $this->service->verify($request->user(), $validated['code']);
+        $user = $request->user();
+        $token = $user?->currentAccessToken();
+
+        // Only a dedicated challenge token may be exchanged for a full
+        // session. A challenge token has the "2fa:challenge" ability and,
+        // crucially, NOT the "*" wildcard that real session tokens carry.
+        $isChallenge = $token !== null
+            && $token->can('2fa:challenge')
+            && ! $token->can('*');
+
+        if (! $isChallenge) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired 2FA challenge session. Please log in again.',
+            ], 403);
+        }
+
+        if (! $this->service->verify($user, $validated['code'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid code',
+            ], 422);
+        }
+
+        // Consume the one-time challenge token, then mint the real session.
+        $token->delete();
+        $expiresAt = now()->addDay();
+        $sessionToken = $user->createToken('api', ['*'], $expiresAt)->plainTextToken;
+        $user->forceFill(['last_login_at' => now()])->saveQuietly();
 
         return response()->json([
-            'success' => $ok,
-            'data' => ['verified' => $ok],
-        ], $ok ? 200 : 422);
+            'success' => true,
+            'data' => [
+                'token' => $sessionToken,
+                'expires_at' => $expiresAt->toIso8601String(),
+                'user' => UserResource::make($user->refresh())->toArray($request),
+            ],
+        ]);
     }
 
     /** POST /api/account/2fa/disable */
