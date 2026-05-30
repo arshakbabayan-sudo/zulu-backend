@@ -363,6 +363,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('account/2fa/disable', [TwoFactorController::class, 'disable']);
     Route::post('account/2fa/recovery-codes/regenerate', [TwoFactorController::class, 'regenerateRecoveryCodes']);
     Route::get('account/2fa/recovery-codes', [TwoFactorController::class, 'recoveryCodesStatus']);
+    // 2FA hierarchy (2026-05-31) — user-chosen channel (totp | email).
+    Route::put('account/2fa/method', [TwoFactorController::class, 'setMethod']);
 
     // Per-user PIN for sensitive admin actions (Phase 7.14)
     Route::get('account/activity', [AccountController::class, 'activity']);
@@ -559,6 +561,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Phase Գ.6 / Bucket D.4 — per-employee permission overrides (tenant-scoped).
     Route::get('companies/{company}/users/{user}/permissions', [CompanyRbacController::class, 'show'])->whereNumber('company')->whereNumber('user');
     Route::put('companies/{company}/users/{user}/permissions', [CompanyRbacController::class, 'sync'])->whereNumber('company')->whereNumber('user');
+    // 2FA hierarchy (2026-05-31) — manager toggles employee 2FA enforcement.
+    Route::put('companies/{company}/users/{user}/2fa-policy', [CompanyRbacController::class, 'setTwoFactorPolicy'])->whereNumber('company')->whereNumber('user');
     Route::patch('companies/{company}/profile', [CompanyController::class, 'updateProfile'])->whereNumber('company');
     Route::get('companies/{company}/dashboard', [CompanyController::class, 'dashboard'])->whereNumber('company');
     Route::get('companies/{company}/seller-permissions', [CompanyController::class, 'sellerPermissions'])->whereNumber('company');

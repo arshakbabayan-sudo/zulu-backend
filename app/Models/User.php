@@ -51,6 +51,12 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
         'terms_accepted_at',
         'consent_ip',
         'consent_version',
+        // 2FA hierarchy (2026-05-31): `method` is the user's chosen channel
+        // (`totp`|`email`); `required` is the enforcement flag set on staff
+        // accounts at registration and toggled by managers from the admin
+        // "Permissions" drawer for employees.
+        'two_factor_method',
+        'two_factor_required',
     ];
 
     /**
@@ -81,6 +87,7 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
             // GDPR Article 32: PII at-rest encryption. See migration
             // 2026_05_21_000000_encrypt_pii_passport_and_nationality.
             'nationality' => 'encrypted',
+            'two_factor_required' => 'boolean',
         ];
     }
 

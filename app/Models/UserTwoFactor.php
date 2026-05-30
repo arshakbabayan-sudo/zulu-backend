@@ -16,12 +16,15 @@ class UserTwoFactor extends Model
         'enabled_at',
         'confirmed_at',
         'last_verified_at',
+        'email_code_hash',
+        'email_code_expires_at',
     ];
 
     protected $casts = [
         'enabled_at' => 'datetime',
         'confirmed_at' => 'datetime',
         'last_verified_at' => 'datetime',
+        'email_code_expires_at' => 'datetime',
         'recovery_codes_encrypted' => 'encrypted:array',
     ];
 

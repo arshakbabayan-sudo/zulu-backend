@@ -5,17 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
 use App\Models\User;
+use App\Services\Security\EmailTwoFactorService;
 use App\Services\Security\TwoFactorService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
     public function __construct(
         private TwoFactorService $twoFactor,
+        private EmailTwoFactorService $emailTwoFactor,
     ) {}
 
     public function login(Request $request): JsonResponse
@@ -47,12 +50,42 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // 2FA gate — if the account has confirmed two-factor auth, DO NOT
-        // issue a full session token yet. Hand back a short-lived challenge
-        // token whose only ability is "2fa:challenge", and signal the frontend
-        // to collect the TOTP/recovery code. The real session token is minted
-        // only after TwoFactorController::verify() succeeds.
-        if ($this->twoFactor->isEnabled($user)) {
+        // 2FA gate — issue a short-lived challenge token whose only ability is
+        // "2fa:challenge" when the account either (a) has TOTP confirmed, or
+        // (b) belongs to a role whose `two_factor_required` was set at signup
+        // / by the manager from the Permissions drawer. The real session
+        // token is minted only after TwoFactorController::verify() succeeds.
+        //
+        // Method resolution:
+        //   - explicit `users.two_factor_method` wins;
+        //   - if NULL but TOTP is set up, treat as 'totp' (backwards compat
+        //     with users enrolled before the method column existed);
+        //   - otherwise default to 'email' (zero-setup channel).
+        $totpEnabled = $this->twoFactor->isEnabled($user);
+        $requires2fa = $totpEnabled || (bool) $user->two_factor_required;
+
+        if ($requires2fa) {
+            $method = $user->two_factor_method;
+            if ($method === null) {
+                $method = $totpEnabled ? 'totp' : 'email';
+            }
+
+            if ($method === 'email') {
+                // Generate + email the 6-digit code BEFORE the response so the
+                // user typically sees it in their inbox by the time the /2fa
+                // page renders. Don't leak a mail failure into the auth flow
+                // — log it and surface a friendlier message via the resend
+                // button if the user reports they didn't receive one.
+                try {
+                    $this->emailTwoFactor->generateAndSend($user);
+                } catch (\Throwable $e) {
+                    Log::warning('Email 2FA send failed', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             $challenge = $user->createToken(
                 '2fa_challenge',
                 ['2fa:challenge'],
@@ -64,6 +97,7 @@ class AuthController extends Controller
                 'data' => [
                     'requires_2fa' => true,
                     'challenge_token' => $challenge,
+                    'method' => $method,
                 ],
             ]);
         }

@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
+use App\Services\Security\EmailTwoFactorService;
 use App\Services\Security\TwoFactorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -14,7 +16,23 @@ class TwoFactorController extends Controller
 {
     public function __construct(
         private TwoFactorService $service,
+        private EmailTwoFactorService $emailService,
     ) {}
+
+    /**
+     * Resolve the active 2FA channel for a user. Mirrors AuthController::login:
+     * explicit method wins; if NULL but TOTP is set up, treat as 'totp';
+     * otherwise default to 'email' (zero-setup channel for staff).
+     */
+    private function methodFor(\App\Models\User $user): string
+    {
+        $method = $user->two_factor_method;
+        if ($method !== null) {
+            return $method;
+        }
+
+        return $this->service->isEnabled($user) ? 'totp' : 'email';
+    }
 
     /** GET /api/account/2fa/status */
     public function status(Request $request): JsonResponse
@@ -89,7 +107,15 @@ class TwoFactorController extends Controller
             ], 403);
         }
 
-        if (! $this->service->verify($user, $validated['code'])) {
+        // Dispatch by the user's chosen channel — TOTP uses the persistent
+        // secret, email uses the freshly-stored one-time code-hash from
+        // /api/login's email_two_factor->generateAndSend() call.
+        $method = $this->methodFor($user);
+        $ok = $method === 'email'
+            ? $this->emailService->verify($user, $validated['code'])
+            : $this->service->verify($user, $validated['code']);
+
+        if (! $ok) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid code',
@@ -142,7 +168,35 @@ class TwoFactorController extends Controller
      */
     public function resend(Request $request): JsonResponse
     {
-        $enabled = $this->service->isEnabled($request->user());
+        $user = $request->user();
+        $method = $this->methodFor($user);
+
+        if ($method === 'email') {
+            try {
+                $this->emailService->generateAndSend($user);
+
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'method' => 'email',
+                        'message' => 'A fresh code is on its way to your email.',
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Email 2FA resend failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Could not send a new code right now. Try again in a moment.',
+                ], 502);
+            }
+        }
+
+        // TOTP: nothing to send — the code is generated client-side.
+        $enabled = $this->service->isEnabled($user);
 
         return response()->json([
             'success' => true,
@@ -151,6 +205,30 @@ class TwoFactorController extends Controller
                 'message' => $enabled
                     ? 'Open your authenticator app for the latest code (refreshes every 30s).'
                     : '2FA is not enabled on this account.',
+            ],
+        ]);
+    }
+
+    /**
+     * PUT /api/account/2fa/method — user-chosen 2FA channel.
+     *
+     * Switching to 'totp' alone does NOT enrol — the user must still go
+     * through setup() → confirm(). Switching to 'email' is immediate; the
+     * next login generates and sends a code automatically.
+     */
+    public function setMethod(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'method' => ['required', 'string', 'in:totp,email'],
+        ]);
+
+        $user = $request->user();
+        $user->forceFill(['two_factor_method' => $validated['method']])->saveQuietly();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'two_factor_method' => $validated['method'],
             ],
         ]);
     }

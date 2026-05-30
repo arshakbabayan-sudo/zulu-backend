@@ -96,6 +96,38 @@ class CompanyRbacController extends Controller
         ]);
     }
 
+    /**
+     * PUT /api/companies/{company}/users/{user}/2fa-policy
+     *
+     * 2FA hierarchy (Arshak 2026-05-31): the operator/agent manager decides
+     * per-employee whether 2FA at login is mandatory. The user themselves
+     * still picks the channel (TOTP vs Email) via /account/2fa/method.
+     *
+     * Uses the same authorize-manage gate as the permissions endpoints —
+     * caller must be able to manage this company AND outrank the target.
+     */
+    public function setTwoFactorPolicy(Request $request, Company $company, User $user): JsonResponse
+    {
+        $caller = $request->user();
+        if ($deny = $this->authorizeManage($caller, $company, $user)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'required' => ['required', 'boolean'],
+        ]);
+
+        $user->forceFill(['two_factor_required' => (bool) $validated['required']])->saveQuietly();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'user_id' => $user->id,
+                'two_factor_required' => (bool) $validated['required'],
+            ],
+        ]);
+    }
+
     public function sync(Request $request, Company $company, User $user): JsonResponse
     {
         $caller = $request->user();
