@@ -366,6 +366,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // 2FA hierarchy (2026-05-31) — user-chosen channel (totp | email).
     Route::put('account/2fa/method', [TwoFactorController::class, 'setMethod']);
 
+    // B2C email verification at signup (Arshak 2026-05-31). 6-digit code
+    // emailed at register; user enters it on /verify-email to flip
+    // email_verified_at and finish account activation.
+    Route::post('account/verify-email', [AuthController::class, 'verifyEmail'])->middleware('throttle:5,1');
+    Route::post('account/verify-email/resend', [AuthController::class, 'resendVerifyEmail'])->middleware('throttle:3,1');
+
     // Per-user PIN for sensitive admin actions (Phase 7.14)
     Route::get('account/activity', [AccountController::class, 'activity']);
     Route::get('account/pin', [AccountController::class, 'pinStatus']);

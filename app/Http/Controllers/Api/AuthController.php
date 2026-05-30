@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\UserResource;
 use App\Models\User;
 use App\Services\Security\EmailTwoFactorService;
+use App\Services\Security\EmailVerificationCodeService;
 use App\Services\Security\TwoFactorService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
@@ -19,6 +20,7 @@ class AuthController extends Controller
     public function __construct(
         private TwoFactorService $twoFactor,
         private EmailTwoFactorService $emailTwoFactor,
+        private EmailVerificationCodeService $emailVerification,
     ) {}
 
     public function login(Request $request): JsonResponse
@@ -136,6 +138,78 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * POST /api/account/verify-email
+     *
+     * B2C email verification (Arshak 2026-05-31). User enters the 6-digit
+     * code we emailed at signup; we flip `email_verified_at` and clear the
+     * stored hash so the code can't be replayed.
+     */
+    public function verifyEmail(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'code' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        if ($user->email_verified_at !== null) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'verified' => true,
+                    'message' => 'Already verified.',
+                ],
+            ]);
+        }
+
+        $ok = $this->emailVerification->verify($user, $validated['code']);
+        if (! $ok) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired code.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'verified' => true,
+                'user' => UserResource::make($user->refresh())->toArray($request),
+            ],
+        ]);
+    }
+
+    /** POST /api/account/verify-email/resend */
+    public function resendVerifyEmail(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user->email_verified_at !== null) {
+            return response()->json([
+                'success' => true,
+                'data' => ['message' => 'Already verified.'],
+            ]);
+        }
+
+        try {
+            $this->emailVerification->generateAndSend($user);
+        } catch (\Throwable $e) {
+            Log::warning('Email verification resend failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not send a new code right now. Try again in a moment.',
+            ], 502);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => ['message' => 'A fresh code is on its way to your email.'],
+        ]);
+    }
+
     /** Current Terms / Privacy Policy version stamped on every consent. */
     private const CONSENT_VERSION = 'v1-2026-05';
 
@@ -180,10 +254,18 @@ class AuthController extends Controller
             'consent_version' => self::CONSENT_VERSION,
         ]);
 
+        // B2C email verification (Arshak 2026-05-31) — replaces Laravel's
+        // link-based sendEmailVerificationNotification() with a 6-digit code
+        // matching the rest of the platform (2FA, password reset). Failure
+        // here doesn't fail registration; user can request a resend on the
+        // /verify-email page.
         try {
-            $user->sendEmailVerificationNotification();
+            $this->emailVerification->generateAndSend($user);
         } catch (\Throwable $e) {
-            // Email verification is opt-in; registration should never fail due to mail issues.
+            Log::warning('Email verification code send failed at signup', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         // Welcome mail for partner sign-ups — confirms the account was created and

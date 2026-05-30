@@ -88,6 +88,7 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
             // 2026_05_21_000000_encrypt_pii_passport_and_nationality.
             'nationality' => 'encrypted',
             'two_factor_required' => 'boolean',
+            'email_verification_code_expires_at' => 'datetime',
         ];
     }
 
