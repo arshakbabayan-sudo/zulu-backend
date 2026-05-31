@@ -343,14 +343,17 @@ class CrmController extends Controller
             ->get()
             ->keyBy('user_id');
 
+        // Which order statuses count as a sale is a per-company setting (the
+        // CRM Options page). Defaults to paid+confirmed when not customised.
+        $countStatuses = $this->salesCountStatusesFor($companyId);
+
         $rows = [];
         foreach ($company->users as $emp) {
-            // Attributed confirmed/completed revenue this month, grouped by currency.
-            // Revenue = paid/confirmed orders (matches how stats count revenue
-            // today). Amount column is `total`; statuses are plain strings.
+            // Attributed revenue this month, grouped by currency. The counted
+            // statuses come from the company's CRM settings. Amount col = `total`.
             $revenueByCurrency = \App\Models\Order::query()
                 ->where('sold_by_user_id', $emp->id)
-                ->whereIn('status', ['paid', 'confirmed'])
+                ->whereIn('status', $countStatuses)
                 ->whereBetween('created_at', [$start, $end])
                 ->selectRaw('currency, count(*) as orders_count, coalesce(sum(total),0) as revenue')
                 ->groupBy('currency')
@@ -389,7 +392,72 @@ class CrmController extends Controller
         return response()->json([
             'success' => true,
             'data' => $rows,
-            'meta' => ['company_id' => $companyId, 'month' => $start->format('Y-m')],
+            'meta' => [
+                'company_id' => $companyId,
+                'month' => $start->format('Y-m'),
+                'sales_count_statuses' => $countStatuses,
+            ],
+        ]);
+    }
+
+    // ─── CRM Options (per-company settings) ──────────────────────────────
+
+    /** Resolve the counted-sale statuses for a company (with default). */
+    private function salesCountStatusesFor(int $companyId): array
+    {
+        $row = \App\Models\CrmCompanySetting::query()->where('company_id', $companyId)->first();
+        return $row
+            ? $row->salesCountStatuses()
+            : \App\Models\CrmCompanySetting::DEFAULT_SALES_STATUSES;
+    }
+
+    public function getSettings(Request $request): JsonResponse
+    {
+        $companyId = $this->teamCompanyId($request);
+        if ($companyId === null) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'company_id' => null,
+                    'sales_count_statuses' => \App\Models\CrmCompanySetting::DEFAULT_SALES_STATUSES,
+                    'sales_status_options' => \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS,
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'company_id' => $companyId,
+                'sales_count_statuses' => $this->salesCountStatusesFor($companyId),
+                'sales_status_options' => \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS,
+            ],
+        ]);
+    }
+
+    public function updateSettings(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'sales_count_statuses' => ['required', 'array', 'min:1'],
+            'sales_count_statuses.*' => ['string', 'in:' . implode(',', \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS)],
+        ]);
+
+        $companyId = (int) $data['company_id'];
+        $row = \App\Models\CrmCompanySetting::query()->firstOrNew(['company_id' => $companyId]);
+        $settings = $row->settings ?? [];
+        $settings['sales_count_statuses'] = array_values(array_unique($data['sales_count_statuses']));
+        $row->settings = $settings;
+        $row->updated_by_user_id = optional($request->user())->id;
+        $row->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'company_id' => $companyId,
+                'sales_count_statuses' => $row->salesCountStatuses(),
+                'sales_status_options' => \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS,
+            ],
         ]);
     }
 
