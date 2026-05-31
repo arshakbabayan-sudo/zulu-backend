@@ -590,11 +590,12 @@ class PlatformAdminController extends Controller
         }
 
         $perPage = $this->commerceListPerPage($request);
-        // Phase 4C+ (2026-05-31) — withCount('orders') so the Directory→People
-        // grid can render a Bookings column when the B2C customers chip is
-        // active. The legacy /bucket3/customers page surfaced this data; the
-        // unified grid was losing it after Phase 4C. Cheap COUNT(*) join.
-        $query = User::query()->with('companies')->withCount('orders')->orderByDesc('id');
+        // Phase 4C+ (2026-05-31, fixed 2026-05-31) — withCount('bookings') so
+        // the Directory→People grid can render a Bookings column when the B2C
+        // customers chip is active. The User model exposes the relation as
+        // bookings() (not orders()), so the previous withCount('orders') in
+        // commit 4a67bca caused a 500 on every users-list fetch.
+        $query = User::query()->with('companies')->withCount('bookings')->orderByDesc('id');
 
         if ($request->filled('search')) {
             $search = (string) $request->query('search');
@@ -1389,10 +1390,12 @@ class PlatformAdminController extends Controller
             'created_at' => $user->created_at?->toIso8601String(),
             'updated_at' => $user->updated_at?->toIso8601String(),
             'last_login_at' => $user->last_login_at?->toIso8601String(),
-            // Phase 4C+ (2026-05-31) — surface bookings_count for the
-            // Directory→People B2C customers column. Falls back to 0 when the
-            // controller didn't load the withCount (e.g. /show endpoint).
-            'bookings_count' => (int) ($user->orders_count ?? 0),
+            // Phase 4C+ (2026-05-31, fixed 2026-05-31) — surface bookings_count
+            // for the Directory→People B2C customers column. The relation name
+            // is `bookings()` so withCount produces `bookings_count` on the
+            // model. Falls back to 0 when the controller didn't load the
+            // withCount (e.g. /show endpoint).
+            'bookings_count' => (int) ($user->bookings_count ?? 0),
             'companies' => $user->companies->map(fn ($c) => [
                 'id' => $c->id,
                 'name' => $c->name,
