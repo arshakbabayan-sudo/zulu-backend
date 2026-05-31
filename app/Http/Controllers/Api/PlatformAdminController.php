@@ -344,6 +344,9 @@ class PlatformAdminController extends Controller
             'to' => $request->filled('to') ? (string) $request->query('to') : null,
             'search' => $request->filled('search') ? (string) $request->query('search') : null,
             'company_id' => $request->filled('company_id') ? (int) $request->query('company_id') : null,
+            // Phase 4G (2026-05-31) — pass user_id through so the user
+            // detail page can fetch a customer's recent bookings inline.
+            'user_id' => $request->filled('user_id') ? (int) $request->query('user_id') : null,
             'service_type' => $request->filled('service_type') ? (string) $request->query('service_type') : null,
         ], static fn ($v) => $v !== null && $v !== '');
 

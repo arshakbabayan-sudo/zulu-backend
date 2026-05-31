@@ -289,6 +289,11 @@ class PlatformAdminService
         if (! empty($filters['company_id'])) {
             $query->where('company_id', (int) $filters['company_id']);
         }
+        // Phase 4G (2026-05-31) — user_id filter so the new Directory→People
+        // detail page can fetch a customer's recent bookings inline.
+        if (! empty($filters['user_id'])) {
+            $query->where('user_id', (int) $filters['user_id']);
+        }
         if (! empty($filters['search'])) {
             $needle = '%' . str_replace('%', '\\%', (string) $filters['search']) . '%';
             $query->where(function ($q) use ($needle) {
