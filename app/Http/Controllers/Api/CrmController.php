@@ -298,4 +298,136 @@ class CrmController extends Controller
             'created_at' => optional($a->created_at)->toIso8601String(),
         ];
     }
+
+    // ─── Team (per-employee sales + payroll) ─────────────────────────────
+
+    /** Resolve which company's team to show: explicit ?company_id, else caller's first. */
+    private function teamCompanyId(Request $request): ?int
+    {
+        $explicit = $request->query('company_id');
+        if ($explicit !== null && $explicit !== '') {
+            return (int) $explicit;
+        }
+        return $this->ownerCompanyId($request);
+    }
+
+    /**
+     * Team sales leaderboard + computed pay for one company + month.
+     * Per employee: attributed order revenue (sold_by_user_id) grouped by
+     * currency for the period, won-deal count, and pay computed from their
+     * compensation config.
+     */
+    public function team(Request $request): JsonResponse
+    {
+        $companyId = $this->teamCompanyId($request);
+        if ($companyId === null) {
+            return response()->json(['success' => true, 'data' => [], 'meta' => ['company_id' => null]]);
+        }
+
+        // Period: default to the current calendar month (YYYY-MM via ?month).
+        $month = (string) $request->query('month', now()->format('Y-m'));
+        try {
+            $start = \Illuminate\Support\Carbon::createFromFormat('Y-m-d H:i:s', $month . '-01 00:00:00')->startOfMonth();
+        } catch (\Throwable $e) {
+            $start = now()->startOfMonth();
+        }
+        $end = (clone $start)->endOfMonth();
+
+        $company = \App\Models\Company::query()->with(['users:id,name,email'])->find($companyId);
+        if ($company === null) {
+            return response()->json(['success' => false, 'message' => 'Company not found'], 404);
+        }
+
+        $comp = \App\Models\CrmEmployeeCompensation::query()
+            ->where('company_id', $companyId)
+            ->get()
+            ->keyBy('user_id');
+
+        $rows = [];
+        foreach ($company->users as $emp) {
+            // Attributed confirmed/completed revenue this month, grouped by currency.
+            $revenueByCurrency = \App\Models\Order::query()
+                ->where('sold_by_user_id', $emp->id)
+                ->whereIn('status', [\App\Models\Order::STATUS_CONFIRMED, \App\Models\Order::STATUS_COMPLETED])
+                ->whereBetween('created_at', [$start, $end])
+                ->selectRaw('currency, count(*) as orders_count, coalesce(sum(total_amount),0) as revenue')
+                ->groupBy('currency')
+                ->get();
+
+            $ordersCount = (int) $revenueByCurrency->sum('orders_count');
+            $wonDeals = \App\Models\CrmDeal::query()
+                ->where('owner_user_id', $emp->id)
+                ->where('stage', 'won')
+                ->whereBetween('updated_at', [$start, $end])
+                ->count();
+
+            $cfg = $comp->get($emp->id);
+            $payCurrency = $cfg?->currency ?? 'USD';
+            $revenueInPayCurrency = (float) ($revenueByCurrency->firstWhere('currency', $payCurrency)->revenue ?? 0);
+            $computedPay = $cfg ? $cfg->computePay($revenueInPayCurrency) : null;
+
+            $rows[] = [
+                'user' => ['id' => $emp->id, 'name' => $emp->name, 'email' => $emp->email],
+                'orders_count' => $ordersCount,
+                'won_deals' => $wonDeals,
+                'revenue_by_currency' => $revenueByCurrency->map(fn ($r) => [
+                    'currency' => $r->currency,
+                    'orders_count' => (int) $r->orders_count,
+                    'revenue' => (float) $r->revenue,
+                ])->values(),
+                'compensation' => $cfg ? $this->compensationArray($cfg) : null,
+                'computed_pay' => $computedPay,
+                'pay_currency' => $payCurrency,
+            ];
+        }
+
+        // Highest revenue (in their pay currency) first — the leaderboard order.
+        usort($rows, fn ($a, $b) => ($b['computed_pay'] ?? 0) <=> ($a['computed_pay'] ?? 0));
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+            'meta' => ['company_id' => $companyId, 'month' => $start->format('Y-m')],
+        ]);
+    }
+
+    public function setCompensation(Request $request, int $userId): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'model' => ['required', 'string', 'in:' . implode(',', \App\Models\CrmEmployeeCompensation::MODELS)],
+            'base_amount' => ['nullable', 'numeric', 'min:0'],
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'currency' => ['nullable', 'string', 'max:3'],
+            'notes' => ['nullable', 'string'],
+        ]);
+
+        $cfg = \App\Models\CrmEmployeeCompensation::updateOrCreate(
+            ['user_id' => $userId, 'company_id' => $data['company_id']],
+            [
+                'model' => $data['model'],
+                'base_amount' => $data['base_amount'] ?? 0,
+                'commission_percent' => $data['commission_percent'] ?? 0,
+                'currency' => $data['currency'] ?? 'USD',
+                'notes' => $data['notes'] ?? null,
+                'updated_by_user_id' => optional($request->user())->id,
+            ],
+        );
+
+        return response()->json(['success' => true, 'data' => $this->compensationArray($cfg->fresh())]);
+    }
+
+    private function compensationArray(\App\Models\CrmEmployeeCompensation $c): array
+    {
+        return [
+            'id' => $c->id,
+            'user_id' => $c->user_id,
+            'company_id' => $c->company_id,
+            'model' => $c->model,
+            'base_amount' => (float) $c->base_amount,
+            'commission_percent' => (float) $c->commission_percent,
+            'currency' => $c->currency,
+            'notes' => $c->notes,
+        ];
+    }
 }

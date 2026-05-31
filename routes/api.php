@@ -823,6 +823,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('crm/activities', [CrmController::class, 'listActivities']);
         Route::post('crm/activities', [CrmController::class, 'storeActivity']);
         Route::patch('crm/activities/{activity}', [CrmController::class, 'updateActivity'])->whereNumber('activity');
+        // CRM Team — per-employee sales leaderboard + flexible payroll config
+        Route::get('crm/team', [CrmController::class, 'team']);
+        Route::put('crm/team/{user}/compensation', [CrmController::class, 'setCompensation'])->whereNumber('user');
 
         Route::get('unverified-accounts', [PlatformAdminController::class, 'listUnverifiedAccounts']);
         Route::get('users/{id}', [PlatformAdminController::class, 'showUser'])->whereNumber('id');
