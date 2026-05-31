@@ -52,6 +52,7 @@ use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\CompanyRbacController;
 use App\Http\Controllers\Api\ConnectionController;
+use App\Http\Controllers\Api\CrmController;
 use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
 use App\Http\Controllers\Api\CustomerLoyaltyController;
@@ -812,6 +813,17 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('users/stats', [PlatformAdminController::class, 'userStats']);
         Route::get('users', [PlatformAdminController::class, 'listUsers']);
         Route::get('customers', [PlatformAdminController::class, 'listCustomers']);
+
+        // ── CRM (2026-06-01) — deals pipeline + activities log ──────────
+        Route::get('crm/stats', [CrmController::class, 'stats']);
+        Route::get('crm/deals', [CrmController::class, 'listDeals']);
+        Route::post('crm/deals', [CrmController::class, 'storeDeal']);
+        Route::patch('crm/deals/{deal}', [CrmController::class, 'updateDeal'])->whereNumber('deal');
+        Route::delete('crm/deals/{deal}', [CrmController::class, 'destroyDeal'])->whereNumber('deal');
+        Route::get('crm/activities', [CrmController::class, 'listActivities']);
+        Route::post('crm/activities', [CrmController::class, 'storeActivity']);
+        Route::patch('crm/activities/{activity}', [CrmController::class, 'updateActivity'])->whereNumber('activity');
+
         Route::get('unverified-accounts', [PlatformAdminController::class, 'listUnverifiedAccounts']);
         Route::get('users/{id}', [PlatformAdminController::class, 'showUser'])->whereNumber('id');
         Route::patch('users/{id}', [PlatformAdminController::class, 'updateUser'])->whereNumber('id');
