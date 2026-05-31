@@ -346,11 +346,13 @@ class CrmController extends Controller
         $rows = [];
         foreach ($company->users as $emp) {
             // Attributed confirmed/completed revenue this month, grouped by currency.
+            // Revenue = paid/confirmed orders (matches how stats count revenue
+            // today). Amount column is `total`; statuses are plain strings.
             $revenueByCurrency = \App\Models\Order::query()
                 ->where('sold_by_user_id', $emp->id)
-                ->whereIn('status', [\App\Models\Order::STATUS_CONFIRMED, \App\Models\Order::STATUS_COMPLETED])
+                ->whereIn('status', ['paid', 'confirmed'])
                 ->whereBetween('created_at', [$start, $end])
-                ->selectRaw('currency, count(*) as orders_count, coalesce(sum(total_amount),0) as revenue')
+                ->selectRaw('currency, count(*) as orders_count, coalesce(sum(total),0) as revenue')
                 ->groupBy('currency')
                 ->get();
 
