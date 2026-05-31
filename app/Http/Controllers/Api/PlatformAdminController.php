@@ -354,6 +354,31 @@ class PlatformAdminController extends Controller
     }
 
     /**
+     * Bookings group v2 — GET /platform-admin/bookings/{id}.
+     *
+     * Single-order detail for the new booking detail page (Phase 3B of the
+     * 2026-05-31 menu restructure). Mirrors the shape returned by
+     * confirmBooking / cancelBooking on success: OrderResource with `user`,
+     * `company`, and `items` eager-loaded. 404 when the UUID does not match.
+     */
+    public function showBooking(Request $request, string $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $order = \App\Models\Order::query()->whereKey($id)->first();
+        if ($order === null) {
+            return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => new OrderResource($order->load(['user:id,name,email', 'company:id,name', 'items'])),
+        ]);
+    }
+
+    /**
      * Bookings group v2 — POST /platform-admin/bookings/{id}/confirm.
      *
      * Transitions Order status pending_payment → confirmed. Idempotent for

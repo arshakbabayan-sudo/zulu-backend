@@ -792,6 +792,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // (the canonical "All bookings" surface; package orders live in the
         // pre-existing PlatformAdminController::packageOrders method).
         Route::get('bookings', [PlatformAdminController::class, 'bookings']);
+        // Phase 3B (2026-05-31) — single-booking detail for /platform/bookings/[id]
+        // page. Previously /bookings/{id} 404'd because no GET route existed; the
+        // page itself was missing from the admin too. Both are now added.
+        Route::get('bookings/{id}', [PlatformAdminController::class, 'showBooking'])
+            ->where('id', '[0-9a-f-]{36}');
         Route::post('bookings/{id}/confirm', [PlatformAdminController::class, 'confirmBooking'])
             ->where('id', '[0-9a-f-]{36}');
         Route::post('bookings/{id}/cancel', [PlatformAdminController::class, 'cancelBooking'])
