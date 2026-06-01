@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommissionController;
 use App\Http\Controllers\Api\CompanyApplicationController;
 use App\Http\Controllers\Api\InvitationController;
+use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\CompanyRbacController;
 use App\Http\Controllers\Api\ConnectionController;
@@ -488,6 +489,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Customer personal statistics (PART 25, Sprint 71)
     Route::get('customer/stats', [CustomerStatsController::class, 'show']);
+
+    // ── Internal chat (2026-06-01, Phase 1 — polling) ──────────────────
+    // Company-scoped; every action guards membership + participation inside
+    // the controller. Auth-only (not platform-admin) since any staff member
+    // in a company can chat with colleagues.
+    Route::get('chat/colleagues', [ChatController::class, 'colleagues']);
+    Route::get('chat/conversations', [ChatController::class, 'conversations']);
+    Route::post('chat/conversations', [ChatController::class, 'storeConversation']);
+    Route::get('chat/conversations/{conversation}/messages', [ChatController::class, 'messages'])->whereNumber('conversation');
+    Route::post('chat/conversations/{conversation}/messages', [ChatController::class, 'sendMessage'])->whereNumber('conversation');
 
     // Customer saved searches (PART 20)
     Route::get('customer/saved-searches', [SavedSearchController::class, 'index']);
