@@ -4,6 +4,7 @@ namespace App\Services\Payments\Gateways;
 
 use App\Models\Payment;
 use App\Models\PaymentLog;
+use App\Services\Payments\StripeSplitService;
 use Illuminate\Support\Facades\Log;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
@@ -53,22 +54,51 @@ class StripeGateway implements PaymentGatewayInterface
         $amount = (int) round((float) $payment->amount * 100);
         $currency = strtolower($payment->currency ?? config('payment.stripe.currency', 'usd'));
 
+        // P0-1 step 1.2 — Marketplace split. When the seller has a ready
+        // Stripe Connect account and a resolvable platform fee, we add
+        // application_fee_amount + transfer_data[destination] so Stripe
+        // routes the seller's share automatically. When the split service
+        // returns null (seller not ready, no commission rule, etc.) we
+        // fall back to a plain platform charge — the existing behavior.
+        $split = null;
         try {
-            $intent = $this->stripe->paymentIntents->create([
-                'amount' => $amount,
-                'currency' => $currency,
-                'metadata' => array_merge(['payment_id' => $payment->id], $metadata),
+            $split = app(StripeSplitService::class)->computeForPayment($payment);
+        } catch (\Throwable $e) {
+            // Split decision must never break payment creation. Log and
+            // continue without the split — worst case is ZULU collects
+            // everything and pays the seller out-of-band.
+            Log::warning('StripeSplitService threw — falling back to plain charge', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
             ]);
+        }
+
+        $params = [
+            'amount' => $amount,
+            'currency' => $currency,
+            'metadata' => array_merge(['payment_id' => $payment->id], $metadata),
+        ];
+        if ($split !== null) {
+            $params['application_fee_amount'] = $split['application_fee_cents'];
+            $params['transfer_data'] = ['destination' => $split['destination']];
+            $params['metadata']['zulu_seller_company_id'] = (string) $split['seller_company_id'];
+            $params['metadata']['zulu_commission_rule_id'] = (string) $split['rule_id'];
+        }
+
+        try {
+            $intent = $this->stripe->paymentIntents->create($params);
 
             PaymentLog::query()->create([
                 'payment_id' => $payment->id,
-                'event_type' => 'intent.created',
+                'event_type' => $split !== null ? 'intent.created.split' : 'intent.created',
                 'gateway' => 'stripe',
                 'gateway_reference' => $intent->id,
                 'amount' => $payment->amount,
                 'currency' => $currency,
                 'status' => $intent->status,
-                'response_payload' => $intent->toArray(),
+                'response_payload' => $split !== null
+                    ? array_merge($intent->toArray(), ['zulu_split' => $split])
+                    : $intent->toArray(),
             ]);
 
             $payment->reference_code = $intent->id;
