@@ -714,6 +714,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('package-orders', [PackageOrderController::class, 'index']);
     Route::get('package-orders/{order}', [PackageOrderController::class, 'show'])->whereNumber('order');
     Route::post('package-orders/{order}/pay', [PackageOrderController::class, 'markPaid'])->whereNumber('order');
+    // P0-1 step 1.3 — customer-side Stripe PaymentIntent (creates Invoice +
+    // pending Payment + Stripe intent with marketplace split from step 1.2).
+    // NOTE: no whereNumber — Order ids are UUIDs (HasUuids), not integers.
+    // The sibling markPaid route has whereNumber('order') which is likely a
+    // bug (UUIDs fail the numeric regex), but it isn't reachable in real
+    // customer flow today; leaving it untouched to keep change focused.
+    Route::post('package-orders/{order}/payment-intent', [PackageOrderController::class, 'createPaymentIntent']);
     Route::get('company/package-orders', [PackageOrderController::class, 'companyIndex']);
     Route::get('company/package-orders/{order}', [PackageOrderController::class, 'companyShow'])->whereNumber('order');
     Route::post('company/package-orders/{order}/items/{item}/confirm', [PackageOrderController::class, 'confirmItem'])
