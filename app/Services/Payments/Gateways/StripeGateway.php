@@ -189,12 +189,10 @@ class StripeGateway implements PaymentGatewayInterface
             return ['success' => false, 'error' => 'Missing Stripe-Signature header'];
         }
 
+        $secret = (string) config('payment.stripe.webhook_secret');
+
         try {
-            $event = Webhook::constructEvent(
-                $payload,
-                $sigHeader,
-                (string) config('payment.stripe.webhook_secret')
-            );
+            $event = Webhook::constructEvent($payload, $sigHeader, $secret);
 
             $reference = $event->data->object->id ?? '';
 
@@ -205,9 +203,29 @@ class StripeGateway implements PaymentGatewayInterface
                 'raw' => $event,
             ];
         } catch (SignatureVerificationException $e) {
-            return ['success' => false, 'error' => 'Invalid signature'];
+            // P0-1 step 1.4 debugging — surface the exact reason + a fingerprint
+            // of the secret config used (sha256 first 12 hex), so we can tell
+            // apart "wrong secret" / "stale cache" / "tolerance window" / etc.
+            // The fingerprint is the SHA256 of the secret — NEVER the secret
+            // itself; safe to log.
+            $fingerprint = $secret === ''
+                ? '<empty>'
+                : substr(hash('sha256', $secret), 0, 12);
+            Log::warning('Stripe webhook signature verification failed', [
+                'message' => $e->getMessage(),
+                'secret_len' => strlen($secret),
+                'secret_fingerprint' => $fingerprint,
+                'sig_header_prefix' => substr($sigHeader, 0, 30).'…',
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Invalid signature: '.$e->getMessage()
+                    .' (secret_len='.strlen($secret)
+                    .', secret_fp='.$fingerprint.')',
+            ];
         } catch (\UnexpectedValueException $e) {
-            return ['success' => false, 'error' => 'Invalid payload'];
+            return ['success' => false, 'error' => 'Invalid payload: '.$e->getMessage()];
         }
     }
 }
