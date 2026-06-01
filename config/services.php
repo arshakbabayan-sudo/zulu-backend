@@ -83,7 +83,12 @@ return [
         // The OAuthController will issue a Sanctum token and append it to a
         // path on this host. Multiple comma-separated hosts are allowed —
         // the controller picks the one matching the original initiator.
-        'allowed_frontend_hosts' => env('OAUTH_ALLOWED_FRONTEND_HOSTS', 'zulu.am,www.zulu.am,zuluspin.com,www.zuluspin.com'),
+        // admin.zulu.am + admin.zuluspin.com added 2026-06-01 for the Stripe
+        // Connect onboarding return/refresh URLs (P0-1 step 1.1). The admin
+        // app initiates the flow and Stripe sends the seller back to the
+        // admin host on success — so the host must be on this list to pass
+        // the StripeConnectController gate.
+        'allowed_frontend_hosts' => env('OAUTH_ALLOWED_FRONTEND_HOSTS', 'zulu.am,www.zulu.am,admin.zulu.am,zuluspin.com,www.zuluspin.com,admin.zuluspin.com'),
         'success_path' => env('OAUTH_SUCCESS_PATH', '/auth/oauth-success'),
         'failure_path' => env('OAUTH_FAILURE_PATH', '/login'),
     ],
