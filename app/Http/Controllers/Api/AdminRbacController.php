@@ -19,6 +19,90 @@ use Illuminate\Http\Request;
  */
 class AdminRbacController extends Controller
 {
+    /**
+     * Menu-mirror permission tree (2026-06-01, Arshak's model).
+     *
+     * The super-admin Permissions page renders the admin menu as a tree:
+     * each top-level SECTION expands (dropdown) into sub-items, and each
+     * sub-item exposes the action permissions that gate it. Editing a role =
+     * checking/unchecking these boxes. Operators/agents see the SAME tree but
+     * capped at their own granted permissions (the "ceiling").
+     *
+     * Shape: section => [ label, items => [ key => [label, permissions[]] ] ].
+     * Only permissions that actually exist in the seeder are referenced.
+     */
+    private const PERMISSION_TREE = [
+        'dashboard' => [
+            'label' => 'Dashboard',
+            'items' => [
+                'overview' => ['label' => 'Overview & stats', 'permissions' => ['platform.stats.view']],
+            ],
+        ],
+        'inventory' => [
+            'label' => 'Inventory',
+            'items' => [
+                'hotels' => ['label' => 'Hotels', 'permissions' => ['hotels.view', 'hotels.create', 'hotels.update', 'hotels.delete']],
+                'flights' => ['label' => 'Flights', 'permissions' => ['flights.view', 'flights.create', 'flights.update', 'flights.delete']],
+                'cars' => ['label' => 'Cars', 'permissions' => ['cars.view', 'cars.create', 'cars.update', 'cars.delete']],
+                'transfers' => ['label' => 'Transfers', 'permissions' => ['transfers.view', 'transfers.create', 'transfers.update', 'transfers.delete']],
+                'excursions' => ['label' => 'Excursions', 'permissions' => ['excursions.view', 'excursions.create', 'excursions.update', 'excursions.delete']],
+                'visas' => ['label' => 'Visas', 'permissions' => ['visas.view', 'visas.create', 'visas.update', 'visas.delete']],
+                'packages' => ['label' => 'Packages', 'permissions' => ['packages.view', 'packages.create', 'packages.edit', 'packages.delete', 'packages.manage_components']],
+                'offers' => ['label' => 'Offers', 'permissions' => ['offers.view', 'offers.create', 'offers.publish', 'offers.archive']],
+            ],
+        ],
+        'bookings' => [
+            'label' => 'Bookings',
+            'items' => [
+                'bookings' => ['label' => 'Bookings', 'permissions' => ['bookings.view', 'bookings.create', 'bookings.confirm', 'bookings.cancel']],
+                'package_orders' => ['label' => 'Package orders', 'permissions' => ['package_orders.view', 'package_orders.manage']],
+            ],
+        ],
+        'finance' => [
+            'label' => 'Finance',
+            'items' => [
+                'invoices' => ['label' => 'Invoices', 'permissions' => ['invoices.view', 'invoices.create', 'invoices.issue', 'invoices.pay', 'invoices.cancel']],
+                'payments' => ['label' => 'Payments', 'permissions' => ['payments.view', 'payments.create', 'payments.pay', 'payments.capture', 'payments.fail', 'payments.refund']],
+                'commissions' => ['label' => 'Commissions', 'permissions' => ['commissions.view', 'commissions.create', 'commissions.update', 'commissions.manage', 'commission_records.view']],
+                'entitlements' => ['label' => 'Entitlements', 'permissions' => ['finance.entitlements.view', 'finance.entitlements.manage']],
+                'settlements' => ['label' => 'Settlements', 'permissions' => ['finance.settlements.view', 'finance.settlements.manage']],
+                'platform_finance' => ['label' => 'Platform finance', 'permissions' => ['platform.finance.view']],
+            ],
+        ],
+        'management' => [
+            'label' => 'Management',
+            'items' => [
+                'companies' => ['label' => 'Companies & access', 'permissions' => ['companies.view', 'companies.view_dashboard', 'companies.edit_profile', 'companies.manage_seller_permissions', 'platform.companies.list', 'platform.companies.governance']],
+                'approvals' => ['label' => 'Approvals', 'permissions' => ['platform.approvals.list', 'platform.approvals.manage']],
+                'reviews' => ['label' => 'Reviews', 'permissions' => ['reviews.view', 'reviews.create', 'reviews.moderate']],
+                'oversight' => ['label' => 'Platform oversight', 'permissions' => ['platform.orders.list', 'platform.payments.list', 'platform.packages.moderate', 'platform.inventory.view', 'platform.inventory.manage']],
+            ],
+        ],
+        'directory' => [
+            'label' => 'Directory',
+            'items' => [
+                'users' => ['label' => 'Users', 'permissions' => ['platform.users.list']],
+                'employees' => ['label' => 'Company employees', 'permissions' => ['company.users.manage']],
+            ],
+        ],
+        'settings' => [
+            'label' => 'Settings',
+            'items' => [
+                'localization' => ['label' => 'Localization', 'permissions' => ['localization.view', 'localization.manage']],
+                'platform_settings' => ['label' => 'Platform settings', 'permissions' => ['platform.settings.manage']],
+                'imports' => ['label' => 'Imports', 'permissions' => ['imports.upload']],
+                'seller_permissions' => ['label' => 'Seller permissions', 'permissions' => ['seller_permissions.view']],
+            ],
+        ],
+        'account' => [
+            'label' => 'My account',
+            'items' => [
+                'profile' => ['label' => 'Profile', 'permissions' => ['account.update_profile']],
+                'saved' => ['label' => 'Saved items', 'permissions' => ['saved_items.manage']],
+            ],
+        ],
+    ];
+
     public function __construct(
         private AdminAccessService $adminAccessService,
     ) {}
@@ -172,6 +256,75 @@ class AdminRbacController extends Controller
                 'name' => $p->name,
             ])->values(),
         ];
+    }
+
+    /**
+     * GET /api/platform-admin/rbac/tree?role_id=N
+     *
+     * The menu-mirror permission tree. Returns the admin-menu-shaped sections
+     * → items → permissions, each permission annotated with its DB id and
+     * (when role_id is given) whether that role currently grants it — so the UI
+     * renders the sidebar as a checkbox tree with the right boxes pre-checked.
+     * Permission names that don't exist in the DB are silently skipped.
+     */
+    public function tree(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $idByName = Permission::query()->pluck('id', 'name'); // name => id
+
+        $grantedIds = [];
+        $roleId = $request->query('role_id');
+        if ($roleId !== null && $roleId !== '') {
+            $role = Role::query()->with('permissions:id')->find((int) $roleId);
+            if ($role !== null) {
+                $grantedIds = $role->permissions->pluck('id')->all();
+            }
+        }
+
+        $sections = [];
+        foreach (self::PERMISSION_TREE as $sectionKey => $section) {
+            $items = [];
+            foreach ($section['items'] as $itemKey => $item) {
+                $perms = [];
+                foreach ($item['permissions'] as $permName) {
+                    $pid = $idByName[$permName] ?? null;
+                    if ($pid === null) {
+                        continue; // permission not seeded — skip
+                    }
+                    $perms[] = [
+                        'id' => $pid,
+                        'name' => $permName,
+                        'action' => substr($permName, strrpos($permName, '.') + 1),
+                        'granted' => in_array($pid, $grantedIds, true),
+                    ];
+                }
+                if ($perms !== []) {
+                    $items[] = [
+                        'key' => $itemKey,
+                        'label' => $item['label'],
+                        'permissions' => $perms,
+                    ];
+                }
+            }
+            if ($items !== []) {
+                $sections[] = [
+                    'key' => $sectionKey,
+                    'label' => $section['label'],
+                    'items' => $items,
+                ];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'role_id' => $roleId !== null && $roleId !== '' ? (int) $roleId : null,
+                'sections' => $sections,
+            ],
+        ]);
     }
 
     /** GET /api/platform-admin/rbac/permissions */

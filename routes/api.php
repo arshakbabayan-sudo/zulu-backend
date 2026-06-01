@@ -907,6 +907,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // RBAC inventory (PART 28, Sprint 66)
         Route::get('rbac/roles', [AdminRbacController::class, 'roles']);
         Route::get('rbac/permissions', [AdminRbacController::class, 'permissions']);
+        Route::get('rbac/tree', [AdminRbacController::class, 'tree']);
         Route::get('rbac/matrix', [AdminRbacController::class, 'matrix']);
         Route::get('rbac/stats', [AdminRbacController::class, 'stats']);
         // Phase Զ.13 — functional Role CRUD + matrix toggle (v2 redesign)
