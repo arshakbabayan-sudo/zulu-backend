@@ -35,11 +35,14 @@ jobs:
           GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
           GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
           GOOGLE_DRIVE_REDIRECT_URI: ${{ secrets.GOOGLE_DRIVE_REDIRECT_URI }}
+          STRIPE_KEY: ${{ secrets.STRIPE_KEY }}
+          STRIPE_SECRET: ${{ secrets.STRIPE_SECRET }}
+          STRIPE_CURRENCY: ${{ secrets.STRIPE_CURRENCY }}
         run: |
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes \
             -o SendEnv=TG_BOT_TOKEN,TG_CHAT_ID \
             "$SSH_USER@$SSH_HOST" \
-            "TG_BOT_TOKEN='$TG_BOT_TOKEN' TG_CHAT_ID='$TG_CHAT_ID' GOOGLE_DRIVE_CLIENT_ID='$GOOGLE_DRIVE_CLIENT_ID' GOOGLE_DRIVE_CLIENT_SECRET='$GOOGLE_DRIVE_CLIENT_SECRET' GOOGLE_DRIVE_REDIRECT_URI='$GOOGLE_DRIVE_REDIRECT_URI' bash -se" <<'REMOTE_EOF'
+            "TG_BOT_TOKEN='$TG_BOT_TOKEN' TG_CHAT_ID='$TG_CHAT_ID' GOOGLE_DRIVE_CLIENT_ID='$GOOGLE_DRIVE_CLIENT_ID' GOOGLE_DRIVE_CLIENT_SECRET='$GOOGLE_DRIVE_CLIENT_SECRET' GOOGLE_DRIVE_REDIRECT_URI='$GOOGLE_DRIVE_REDIRECT_URI' STRIPE_KEY='$STRIPE_KEY' STRIPE_SECRET='$STRIPE_SECRET' STRIPE_CURRENCY='$STRIPE_CURRENCY' bash -se" <<'REMOTE_EOF'
             set -euo pipefail
             cd /var/www/zulu-backend
 
@@ -69,6 +72,12 @@ jobs:
             upsert_env GOOGLE_DRIVE_CLIENT_ID "${GOOGLE_DRIVE_CLIENT_ID:-}"
             upsert_env GOOGLE_DRIVE_CLIENT_SECRET "${GOOGLE_DRIVE_CLIENT_SECRET:-}"
             upsert_env GOOGLE_DRIVE_REDIRECT_URI "${GOOGLE_DRIVE_REDIRECT_URI:-}"
+
+            echo "=== Sync STRIPE env vars (Stripe Connect test, 2026-06-01) ==="
+            upsert_env PAYMENT_DRIVER stripe
+            upsert_env STRIPE_KEY "${STRIPE_KEY:-}"
+            upsert_env STRIPE_SECRET "${STRIPE_SECRET:-}"
+            upsert_env STRIPE_CURRENCY "${STRIPE_CURRENCY:-}"
 
             echo "=== Composer install (production) ==="
             COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
