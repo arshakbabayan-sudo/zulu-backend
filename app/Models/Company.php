@@ -62,6 +62,11 @@ class Company extends Model
         'google_drive_folder_id',
         'google_drive_connected_at',
         'google_drive_connected_email',
+        // P0-1 step 1.1 — per-tenant Stripe Connect (Express) account.
+        'stripe_connect_id',
+        'stripe_charges_enabled',
+        'stripe_payouts_enabled',
+        'stripe_details_submitted',
     ];
 
     /**
@@ -90,7 +95,24 @@ class Company extends Model
             'google_refresh_token' => 'encrypted',
             'google_token_expires_at' => 'integer',
             'google_drive_connected_at' => 'datetime',
+            // P0-1 step 1.1 — Stripe Connect onboarding state mirrored from Stripe.
+            'stripe_charges_enabled' => 'boolean',
+            'stripe_payouts_enabled' => 'boolean',
+            'stripe_details_submitted' => 'boolean',
         ];
+    }
+
+    /**
+     * True if this company has a Stripe Connect Express account that can
+     * receive transfers — both charges and payouts are unlocked. Used by
+     * the split-payment service (step 1.2) to gate "can we route money to
+     * this seller yet".
+     */
+    public function hasStripeConnectReady(): bool
+    {
+        return $this->stripe_connect_id !== null
+            && $this->stripe_charges_enabled === true
+            && $this->stripe_payouts_enabled === true;
     }
 
     /**

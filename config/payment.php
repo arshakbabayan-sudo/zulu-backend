@@ -23,6 +23,12 @@ return [
         'secret' => env('STRIPE_SECRET', ''),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET', ''),
         'currency' => env('STRIPE_CURRENCY', 'usd'),
+        // P0-1 step 1.1 — fallback country (ISO 3166 alpha-2) used when
+        // a company's `country` column isn't a 2-letter Stripe-supported
+        // code. Stripe Connect doesn't operate in Armenia → 'US' is the
+        // safe test default; revisit before live launch (Stripe Atlas /
+        // alternate payout path).
+        'connect_default_country' => env('STRIPE_CONNECT_DEFAULT_COUNTRY', 'US'),
     ],
 
     /*

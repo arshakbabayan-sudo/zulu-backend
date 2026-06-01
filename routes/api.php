@@ -67,6 +67,7 @@ use App\Http\Controllers\Api\ErrorReportController;
 use App\Http\Controllers\Api\ExcursionController;
 use App\Http\Controllers\Api\FileAssetController;
 use App\Http\Controllers\Api\GoogleDriveAuthController;
+use App\Http\Controllers\Api\StripeConnectController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FinanceStatsController;
 use App\Http\Controllers\Api\MarketplaceStatsController;
@@ -744,6 +745,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('auth/google-drive/redirect', [GoogleDriveAuthController::class, 'redirect']);
     Route::get('companies/{company}/google-drive/status', [GoogleDriveAuthController::class, 'status'])->whereNumber('company');
     Route::delete('companies/{company}/google-drive', [GoogleDriveAuthController::class, 'disconnect'])->whereNumber('company');
+
+    // P0-1 step 1.1, 2026-06-01 — per-tenant Stripe Connect (Express) onboarding.
+    // Mirrors the Drive pattern: status is GET (cheap, polls), link is POST
+    // (mutates — creates Stripe Account on first call, then AccountLink each call).
+    Route::get('companies/{company}/stripe-connect/status', [StripeConnectController::class, 'status'])->whereNumber('company');
+    Route::post('companies/{company}/stripe-connect/onboarding-link', [StripeConnectController::class, 'createOnboardingLink'])->whereNumber('company');
 
     // I1 audit F-4: group-level platform-admin guard. The in-controller
     // denyUnlessPlatformAdmin() helpers remain in place as defence-in-depth.
