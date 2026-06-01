@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\Payment;
 use App\Models\PaymentLog;
 use App\Services\Payments\PaymentGatewayService;
@@ -110,6 +111,16 @@ class PaymentWebhookController extends Controller
         Request $request,
         PaymentService $paymentService
     ): void {
+        // P0-1 step 1.4 — Stripe Connect account.updated lives on the same
+        // webhook endpoint as our regular PaymentIntent events. The
+        // `reference` here is the connected account id (acct_…), not a
+        // payment_intent id, so we branch BEFORE the Payment lookup.
+        if ($driver === 'stripe' && $eventType === 'account.updated') {
+            $this->handleStripeAccountUpdated($reference, $constructed, $request);
+
+            return;
+        }
+
         // Normalize each gateway's event vocabulary to a uniform set:
         //   payment.succeeded | payment.failed | refund.succeeded | other
         $normalized = $this->normalizeEventType($driver, $eventType);
@@ -180,6 +191,83 @@ class PaymentWebhookController extends Controller
                 'ip_address' => $request->ip(),
             ]);
         }
+    }
+
+    /**
+     * P0-1 step 1.4 — Stripe Connect Express status sync via webhook.
+     *
+     * When a seller's connected account state changes on Stripe's side
+     * (finished onboarding, KYC approved, payouts unlocked, capability
+     * rejected, etc.) Stripe pings us with account.updated. We mirror the
+     * 3 booleans onto the matching `companies` row so the admin Payments
+     * card flips from pending → ready without the user reopening it.
+     *
+     * @param  array<string, mixed>  $constructed
+     */
+    private function handleStripeAccountUpdated(
+        string $accountId,
+        array $constructed,
+        Request $request
+    ): void {
+        if ($accountId === '') {
+            return;
+        }
+
+        $company = Company::query()->where('stripe_connect_id', $accountId)->first();
+        if ($company === null) {
+            Log::info('Stripe account.updated for unknown company', [
+                'stripe_account_id' => $accountId,
+            ]);
+
+            return;
+        }
+
+        $raw = $constructed['raw'] ?? $constructed['event'] ?? null;
+        $object = is_object($raw)
+            ? ($raw->data->object ?? null)
+            : (is_array($raw) ? ($raw['data']['object'] ?? null) : null);
+        $payloadArray = is_object($object) && method_exists($object, 'toArray')
+            ? $object->toArray()
+            : (is_array($object) ? $object : null);
+
+        $chargesEnabled = $this->readBool($object, 'charges_enabled');
+        $payoutsEnabled = $this->readBool($object, 'payouts_enabled');
+        $detailsSubmitted = $this->readBool($object, 'details_submitted');
+
+        $company->forceFill([
+            'stripe_charges_enabled' => $chargesEnabled,
+            'stripe_payouts_enabled' => $payoutsEnabled,
+            'stripe_details_submitted' => $detailsSubmitted,
+        ])->save();
+
+        PaymentLog::query()->create([
+            'payment_id' => null,
+            'event_type' => 'webhook.connect.account.updated',
+            'gateway' => 'stripe',
+            'gateway_reference' => $accountId,
+            'response_payload' => array_merge(
+                ['zulu_company_id' => $company->id],
+                is_array($payloadArray) ? $payloadArray : []
+            ),
+            'ip_address' => $request->ip(),
+        ]);
+    }
+
+    /**
+     * Read a boolean field from a Stripe object (StripeObject or array)
+     * with safe default of false. Handles both the SDK's typed object and
+     * the array fallback we use when the SDK wasn't able to deserialise.
+     */
+    private function readBool(mixed $object, string $key): bool
+    {
+        if (is_object($object)) {
+            return (bool) ($object->{$key} ?? false);
+        }
+        if (is_array($object)) {
+            return (bool) ($object[$key] ?? false);
+        }
+
+        return false;
     }
 
     private function normalizeEventType(string $driver, string $eventType): string
