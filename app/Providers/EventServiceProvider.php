@@ -11,6 +11,7 @@ use App\Events\SellerApplicationRejected;
 use App\Listeners\SendCompanyApplicationApprovedEmail;
 use App\Listeners\SendCompanyApplicationReceivedEmail;
 use App\Listeners\SendCompanyApplicationRejectedEmail;
+use App\Listeners\MarkInvoiceAndOrderPaid;
 use App\Listeners\SendPaymentReceivedEmail;
 use App\Listeners\SendSellerApplicationApprovedEmail;
 use App\Listeners\SendSellerApplicationRejectedEmail;
@@ -38,6 +39,7 @@ class EventServiceProvider extends ServiceProvider
             SendSellerApplicationRejectedEmail::class,
         ],
         PaymentReceived::class => [
+            MarkInvoiceAndOrderPaid::class,
             SendPaymentReceivedEmail::class,
         ],
     ];
