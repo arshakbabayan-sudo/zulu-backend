@@ -349,21 +349,28 @@ class CrmController extends Controller
 
         $rows = [];
         foreach ($company->users as $emp) {
-            // Attributed revenue this month, grouped by currency. The counted
-            // statuses come from the company's CRM settings. Amount col = `total`.
-            $revenueByCurrency = \App\Models\Order::query()
-                ->where('sold_by_user_id', $emp->id)
-                ->whereIn('status', $countStatuses)
-                ->whereBetween('created_at', [$start, $end])
-                ->selectRaw('currency, count(*) as orders_count, coalesce(sum(total),0) as revenue')
-                ->groupBy('currency')
-                ->get();
-
-            $ordersCount = (int) $revenueByCurrency->sum('orders_count');
-            $wonDeals = \App\Models\CrmDeal::query()
+            // Attribution model (Arshak's decision): a sale counts for an
+            // employee when their DEAL is marked "won". So revenue = the value
+            // of the deals this employee won in the period, grouped by currency.
+            // (The order-based path + the Options sales_count_statuses gate
+            // still exist for direct bookings; see $countStatuses below.)
+            $revenueByCurrency = \App\Models\CrmDeal::query()
                 ->where('owner_user_id', $emp->id)
                 ->where('stage', 'won')
                 ->whereBetween('updated_at', [$start, $end])
+                ->selectRaw('currency, count(*) as orders_count, coalesce(sum(value_amount),0) as revenue')
+                ->groupBy('currency')
+                ->get();
+
+            $wonDeals = (int) $revenueByCurrency->sum('orders_count');
+            $ordersCount = $wonDeals;
+            // Informational: direct bookings attributed to this employee that
+            // also reached a counted status (the order path; usually 0 until a
+            // booking flow stamps sold_by_user_id).
+            $directOrders = \App\Models\Order::query()
+                ->where('sold_by_user_id', $emp->id)
+                ->whereIn('status', $countStatuses)
+                ->whereBetween('created_at', [$start, $end])
                 ->count();
 
             $cfg = $comp->get($emp->id);
@@ -375,6 +382,7 @@ class CrmController extends Controller
                 'user' => ['id' => $emp->id, 'name' => $emp->name, 'email' => $emp->email],
                 'orders_count' => $ordersCount,
                 'won_deals' => $wonDeals,
+                'direct_orders' => $directOrders,
                 'revenue_by_currency' => $revenueByCurrency->map(fn ($r) => [
                     'currency' => $r->currency,
                     'orders_count' => (int) $r->orders_count,
