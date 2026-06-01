@@ -564,6 +564,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('bookings', [MarketplaceController::class, 'store']);
         Route::get('bookings/{orderId}', [MarketplaceController::class, 'show'])->whereUuid('orderId');
         Route::post('bookings/{orderId}/checkout', [MarketplaceController::class, 'checkout'])->whereUuid('orderId');
+        // P0-1 step 1.5 (extension) — UNIFIED Stripe PaymentIntent for ANY
+        // marketplace order (hotel/flight/car/transfer/excursion/package +
+        // user-assembled mix). Returns client_secret for Stripe Elements;
+        // step-1.2 split is applied automatically inside the gateway.
+        Route::post('bookings/{orderId}/payment-intent', [MarketplaceController::class, 'paymentIntent'])->whereUuid('orderId');
     });
 
     Route::post('import/upload', [ImportUploadController::class, 'store'])->middleware('throttle:file-upload');
