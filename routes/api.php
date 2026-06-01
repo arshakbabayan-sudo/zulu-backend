@@ -47,6 +47,7 @@ use App\Http\Controllers\Api\CarController;
 use App\Http\Controllers\Api\CasesController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommissionController;
+use App\Http\Controllers\Api\CommissionLimitController;
 use App\Http\Controllers\Api\CompanyApplicationController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\ChatController;
@@ -793,6 +794,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Phase 7.7 — CSV export for /platform/payments
         Route::get('payments/export', [PlatformAdminController::class, 'exportPaymentsCsv']);
         Route::get('finance-summary', [PlatformAdminController::class, 'financeSummary']);
+        // Platform-wide commission % bounds per service type (roadmap P0-2 / 1.2.3).
+        Route::get('commission-limits', [CommissionLimitController::class, 'index']);
+        Route::put('commission-limits', [CommissionLimitController::class, 'update']);
         // Finance group v2 — stat-card endpoints for the 4 list pages + extended summary.
         // See app/Http/Controllers/Api/FinanceStatsController.php.
         Route::get('payments/stats', [FinanceStatsController::class, 'payments']);

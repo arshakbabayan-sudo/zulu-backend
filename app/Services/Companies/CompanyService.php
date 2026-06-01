@@ -109,20 +109,33 @@ class CompanyService
         $company->save();
         $company->refresh();
 
-        if (
-            $company->name !== null && $company->name !== ''
-            && $company->country !== null && $company->country !== ''
-            && $company->city !== null && $company->city !== ''
-            && $company->address !== null && $company->address !== ''
-        ) {
-            if (! $company->profile_completed) {
-                $company->profile_completed = true;
-                $company->save();
-                $company->refresh();
-            }
+        // Step-1 ("General") completion: requires identity + logo + description.
+        // Two-way: if any required field is cleared, profile_completed reverts to false
+        // so the completion wizard re-appears (roadmap P0-2 / items 1.2.4, 1.2.5).
+        $isComplete = $this->isProfileComplete($company);
+        if ($company->profile_completed !== $isComplete) {
+            $company->profile_completed = $isComplete;
+            $company->save();
+            $company->refresh();
         }
 
         return $company->fresh();
+    }
+
+    /**
+     * Whether a company has filled the Step-1 ("General") onboarding fields:
+     * identity (name/country/city/address) + logo + description.
+     */
+    public function isProfileComplete(Company $company): bool
+    {
+        foreach (['name', 'country', 'city', 'address', 'logo', 'description'] as $field) {
+            $value = $company->{$field};
+            if ($value === null || trim((string) $value) === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
