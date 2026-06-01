@@ -39,7 +39,28 @@ class StorefrontPackageController extends Controller
 
     public function show(string $package, PackageService $packageService): JsonResponse
     {
-        $model = $packageService->findPublicForStorefront($package);
+        try {
+            $model = $packageService->findPublicForStorefront($package);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('StorefrontPackage show find failed', [
+                'package' => $package,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile().':'.$e->getLine(),
+                'class' => get_class($e),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Server error',
+                'debug' => [
+                    'where' => 'findPublicForStorefront',
+                    'class' => get_class($e),
+                    'error' => $e->getMessage(),
+                    'file' => basename($e->getFile()).':'.$e->getLine(),
+                ],
+            ], 500);
+        }
+
         if ($model === null) {
             return response()->json([
                 'success' => false,
@@ -47,9 +68,31 @@ class StorefrontPackageController extends Controller
             ], 404);
         }
 
+        try {
+            $data = PackageResource::make($model)->toArray(request());
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('StorefrontPackage show resource failed', [
+                'package' => $package,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile().':'.$e->getLine(),
+                'class' => get_class($e),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Server error',
+                'debug' => [
+                    'where' => 'PackageResource::toArray',
+                    'class' => get_class($e),
+                    'error' => $e->getMessage(),
+                    'file' => basename($e->getFile()).':'.$e->getLine(),
+                ],
+            ], 500);
+        }
+
         return response()->json([
             'success' => true,
-            'data' => PackageResource::make($model)->toArray(request()),
+            'data' => $data,
         ]);
     }
 
