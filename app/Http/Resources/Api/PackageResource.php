@@ -63,7 +63,7 @@ class PackageResource extends JsonResource
             'status' => $this->status,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
-            'offer' => $this->whenLoaded('offer', function () use ($lang) {
+            'offer' => $this->whenLoaded('offer', function () use ($lang, $request) {
                 return [
                     'id' => $this->offer->id,
                     'title' => $this->offer->getTranslated('title', $lang) ?? $this->offer->title,
