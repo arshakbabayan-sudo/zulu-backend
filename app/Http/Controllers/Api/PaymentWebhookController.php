@@ -72,19 +72,12 @@ class PaymentWebhookController extends Controller
         // driver could be invoked directly; left as a follow-up.
 
         if (! ($constructed['success'] ?? false)) {
-            $detail = (string) ($constructed['error'] ?? 'unknown');
             Log::warning('Payment webhook signature invalid', [
                 'driver' => $driver,
-                'error' => $detail,
+                'error' => $constructed['error'] ?? 'unknown',
             ]);
 
-            // P0-1 step 1.4 — surface the gateway's detailed reason on the
-            // 400 response so we can debug deploy-time secret-mismatch and
-            // tolerance issues from a curl smoke. Will tighten once 1.5 lands.
-            return response()->json([
-                'error' => 'Invalid signature',
-                'detail' => $detail,
-            ], 400);
+            return response()->json(['error' => 'Invalid signature'], 400);
         }
 
         $eventType = (string) ($constructed['event_type']

@@ -203,11 +203,11 @@ class StripeGateway implements PaymentGatewayInterface
                 'raw' => $event,
             ];
         } catch (SignatureVerificationException $e) {
-            // P0-1 step 1.4 debugging — surface the exact reason + a fingerprint
-            // of the secret config used (sha256 first 12 hex), so we can tell
-            // apart "wrong secret" / "stale cache" / "tolerance window" / etc.
-            // The fingerprint is the SHA256 of the secret — NEVER the secret
-            // itself; safe to log.
+            // Log a fingerprint (SHA256-prefix) of the configured secret so a
+            // future deploy-time mismatch is diagnosable without ever logging
+            // the secret itself. Saved us 2026-06-01 when `gh secret set
+            // --body -` was misread as a literal `-` and silently stored a
+            // 1-byte hyphen.
             $fingerprint = $secret === ''
                 ? '<empty>'
                 : substr(hash('sha256', $secret), 0, 12);
@@ -215,17 +215,11 @@ class StripeGateway implements PaymentGatewayInterface
                 'message' => $e->getMessage(),
                 'secret_len' => strlen($secret),
                 'secret_fingerprint' => $fingerprint,
-                'sig_header_prefix' => substr($sigHeader, 0, 30).'…',
             ]);
 
-            return [
-                'success' => false,
-                'error' => 'Invalid signature: '.$e->getMessage()
-                    .' (secret_len='.strlen($secret)
-                    .', secret_fp='.$fingerprint.')',
-            ];
+            return ['success' => false, 'error' => 'Invalid signature'];
         } catch (\UnexpectedValueException $e) {
-            return ['success' => false, 'error' => 'Invalid payload: '.$e->getMessage()];
+            return ['success' => false, 'error' => 'Invalid payload'];
         }
     }
 }
