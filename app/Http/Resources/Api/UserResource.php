@@ -137,6 +137,8 @@ class UserResource extends JsonResource
                     'id' => (int) $c->id,
                     'name' => $c->name,
                     'seller_service_types' => $sellerServiceTypesByCompany[(int) $c->id] ?? [],
+                    // P0-2: drives the profile-completion wizard's first-login trigger.
+                    'profile_completed' => (bool) $c->profile_completed,
                 ])
                 ->all(),
             'context' => [
