@@ -23,22 +23,42 @@ class MarketplaceController extends Controller
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
         ]);
 
-        $offer = Offer::query()->findOrFail((int) $validated['offer_id']);
-        if ($offer->status !== Offer::STATUS_PUBLISHED) {
+        try {
+            $offer = Offer::query()->findOrFail((int) $validated['offer_id']);
+            if ($offer->status !== Offer::STATUS_PUBLISHED) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Offer not available',
+                ], 422);
+            }
+
+            $order = $marketplaceService->createBooking($request->user(), $offer);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'order' => $order->load('items'),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('marketplace.store failed', [
+                'offer_id' => $validated['offer_id'] ?? null,
+                'error' => $e->getMessage(),
+                'class' => get_class($e),
+                'file' => $e->getFile().':'.$e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Offer not available',
-            ], 422);
+                'message' => 'Server error',
+                'debug' => [
+                    'where' => 'marketplace.store',
+                    'class' => get_class($e),
+                    'error' => $e->getMessage(),
+                    'file' => basename($e->getFile()).':'.$e->getLine(),
+                ],
+            ], 500);
         }
-
-        $order = $marketplaceService->createBooking($request->user(), $offer);
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'order' => $order->load('items'),
-            ],
-        ]);
     }
 
     public function show(Request $request, string $orderId): JsonResponse
