@@ -81,6 +81,17 @@ jobs:
             upsert_env STRIPE_CURRENCY "${STRIPE_CURRENCY:-}"
             upsert_env STRIPE_WEBHOOK_SECRET "${STRIPE_WEBHOOK_SECRET:-}"
 
+            echo "=== Ensure PHP BCMath extension (idempotent) ==="
+            # 2026-06-01: marketplace bookings, pricing resolver + commission
+            # service rely on bcadd/bcmul/bcdiv. Production runner was missing
+            # php8.3-bcmath and every POST /marketplace/bookings 500'd. Install
+            # is idempotent — apt-get does nothing if already present.
+            if ! php -m | grep -qi '^bcmath$'; then
+              DEBIAN_FRONTEND=noninteractive apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends php8.3-bcmath
+              systemctl reload php8.3-fpm
+            fi
+
             echo "=== Composer install (production) ==="
             COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
 
