@@ -30,6 +30,13 @@ class AdminVoucherController extends Controller
             ->with(['order:id,order_number,user_id', 'issuerCompany:id,name'])
             ->orderByDesc('created_at');
 
+        // Tenant scope: non-super callers see only vouchers their own company
+        // issued. Empty company list → [0] → no rows (never a leak).
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $query->whereIn('issuer_company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+        }
+
         if (is_string($status = $request->query('status')) && in_array($status, Voucher::STATUSES, true)) {
             $query->where('status', $status);
         }

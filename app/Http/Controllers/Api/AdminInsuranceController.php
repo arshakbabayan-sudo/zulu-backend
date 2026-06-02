@@ -38,8 +38,13 @@ class AdminInsuranceController extends Controller
             return $deny;
         }
 
+        $user = $request->user();
         $products = InsuranceProduct::query()
             ->with('company:id,name')
+            ->when($user !== null && ! $this->adminAccessService->isSuperAdmin($user), function ($q) use ($user) {
+                // Tenant scope: non-super callers see only their own company's products.
+                $q->whereIn('company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+            })
             ->orderByDesc('id')
             ->get();
 

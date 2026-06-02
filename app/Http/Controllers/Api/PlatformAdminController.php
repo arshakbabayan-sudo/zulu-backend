@@ -1109,6 +1109,13 @@ class PlatformAdminController extends Controller
             ]);
         }
 
+        // Tenant scope: non-super callers see only their own company's seller
+        // applications. Empty company list → [0] → no rows.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $query->whereIn('company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+        }
+
         $paginator = $query->paginate($this->commerceListPerPage($request));
 
         $data = $paginator->getCollection()->map(fn (CompanySellerApplication $a): array => $this->sellerApplicationToAdminRow($a))->values()->all();
