@@ -222,7 +222,7 @@ class AdminContractController extends Controller
     private function denyUnlessPlatformAdmin(Request $request): ?JsonResponse
     {
         $user = $request->user();
-        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
+        if ($user === null || ! $this->adminAccessService->canAccessAdminPanel($user)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 

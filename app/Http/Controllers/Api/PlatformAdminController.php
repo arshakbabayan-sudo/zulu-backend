@@ -1582,7 +1582,10 @@ class PlatformAdminController extends Controller
     private function denyUnlessPlatformAdmin(Request $request): ?JsonResponse
     {
         $user = $request->user();
-        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
+        // Phase 6: the route-group middleware is the deny-by-default gate
+        // (operators reach only allowlisted GET reads). This helper re-confirms
+        // admin-panel access; data is scoped by visibleCompanyIds downstream.
+        if ($user === null || ! $this->adminAccessService->canAccessAdminPanel($user)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 

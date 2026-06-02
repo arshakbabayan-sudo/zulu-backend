@@ -62,4 +62,48 @@ class EnsurePlatformAdminMiddlewareTest extends TestCase
         $res = $this->getJson('/api/platform-admin/stats');
         $this->assertNotSame(403, $res->status(), 'Platform admin must not be blocked by middleware');
     }
+
+    /**
+     * Phase 6 — an operator (company_admin, no platform.* perm) may reach the
+     * allowlisted tenant-scoped READ endpoints, but NOT writes, NOT super-only
+     * data, NOT off-list routes.
+     */
+    public function test_operator_reaches_allowlisted_reads_only(): void
+    {
+        $role = Role::query()->firstOrCreate(['name' => 'company_admin']);
+        $company = Company::query()->create(['name' => 'Op Co '.str()->uuid(), 'type' => 'operator', 'status' => 'active']);
+        $operator = User::query()->create([
+            'name' => 'Op', 'email' => 'op-'.str()->uuid().'@example.test',
+            'password' => bcrypt('password'), 'status' => User::STATUS_ACTIVE,
+        ]);
+        $operator->companies()->attach($company->id, ['role_id' => $role->id]);
+
+        Sanctum::actingAs($operator);
+
+        // Allowlisted scoped reads → NOT 403 (operator sees own data).
+        $this->assertNotSame(403, $this->getJson('/api/platform-admin/bookings')->status());
+        $this->assertNotSame(403, $this->getJson('/api/platform-admin/companies')->status());
+        $this->assertNotSame(403, $this->getJson('/api/platform-admin/bookings/stats')->status());
+
+        // Off-list super-only reads → 403.
+        $this->getJson('/api/platform-admin/customers')->assertStatus(403);
+        $this->getJson('/api/platform-admin/commission-limits')->assertStatus(403);
+        $this->getJson('/api/platform-admin/stats')->assertStatus(403);
+
+        // Writes → 403 (deny-by-default; allowlist is GET only).
+        $this->patchJson('/api/platform-admin/companies/1/toggle-seller', [])->assertStatus(403);
+    }
+
+    public function test_b2c_customer_is_forbidden_everywhere(): void
+    {
+        // No role-bound membership at all = B2C customer.
+        $customer = User::query()->create([
+            'name' => 'B2C', 'email' => 'b2c-'.str()->uuid().'@example.test',
+            'password' => bcrypt('password'), 'status' => User::STATUS_ACTIVE,
+        ]);
+        Sanctum::actingAs($customer);
+
+        $this->getJson('/api/platform-admin/bookings')->assertStatus(403);
+        $this->getJson('/api/platform-admin/companies')->assertStatus(403);
+    }
 }

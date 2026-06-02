@@ -30,6 +30,43 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnsurePlatformAdmin
 {
+    /**
+     * Phase 6 — exact route suffixes (after `api/platform-admin/`) that a
+     * non-staff operator/agent may reach. DENY-BY-DEFAULT: only GET requests
+     * to these tenant-SCOPED LIST endpoints are allowed; everything else
+     * (writes, super-only data, not-yet-scoped stats, detail-by-id without an
+     * ownership check) stays 403 for operators. Super-admins and platform
+     * staff (isPlatformAdmin) bypass this list entirely.
+     *
+     * Each entry's controller already filters by visibleCompanyIds (Phase
+     * 0/1/2) so an operator sees ONLY their own company's rows. Only add a new
+     * path here once its query is provably tenant-scoped.
+     *
+     * @var list<string>
+     */
+    private const OPERATOR_READABLE = [
+        'bookings',
+        'bookings/stats',
+        'package-orders',
+        'package-orders/stats',
+        'payments',
+        'vouchers',
+        'insurance/products',
+        'insurance/policies',
+        'seller-applications',
+        'contracts',
+        'connections',
+        'webhooks/subscriptions',
+        'users',
+        'companies',
+        'audit-logs',
+        'crm/deals',
+        'crm/activities',
+        'crm/team',
+        'crm/stats',
+        'crm/settings',
+    ];
+
     public function __construct(private AdminAccessService $adminAccessService)
     {
     }
@@ -45,21 +82,36 @@ class EnsurePlatformAdmin
             ], 401);
         }
 
-        // Platform-staff gate. NOTE (2026-06-02): operators/agents are 403'd
-        // here on purpose — letting them reach their own SCOPED data requires
-        // first auditing every write / route-model-bound method in this group
-        // for per-row tenant ownership (CRM updateDeal/destroyDeal, voucher /
-        // contract show, etc. currently operate on any id). Until that lands
-        // (blueprint Phase 6 + the per-row work of Phase 3), widening this
-        // gate would expose cross-tenant writes. AdminAccessService::
-        // canAccessAdminPanel() is the resolver Phase 6 will swap in here.
-        if (! $this->adminAccessService->isPlatformAdmin($user)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        // Super-admins + genuine platform staff: full group access (their data
+        // is scoped inside the controllers via visibleCompanyIds).
+        if ($this->adminAccessService->isPlatformAdmin($user)) {
+            return $next($request);
         }
 
-        return $next($request);
+        // Operators/agents (any role-bound membership, NOT a B2C customer):
+        // Phase 6 admits them to the allowlisted, tenant-scoped READ endpoints
+        // so they see their own company's data in the admin panel. Writes and
+        // everything off the list stay 403 (no cross-tenant mutation, no leak
+        // of unscoped/super-only data).
+        if ($this->adminAccessService->canAccessAdminPanel($user)
+            && $this->isOperatorReadable($request)) {
+            return $next($request);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Forbidden',
+        ], 403);
+    }
+
+    private function isOperatorReadable(Request $request): bool
+    {
+        if (! in_array($request->method(), ['GET', 'HEAD'], true)) {
+            return false;
+        }
+
+        $suffix = ltrim(substr($request->path(), strlen('api/platform-admin')), '/');
+
+        return in_array($suffix, self::OPERATOR_READABLE, true);
     }
 }

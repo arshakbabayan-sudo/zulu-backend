@@ -29,8 +29,12 @@ class BookingsStatsController extends Controller
 
     private function denyUnlessPlatformAdmin(Request $request): ?JsonResponse
     {
+        // Phase 6: allowlisted (bookings/stats, package-orders/stats) so an
+        // operator reaches their own scoped stat cards. The route-group
+        // middleware is the deny-by-default gate; numbers are scoped by
+        // statsScope() below.
         $user = $request->user();
-        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
+        if ($user === null || ! $this->adminAccessService->canAccessAdminPanel($user)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
