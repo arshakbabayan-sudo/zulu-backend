@@ -346,6 +346,103 @@ class AdminAccessService
     }
 
     /**
+     * Company-owner roles for Layer-B row scoping. The company creator gets
+     * `company_admin` on application approval (rank 4, 2026-05-30 fix); they
+     * own all of their company's data. operator_admin / company_operator /
+     * agent are EMPLOYEES under that owner and default to their own rows.
+     *
+     * @var list<string>
+     */
+    private const COMPANY_OWNER_ROLE_NAMES = ['company_admin'];
+
+    /**
+     * True when the caller owns their company (sees ALL of its rows by right),
+     * as opposed to being an employee within it. Owner = holds the
+     * `company_admin` role on at least one membership.
+     */
+    public function isCompanyOwner(User $user): bool
+    {
+        $key = 'company_owner_'.$user->id;
+        if (array_key_exists($key, $this->cache)) {
+            return $this->cache[$key];
+        }
+
+        return $this->cache[$key] = in_array(
+            true,
+            array_map(
+                static fn (string $name): bool => in_array($name, self::COMPANY_OWNER_ROLE_NAMES, true),
+                $this->roleNames($user),
+            ),
+            true,
+        );
+    }
+
+    /**
+     * Within-company row scope (blueprint Layer B). Given the caller and the
+     * module's "see whole company" permission (e.g. `bookings.view_all`),
+     * returns either:
+     *   - null → NO row filter: the caller may see the whole company's rows
+     *            (they are the company owner, OR they hold <module>.view_all —
+     *            a senior manager the owner promoted via the permission drawer).
+     *   - int  → filter the entity's attribution column to THIS user id: a
+     *            plain employee sees only their own rows for this module.
+     *
+     * Super-admins and platform staff never reach this (their call sites gate
+     * upstream and skip row scoping). The COMPANY layer (visibleCompanyIds) is
+     * applied first and independently; this only narrows WITHIN those
+     * companies. Entities without an attribution column can't use this — they
+     * stay company-scoped only (callers simply don't invoke it for those).
+     */
+    public function employeeRowScopeUserId(User $user, string $viewAllPermission): ?int
+    {
+        if ($this->isCompanyOwner($user)) {
+            return null;
+        }
+
+        if (in_array($viewAllPermission, $this->permissionNames($user), true)) {
+            return null;
+        }
+
+        return (int) $user->id;
+    }
+
+    /**
+     * Distinct role names across the caller's role-bound memberships.
+     *
+     * @return list<string>
+     */
+    private function roleNames(User $user): array
+    {
+        $key = 'role_names_'.$user->id;
+        if (array_key_exists($key, $this->cache)) {
+            return $this->cache[$key];
+        }
+
+        $loadedMemberships = $this->loadedMemberships($user);
+        if ($loadedMemberships !== null) {
+            $names = $loadedMemberships
+                ->map(fn (UserCompany $m) => $m->role?->name)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            return $this->cache[$key] = $names;
+        }
+
+        return $this->cache[$key] = UserCompany::query()
+            ->where('user_id', $user->id)
+            ->whereNotNull('role_id')
+            ->with('role:id,name')
+            ->get()
+            ->map(fn (UserCompany $m) => $m->role?->name)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * Company IDs the caller belongs to via a role-bound membership.
      *
      * Used to tenant-scope platform-admin list endpoints (bookings, etc.) so a

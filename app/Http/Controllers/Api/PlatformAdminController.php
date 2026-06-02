@@ -335,6 +335,11 @@ class PlatformAdminController extends Controller
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
             $filters['scope_company_ids'] = $this->adminAccessService->visibleCompanyIds($user);
+            // Phase 3 Layer-B: a plain employee sees only orders they sold;
+            // company owner / holder of package_orders.view_all sees the
+            // whole company (resolver returns null → no attribution filter).
+            $filters['scope_attribution_user_id'] = $this->adminAccessService
+                ->employeeRowScopeUserId($user, 'package_orders.view_all');
         }
 
         $perPage = $this->commerceListPerPage($request);
@@ -376,6 +381,11 @@ class PlatformAdminController extends Controller
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
             $filters['scope_company_ids'] = $this->adminAccessService->visibleCompanyIds($user);
+            // Phase 3 Layer-B: a plain employee sees only bookings they sold
+            // (orders.sold_by_user_id); owner / bookings.view_all → whole
+            // company (resolver null → no attribution filter).
+            $filters['scope_attribution_user_id'] = $this->adminAccessService
+                ->employeeRowScopeUserId($user, 'bookings.view_all');
         }
 
         $perPage = $this->commerceListPerPage($request);

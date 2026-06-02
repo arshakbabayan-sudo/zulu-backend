@@ -169,6 +169,43 @@ class AdminAccessServiceScopeTest extends TestCase
         $this->assertFalse($this->access->canAccessAdminPanel($user));
     }
 
+    // ─── Phase 3: within-company row scope (Layer B) ────────────────────────
+
+    public function test_is_company_owner_true_for_company_admin(): void
+    {
+        $this->assertTrue($this->access->isCompanyOwner($this->userWithRole('company_admin')));
+    }
+
+    public function test_is_company_owner_false_for_employee_roles(): void
+    {
+        $this->assertFalse($this->access->isCompanyOwner($this->userWithRole('operator_admin')));
+        $this->assertFalse($this->access->isCompanyOwner($this->userWithRole('agent')));
+    }
+
+    public function test_row_scope_null_for_company_owner(): void
+    {
+        // Owner sees the whole company → no row filter.
+        $owner = $this->userWithRole('company_admin');
+        $this->assertNull($this->access->employeeRowScopeUserId($owner, 'bookings.view_all'));
+    }
+
+    public function test_row_scope_returns_own_id_for_plain_employee(): void
+    {
+        // Plain employee without the module's view_all → own rows only.
+        $employee = $this->userWithRole('agent');
+        $this->assertSame($employee->id, $this->access->employeeRowScopeUserId($employee, 'bookings.view_all'));
+    }
+
+    public function test_row_scope_null_for_employee_with_view_all(): void
+    {
+        // Senior manager: employee role + the module's view_all grant → whole
+        // company for THAT module (per-module, blueprint Q1).
+        $manager = $this->userWithRole('operator_admin', ['bookings.view_all']);
+        $this->assertNull($this->access->employeeRowScopeUserId($manager, 'bookings.view_all'));
+        // ...but still own-rows-only for a DIFFERENT module they weren't granted.
+        $this->assertSame($manager->id, $this->access->employeeRowScopeUserId($manager, 'crm.view_all'));
+    }
+
     private function seedRoles(): void
     {
         foreach (['super_admin', 'platform_admin', 'operator_admin', 'company_admin', 'agent'] as $name) {

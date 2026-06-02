@@ -299,6 +299,17 @@ class PlatformAdminService
             $q->whereIn('company_id', $scopeIds)
                 ->orWhereIn('agent_company_id', $scopeIds);
         });
+
+        // Phase 3 Layer-B (within-company row scope): when the controller set
+        // a non-null scope_attribution_user_id (a plain employee, not the
+        // owner and without <module>.view_all), narrow further to the orders
+        // that employee personally sold. Null/absent = owner or view_all =
+        // whole company (no extra filter). The column was added 2026-06-01
+        // (orders.sold_by_user_id) for CRM employee-sales attribution.
+        if (array_key_exists('scope_attribution_user_id', $filters)
+            && $filters['scope_attribution_user_id'] !== null) {
+            $query->where('sold_by_user_id', (int) $filters['scope_attribution_user_id']);
+        }
     }
 
     /**
