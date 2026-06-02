@@ -320,6 +320,14 @@ class PlatformAdminController extends Controller
             'company_id' => $request->filled('company_id') ? (int) $request->query('company_id') : null,
         ], static fn ($v) => $v !== null && $v !== '');
 
+        // Tenant scope (2026-06-02): non-super callers see only their own
+        // companies' package orders. Set after array_filter so an empty
+        // "owns no company" list survives as a real [] (→ zero rows).
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+        }
+
         $perPage = $this->commerceListPerPage($request);
         $paginator = $service->listAllPackageOrders($filters, $perPage);
 
@@ -467,6 +475,13 @@ class PlatformAdminController extends Controller
             'to' => $request->filled('to') ? (string) $request->query('to') : null,
         ], static fn ($v) => $v !== null && $v !== '');
 
+        // Tenant scope: non-super callers only see payments on their own
+        // companies' orders (seller or referring agent).
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+        }
+
         $perPage = $this->commerceListPerPage($request);
         $paginator = $service->listAllPayments($filters, $perPage);
 
@@ -487,6 +502,13 @@ class PlatformAdminController extends Controller
             'from' => $request->filled('from') ? (string) $request->query('from') : null,
             'to' => $request->filled('to') ? (string) $request->query('to') : null,
         ], static fn ($v) => $v !== null && $v !== '');
+
+        // Tenant scope: same as the list endpoint — non-super exports only
+        // their own companies' payments.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+        }
 
         $filename = 'payments-'.now()->format('Y-m-d-His').'.csv';
 

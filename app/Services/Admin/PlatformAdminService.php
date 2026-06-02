@@ -257,7 +257,39 @@ class PlatformAdminService
             $query->where('company_id', (int) $filters['company_id']);
         }
 
+        $this->applyOrderCompanyScope($query, $filters);
+
         return $query->paginate($perPage);
+    }
+
+    /**
+     * Tenant scope for Order-based list queries: restrict to the caller's own
+     * companies (seller via company_id OR referrer via agent_company_id) when
+     * the controller set `scope_company_ids` (non-super callers only). An
+     * empty list means "owns no company" → zero rows, never a leak. Shared by
+     * bookings + package orders so the rule stays identical.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Order>  $query
+     * @param  array<string,mixed>  $filters
+     */
+    private function applyOrderCompanyScope($query, array $filters): void
+    {
+        if (! array_key_exists('scope_company_ids', $filters)) {
+            return;
+        }
+        $scopeIds = array_values(array_filter(
+            array_map('intval', (array) $filters['scope_company_ids']),
+            static fn ($id) => $id > 0,
+        ));
+        if (count($scopeIds) === 0) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+        $query->where(function ($q) use ($scopeIds) {
+            $q->whereIn('company_id', $scopeIds)
+                ->orWhereIn('agent_company_id', $scopeIds);
+        });
     }
 
     /**
@@ -294,23 +326,7 @@ class PlatformAdminService
         // everyone except super-admins. An empty list means the caller owns
         // no company → they see nothing (prevents the old leak where an
         // operator landed on /platform/bookings and saw every company's data).
-        if (array_key_exists('scope_company_ids', $filters)) {
-            $scopeIds = array_values(array_filter(
-                array_map('intval', (array) $filters['scope_company_ids']),
-                static fn ($id) => $id > 0,
-            ));
-            if (count($scopeIds) === 0) {
-                $query->whereRaw('1 = 0');
-            } else {
-                // Operator sees bookings their company SOLD (company_id); an
-                // agent sees the ones they REFERRED (agent_company_id). OR both
-                // so either role sees exactly "their" bookings.
-                $query->where(function ($q) use ($scopeIds) {
-                    $q->whereIn('company_id', $scopeIds)
-                        ->orWhereIn('agent_company_id', $scopeIds);
-                });
-            }
-        }
+        $this->applyOrderCompanyScope($query, $filters);
         // Phase 4G (2026-05-31) — user_id filter so the new Directory→People
         // detail page can fetch a customer's recent bookings inline.
         if (! empty($filters['user_id'])) {
@@ -374,6 +390,24 @@ class PlatformAdminService
         }
         if (! empty($filters['to'])) {
             $query->where('created_at', '<=', $filters['to'].' 23:59:59');
+        }
+
+        // Tenant scope: a payment belongs to the company that owns its order
+        // (seller via company_id, or referring agent via agent_company_id).
+        // Non-super callers are restricted to their own companies.
+        if (array_key_exists('scope_company_ids', $filters)) {
+            $scopeIds = array_values(array_filter(
+                array_map('intval', (array) $filters['scope_company_ids']),
+                static fn ($id) => $id > 0,
+            ));
+            if (count($scopeIds) === 0) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereHas('invoice.order', function ($q) use ($scopeIds) {
+                    $q->whereIn('company_id', $scopeIds)
+                        ->orWhereIn('agent_company_id', $scopeIds);
+                });
+            }
         }
 
         return $query;
