@@ -302,7 +302,13 @@ class PlatformAdminService
             if (count($scopeIds) === 0) {
                 $query->whereRaw('1 = 0');
             } else {
-                $query->whereIn('company_id', $scopeIds);
+                // Operator sees bookings their company SOLD (company_id); an
+                // agent sees the ones they REFERRED (agent_company_id). OR both
+                // so either role sees exactly "their" bookings.
+                $query->where(function ($q) use ($scopeIds) {
+                    $q->whereIn('company_id', $scopeIds)
+                        ->orWhereIn('agent_company_id', $scopeIds);
+                });
             }
         }
         // Phase 4G (2026-05-31) — user_id filter so the new Directory→People
