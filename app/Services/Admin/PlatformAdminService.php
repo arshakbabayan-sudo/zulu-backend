@@ -289,6 +289,22 @@ class PlatformAdminService
         if (! empty($filters['company_id'])) {
             $query->where('company_id', (int) $filters['company_id']);
         }
+        // Tenant scope (2026-06-02): non-super callers see ONLY their own
+        // companies' bookings. The controller sets scope_company_ids for
+        // everyone except super-admins. An empty list means the caller owns
+        // no company → they see nothing (prevents the old leak where an
+        // operator landed on /platform/bookings and saw every company's data).
+        if (array_key_exists('scope_company_ids', $filters)) {
+            $scopeIds = array_values(array_filter(
+                array_map('intval', (array) $filters['scope_company_ids']),
+                static fn ($id) => $id > 0,
+            ));
+            if (count($scopeIds) === 0) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereIn('company_id', $scopeIds);
+            }
+        }
         // Phase 4G (2026-05-31) — user_id filter so the new Directory→People
         // detail page can fetch a customer's recent bookings inline.
         if (! empty($filters['user_id'])) {

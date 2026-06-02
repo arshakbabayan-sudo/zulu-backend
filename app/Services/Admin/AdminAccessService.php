@@ -209,6 +209,40 @@ class AdminAccessService
     }
 
     /**
+     * Company IDs the caller belongs to via a role-bound membership.
+     *
+     * Used to tenant-scope platform-admin list endpoints (bookings, etc.) so a
+     * non-super operator/agent only ever sees their OWN company's rows — even
+     * if their role carries a `platform.*` permission that makes
+     * isPlatformAdmin() true (that flag governs menu/page access, NOT which
+     * tenant's data they may read). Returns [] when the user owns no company,
+     * in which case the caller should see nothing.
+     *
+     * @return list<int>
+     */
+    public function callerCompanyIds(User $user): array
+    {
+        $loaded = $this->loadedMemberships($user);
+        if ($loaded !== null) {
+            return collect($loaded)
+                ->filter(fn ($m) => $m->role_id !== null)
+                ->map(fn ($m) => (int) $m->company_id)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return UserCompany::query()
+            ->where('user_id', $user->id)
+            ->whereNotNull('role_id')
+            ->pluck('company_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * Cross-tenant operator statistics: optional ?company_id= on operator statistics APIs.
      * True for full super-admins and for non-super users who hold platform.stats.view only.
      */

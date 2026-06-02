@@ -350,6 +350,17 @@ class PlatformAdminController extends Controller
             'service_type' => $request->filled('service_type') ? (string) $request->query('service_type') : null,
         ], static fn ($v) => $v !== null && $v !== '');
 
+        // Tenant scoping (2026-06-02): super-admins see every company's
+        // bookings; everyone else — operator/agent, even when a platform.*
+        // permission makes isPlatformAdmin() true — is restricted to their
+        // own companies. Set AFTER array_filter so an empty "owns no company"
+        // list survives as a real [] scope instead of being dropped (which
+        // would fall through to unscoped = the leak Arshak reported).
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+        }
+
         $perPage = $this->commerceListPerPage($request);
         $paginator = $service->listAllBookings($filters, $perPage);
 
