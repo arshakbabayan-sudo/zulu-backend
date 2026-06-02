@@ -208,7 +208,13 @@ class PlatformAdminUserListsTest extends TestCase
     private function makePlatformAdmin(): User
     {
         $user = $this->makeUser();
-        $role = Role::query()->firstOrCreate(['name' => 'platform_admin']);
+        // Phase 0/1 of RBAC tenant scoping (2026-06-02) made customers and
+        // unverified-accounts super-only and scoped listUsers to the caller's
+        // own companies. This fixture must therefore be a super_admin to
+        // exercise the filter logic those tests are about — a platform_admin
+        // now sees an empty/scoped response and the filter assertions can't
+        // run. Forbidden-path tests still use makeUser() directly.
+        $role = Role::query()->firstOrCreate(['name' => 'super_admin']);
         $platform = $this->makeCompany();
         $user->companies()->attach($platform->id, ['role_id' => $role->id]);
 

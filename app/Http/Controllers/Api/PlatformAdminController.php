@@ -83,7 +83,7 @@ class PlatformAdminController extends Controller
         // Set after array_filter so an empty list survives as a real [].
         $caller = $request->user();
         if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
-            $cleanFilters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($caller);
+            $cleanFilters['scope_company_ids'] = $this->adminAccessService->visibleCompanyIds($caller);
         }
 
         $paginator = $service->listCompanies($cleanFilters, $perPage);
@@ -334,7 +334,7 @@ class PlatformAdminController extends Controller
         // "owns no company" list survives as a real [] (→ zero rows).
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+            $filters['scope_company_ids'] = $this->adminAccessService->visibleCompanyIds($user);
         }
 
         $perPage = $this->commerceListPerPage($request);
@@ -375,7 +375,7 @@ class PlatformAdminController extends Controller
         // would fall through to unscoped = the leak Arshak reported).
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+            $filters['scope_company_ids'] = $this->adminAccessService->visibleCompanyIds($user);
         }
 
         $perPage = $this->commerceListPerPage($request);
@@ -488,7 +488,7 @@ class PlatformAdminController extends Controller
         // companies' orders (seller or referring agent).
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+            $filters['scope_company_ids'] = $this->adminAccessService->visibleCompanyIds($user);
         }
 
         $perPage = $this->commerceListPerPage($request);
@@ -516,7 +516,7 @@ class PlatformAdminController extends Controller
         // their own companies' payments.
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $filters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($user);
+            $filters['scope_company_ids'] = $this->adminAccessService->visibleCompanyIds($user);
         }
 
         $filename = 'payments-'.now()->format('Y-m-d-His').'.csv';
@@ -643,7 +643,7 @@ class PlatformAdminController extends Controller
         // companies (their staff), not every user on the platform.
         $caller = $request->user();
         if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
-            $ids = $this->adminAccessService->callerCompanyIds($caller) ?: [0];
+            $ids = $this->adminAccessService->visibleCompanyIds($caller) ?: [0];
             $query->whereHas('companies', fn ($q) => $q->whereIn('companies.id', $ids));
         }
 
@@ -1148,7 +1148,7 @@ class PlatformAdminController extends Controller
         // applications. Empty company list → [0] → no rows.
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $query->whereIn('company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+            $query->whereIn('company_id', $this->adminAccessService->visibleCompanyIds($user) ?: [0]);
         }
 
         $paginator = $query->paginate($this->commerceListPerPage($request));

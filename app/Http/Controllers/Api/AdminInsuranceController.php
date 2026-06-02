@@ -43,7 +43,7 @@ class AdminInsuranceController extends Controller
             ->with('company:id,name')
             ->when($user !== null && ! $this->adminAccessService->isSuperAdmin($user), function ($q) use ($user) {
                 // Tenant scope: non-super callers see only their own company's products.
-                $q->whereIn('company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+                $q->whereIn('company_id', $this->adminAccessService->visibleCompanyIds($user) ?: [0]);
             })
             ->orderByDesc('id')
             ->get();
@@ -128,7 +128,7 @@ class AdminInsuranceController extends Controller
         // callers see only policies of their own company's products.
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $ids = $this->adminAccessService->callerCompanyIds($user) ?: [0];
+            $ids = $this->adminAccessService->visibleCompanyIds($user) ?: [0];
             $query->whereHas('product', fn ($q) => $q->whereIn('company_id', $ids));
         }
 

@@ -34,7 +34,7 @@ class AdminVoucherController extends Controller
         // issued. Empty company list → [0] → no rows (never a leak).
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $query->whereIn('issuer_company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+            $query->whereIn('issuer_company_id', $this->adminAccessService->visibleCompanyIds($user) ?: [0]);
         }
 
         if (is_string($status = $request->query('status')) && in_array($status, Voucher::STATUSES, true)) {

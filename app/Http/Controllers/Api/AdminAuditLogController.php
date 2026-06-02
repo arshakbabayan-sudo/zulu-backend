@@ -34,7 +34,7 @@ class AdminAuditLogController extends Controller
         // platform's audit trail.
         $caller = $request->user();
         if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
-            $ids = $this->adminAccessService->callerCompanyIds($caller) ?: [0];
+            $ids = $this->adminAccessService->visibleCompanyIds($caller) ?: [0];
             $query->whereHas('actor', fn ($q) => $q->whereHas('companies', fn ($qq) => $qq->whereIn('companies.id', $ids)));
         }
 

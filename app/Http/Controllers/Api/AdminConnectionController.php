@@ -62,7 +62,7 @@ class AdminConnectionController extends Controller
         // callers see only connections their own company is part of.
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $ids = $this->adminAccessService->callerCompanyIds($user) ?: [0];
+            $ids = $this->adminAccessService->visibleCompanyIds($user) ?: [0];
             $query->where(function ($qb) use ($ids): void {
                 $qb->whereIn('seller_a_company_id', $ids)->orWhereIn('seller_b_company_id', $ids);
             });

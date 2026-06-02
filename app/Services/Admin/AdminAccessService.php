@@ -209,6 +209,91 @@ class AdminAccessService
     }
 
     /**
+     * Genuine ZULU platform staff — distinguishes a real platform_admin
+     * (assigned the platform_admin role on its membership) from an operator
+     * that merely carries a `platform.*` permission via its operator_admin /
+     * company_admin role. Both make isPlatformAdmin()=true (it gates menu /
+     * page access), but only the former is platform STAFF for tenant-scope
+     * decisions — operators must stay scoped to their own company.
+     *
+     * Phase-2 helper (blueprint §3.4). Used by visibleCompanyIds() today and
+     * will resolve Phase 4 staff assignments (country / company) once
+     * platform_staff_scopes lands.
+     */
+    public function isPlatformStaff(User $user): bool
+    {
+        $key = 'platform_staff_'.$user->id;
+        if (array_key_exists($key, $this->cache)) {
+            return $this->cache[$key];
+        }
+
+        if ($this->isSuperAdmin($user)) {
+            return $this->cache[$key] = true;
+        }
+
+        $loadedMemberships = $this->loadedMemberships($user);
+        if ($loadedMemberships !== null) {
+            foreach ($loadedMemberships as $membership) {
+                $role = $membership->role;
+                if ($role !== null && in_array($role->name, self::PLATFORM_ADMIN_ROLE_NAMES, true)) {
+                    return $this->cache[$key] = true;
+                }
+            }
+
+            return $this->cache[$key] = false;
+        }
+
+        $cacheKey = 'admin_is_platform_staff_'.$user->id;
+        $result = Cache::remember($cacheKey, 300, function () use ($user): bool {
+            return $user->memberships()
+                ->whereHas('role', function (Builder $query): void {
+                    $query->whereIn('name', self::PLATFORM_ADMIN_ROLE_NAMES);
+                })
+                ->exists();
+        });
+
+        return $this->cache[$key] = $result;
+    }
+
+    /**
+     * Unified tenant-scope resolver — single source of truth for "which
+     * companies' rows may this NON-SUPER caller see across the admin panel"
+     * (Layer A of the RBAC blueprint scope model). Call sites must still gate
+     * with isSuperAdmin() upstream; super-admins have unrestricted access and
+     * should not pass through scoping at all. Empty list = caller owns no
+     * company → downstream services translate to `1 = 0` (zero rows, never a
+     * leak).
+     *
+     * Resolution:
+     *  - Platform staff (isPlatformStaff)
+     *      Phase 4 TODO: assignedCompanyIds (platform_staff_scopes table).
+     *      Interim: callerCompanyIds — fail-closed; do NOT widen to ALL here,
+     *      that would silently grant cross-tenant access until Phase 4 ships.
+     *  - Operator/agent + their employees → callerCompanyIds (own
+     *      UserCompany memberships, via Layer A of the blueprint).
+     *
+     * Defensive fall-through for a super-admin call site returns
+     * allCompanyIdsOrdered (matches the blueprint's "super → ALL").
+     *
+     * @return list<int>
+     */
+    public function visibleCompanyIds(User $user): array
+    {
+        if ($this->isSuperAdmin($user)) {
+            return $this->allCompanyIdsOrdered();
+        }
+
+        // Platform staff branch is kept distinct from the operator/agent
+        // branch so Phase 4 has a single edit point — both currently fall
+        // back to caller-own-memberships.
+        if ($this->isPlatformStaff($user)) {
+            return $this->callerCompanyIds($user);
+        }
+
+        return $this->callerCompanyIds($user);
+    }
+
+    /**
      * Company IDs the caller belongs to via a role-bound membership.
      *
      * Used to tenant-scope platform-admin list endpoints (bookings, etc.) so a
@@ -217,6 +302,9 @@ class AdminAccessService
      * isPlatformAdmin() true (that flag governs menu/page access, NOT which
      * tenant's data they may read). Returns [] when the user owns no company,
      * in which case the caller should see nothing.
+     *
+     * Prefer visibleCompanyIds() at controller call sites — it routes
+     * platform staff through the Phase-4 assignment lookup when that lands.
      *
      * @return list<int>
      */

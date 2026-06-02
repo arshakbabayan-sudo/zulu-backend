@@ -53,7 +53,7 @@ class AdminWebhookController extends Controller
         // (mandatory — overrides the optional company_id filter below).
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $query->whereIn('company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+            $query->whereIn('company_id', $this->adminAccessService->visibleCompanyIds($user) ?: [0]);
         }
 
         if ($request->filled('company_id')) {

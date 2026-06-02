@@ -49,7 +49,7 @@ class AdminContractController extends Controller
         // callers see only contracts their own company is a party to.
         $user = $request->user();
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
-            $ids = $this->adminAccessService->callerCompanyIds($user) ?: [0];
+            $ids = $this->adminAccessService->visibleCompanyIds($user) ?: [0];
             $query->where(function ($qb) use ($ids): void {
                 $qb->whereIn('party_a_company_id', $ids)->orWhereIn('party_b_company_id', $ids);
             });
