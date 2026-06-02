@@ -3,6 +3,7 @@
 namespace App\Services\Admin;
 
 use App\Models\Company;
+use App\Models\PlatformStaffScope;
 use App\Models\User;
 use App\Models\UserCompany;
 use Illuminate\Database\Eloquent\Builder;
@@ -317,10 +318,9 @@ class AdminAccessService
      * leak).
      *
      * Resolution:
-     *  - Platform staff (isPlatformStaff)
-     *      Phase 4 TODO: assignedCompanyIds (platform_staff_scopes table).
-     *      Interim: callerCompanyIds — fail-closed; do NOT widen to ALL here,
-     *      that would silently grant cross-tenant access until Phase 4 ships.
+     *  - Platform staff (isPlatformStaff) → assignedCompanyIds (Phase 4):
+     *      the companies a super-admin assigned them (direct or by country).
+     *      Fail-closed — no assignment = [] = zero rows, never ALL.
      *  - Operator/agent + their employees → callerCompanyIds (own
      *      UserCompany memberships, via Layer A of the blueprint).
      *
@@ -335,14 +335,75 @@ class AdminAccessService
             return $this->allCompanyIdsOrdered();
         }
 
-        // Platform staff branch is kept distinct from the operator/agent
-        // branch so Phase 4 has a single edit point — both currently fall
-        // back to caller-own-memberships.
+        // Platform staff (genuine ZULU platform_admin) see ONLY the companies
+        // a super-admin assigned them (Phase 4). Fail-closed: no assignment =
+        // [] = zero rows. Operators/agents fall through to their own
+        // memberships.
         if ($this->isPlatformStaff($user)) {
-            return $this->callerCompanyIds($user);
+            return $this->assignedCompanyIds($user);
         }
 
         return $this->callerCompanyIds($user);
+    }
+
+    /**
+     * Company ids a platform-staff user (platform_admin) has been ASSIGNED by a
+     * super-admin (RBAC blueprint Phase 4). Resolved from platform_staff_scopes:
+     *   - direct rows (company_id set) → that company
+     *   - country rows (country set)   → every company in that country
+     *     (companies.country is free-text + inconsistent in prod, so the match
+     *     is lower/trim and best-effort; direct company_id is the precise path)
+     *
+     * Returns [] when the staffer has no assignments → they see nothing until a
+     * super-admin assigns them. Cached within the request.
+     *
+     * @return list<int>
+     */
+    public function assignedCompanyIds(User $user): array
+    {
+        $key = 'assigned_company_ids_'.$user->id;
+        if (array_key_exists($key, $this->cache)) {
+            return $this->cache[$key];
+        }
+
+        $scopes = PlatformStaffScope::query()
+            ->where('user_id', $user->id)
+            ->get(['company_id', 'country']);
+
+        if ($scopes->isEmpty()) {
+            return $this->cache[$key] = [];
+        }
+
+        $directIds = $scopes
+            ->pluck('company_id')
+            ->filter(static fn ($id) => $id !== null)
+            ->map(static fn ($id) => (int) $id);
+
+        $countries = $scopes
+            ->pluck('country')
+            ->filter(static fn ($c) => is_string($c) && trim($c) !== '')
+            ->map(static fn (string $c) => mb_strtolower(trim($c)))
+            ->unique()
+            ->values();
+
+        $countryIds = collect();
+        if ($countries->isNotEmpty()) {
+            $countryIds = Company::query()
+                ->where(function (Builder $q) use ($countries): void {
+                    foreach ($countries as $c) {
+                        $q->orWhereRaw('lower(trim(country)) = ?', [$c]);
+                    }
+                })
+                ->pluck('id')
+                ->map(static fn ($id) => (int) $id);
+        }
+
+        return $this->cache[$key] = $directIds
+            ->merge($countryIds)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
     }
 
     /**

@@ -118,19 +118,61 @@ class AdminAccessServiceScopeTest extends TestCase
         $this->assertNotContains($other->id, $visible);
     }
 
-    public function test_visible_company_ids_returns_own_memberships_for_platform_staff(): void
+    public function test_visible_company_ids_empty_for_platform_staff_without_assignment(): void
     {
-        // Phase 4 will swap this branch to assignedCompanyIds() once
-        // platform_staff_scopes exists. Until then platform staff fall back
-        // to caller-own-memberships — fail-closed; no widening.
-        $other = $this->makeCompany();
+        // Phase 4: platform staff see ONLY assigned companies. With no
+        // platform_staff_scopes rows they see nothing (fail-closed), even
+        // though they have their own platform-company membership.
+        $this->makeCompany();
         $user = $this->userWithRole('platform_admin');
-        $ownCompanyId = (int) $user->memberships()->first()->company_id;
 
-        $visible = $this->access->visibleCompanyIds($user);
+        $this->assertSame([], $this->access->visibleCompanyIds($user));
+    }
 
-        $this->assertSame([$ownCompanyId], $visible);
-        $this->assertNotContains($other->id, $visible);
+    // ─── Phase 4: ՍԱ-staff company/country assignment ───────────────────────
+
+    public function test_assigned_company_ids_resolves_direct_assignment(): void
+    {
+        $staff = $this->userWithRole('platform_admin');
+        $a = $this->makeCompany();
+        $b = $this->makeCompany();
+        $this->makeCompany(); // unassigned — must not appear
+
+        \App\Models\PlatformStaffScope::query()->create(['user_id' => $staff->id, 'company_id' => $a->id]);
+        \App\Models\PlatformStaffScope::query()->create(['user_id' => $staff->id, 'company_id' => $b->id]);
+
+        $this->assertSame(
+            collect([$a->id, $b->id])->sort()->values()->all(),
+            $this->access->assignedCompanyIds($staff),
+        );
+        // visibleCompanyIds routes platform staff through the assigned set.
+        $this->assertSame(
+            collect([$a->id, $b->id])->sort()->values()->all(),
+            $this->access->visibleCompanyIds($staff),
+        );
+    }
+
+    public function test_assigned_company_ids_resolves_country_case_insensitively(): void
+    {
+        $staff = $this->userWithRole('platform_admin');
+        $am1 = $this->makeCompanyInCountry('Armenia');
+        $am2 = $this->makeCompanyInCountry('  armenia ');   // messy casing/space
+        $eg = $this->makeCompanyInCountry('Egypt');         // different country
+
+        \App\Models\PlatformStaffScope::query()->create(['user_id' => $staff->id, 'country' => 'ARMENIA']);
+
+        $ids = $this->access->assignedCompanyIds($staff);
+        $this->assertContains($am1->id, $ids);
+        $this->assertContains($am2->id, $ids);
+        $this->assertNotContains($eg->id, $ids);
+    }
+
+    public function test_assigned_company_ids_empty_without_scopes(): void
+    {
+        $staff = $this->userWithRole('platform_admin');
+        $this->makeCompany();
+
+        $this->assertSame([], $this->access->assignedCompanyIds($staff));
     }
 
     public function test_visible_company_ids_returns_empty_for_user_without_membership(): void
@@ -219,6 +261,16 @@ class AdminAccessServiceScopeTest extends TestCase
             'name' => 'ScopeTest '.uniqid(),
             'type' => 'operator',
             'status' => 'active',
+        ]);
+    }
+
+    private function makeCompanyInCountry(string $country): Company
+    {
+        return Company::query()->create([
+            'name' => 'ScopeTest '.uniqid(),
+            'type' => 'operator',
+            'status' => 'active',
+            'country' => $country,
         ]);
     }
 

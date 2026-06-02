@@ -100,6 +100,7 @@ use App\Http\Controllers\Api\PaymentWebhookController;
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
+use App\Http\Controllers\Api\PlatformStaffScopeController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
@@ -949,6 +950,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::patch('rbac/roles/{role}', [AdminRbacController::class, 'updateRole']);
         Route::delete('rbac/roles/{role}', [AdminRbacController::class, 'destroyRole']);
         Route::put('rbac/roles/{role}/permissions', [AdminRbacController::class, 'syncRolePermissions']);
+
+        // RBAC blueprint Phase 4 — super-admin assigns a platform-staff user's
+        // visible companies/countries (resolved by assignedCompanyIds()).
+        Route::get('staff/{user}/scopes', [PlatformStaffScopeController::class, 'show'])->whereNumber('user');
+        Route::put('staff/{user}/scopes', [PlatformStaffScopeController::class, 'sync'])->whereNumber('user');
 
         // Phase 1 / Step D.1 — pricing rules CRUD + test panel.
         // Super-admin only (Form Request authorize() + controller guard).
