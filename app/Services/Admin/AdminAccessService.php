@@ -209,24 +209,28 @@ class AdminAccessService
     }
 
     /**
-     * Admin-panel access gate (replaces the bare isPlatformAdmin() check that
-     * EnsurePlatformAdmin middleware used to do). Returns true for anyone who
-     * has a legitimate seat in the admin-panel UI:
-     *   - super_admin / platform_admin (existing isPlatformAdmin path), AND
+     * Admin-panel access gate for the FUTURE operator/agent rollout — built in
+     * Phase 2 but DELIBERATELY NOT yet wired into EnsurePlatformAdmin (the
+     * middleware still uses isPlatformAdmin, so operators are 403'd for now).
+     *
+     * Returns true for anyone with a legitimate admin-panel seat:
+     *   - super_admin / platform_admin (the existing isPlatformAdmin path), AND
      *   - operator_admin / company_admin / agent — anyone with a role-bound
      *     UserCompany membership.
+     * A plain B2C customer / unverified signup (no role-bound membership) is
+     * false — admin routes are never for them.
      *
-     * Why this matters (Phase 2 finding, 2026-06-02): after the R.1 role
-     * hygiene migration (2026-05-28) removed `platform.*` permissions from
-     * operator/agent roles, isPlatformAdmin() became false for them and the
-     * Phase 0/1 tenant scoping (which assumed they'd pass the gate and get
-     * filtered data) couldn't fire — every operator request was 403. The
-     * handoff §2 "0/0/0 operator counts" were misread 403 responses, not
-     * scoped queries returning zero rows.
-     *
-     * Anyone WITHOUT a role-bound membership (a plain B2C customer, an
-     * unverified account, an abandoned signup) still gets 403 — the
-     * admin-panel routes are not for them.
+     * Why it's not wired yet (Phase 2 finding, 2026-06-02): the R.1 role
+     * hygiene migration (2026-05-28) stripped `platform.*` perms from
+     * operator/agent roles, so isPlatformAdmin() is false for them and every
+     * /platform-admin request 403s at the middleware. Simply swapping the
+     * middleware to this method makes operators reach EVERY route in the
+     * group — including write / route-model-bound methods that lack per-row
+     * tenant ownership (e.g. CrmController::updateDeal/destroyDeal operate on
+     * any deal id; voucher/contract show by id). Widening access before those
+     * are audited would expose cross-tenant writes. So this is the documented
+     * Phase 6 swap-in point, to be wired together with the Phase 3 per-row
+     * ownership work + a per-route allowlist — not before.
      */
     public function canAccessAdminPanel(User $user): bool
     {

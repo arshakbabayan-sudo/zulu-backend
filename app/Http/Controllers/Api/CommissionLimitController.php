@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CommissionLimit;
+use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -13,12 +14,33 @@ use Illuminate\Validation\Rule;
  * (roadmap P0-2 / item 1.2.3). The profile-completion wizard's commission step
  * validates an operator's chosen % against these bounds via CommissionLimit::boundsFor().
  *
- * Gated by the `platform-admin` middleware on the route group.
+ * Platform-staff-only: the admin-panel middleware now admits operators (so they
+ * can reach their own scoped data), so this controller carries its own
+ * isPlatformAdmin gate — these bounds are platform-wide settings an operator
+ * must never read or write.
  */
 class CommissionLimitController extends Controller
 {
-    public function index(): JsonResponse
+    public function __construct(
+        private AdminAccessService $adminAccessService,
+    ) {}
+
+    private function denyUnlessPlatformAdmin(Request $request): ?JsonResponse
     {
+        $user = $request->user();
+        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        return null;
+    }
+
+    public function index(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
         $rows = CommissionLimit::query()->orderBy('service_type')->get();
 
         return response()->json([
@@ -37,6 +59,10 @@ class CommissionLimitController extends Controller
 
     public function update(Request $request): JsonResponse
     {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
         $allowedKeys = array_merge([CommissionLimit::GLOBAL_KEY], CommissionLimit::SERVICE_TYPES);
 
         $validated = $request->validate([

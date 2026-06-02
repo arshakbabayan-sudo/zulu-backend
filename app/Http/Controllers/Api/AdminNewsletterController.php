@@ -62,8 +62,18 @@ class AdminNewsletterController extends Controller
         ]);
     }
 
-    public function stats(): JsonResponse
+    public function stats(Request $request): JsonResponse
     {
+        // Super-only, same as index() — the subscriber list is platform-wide
+        // B2C PII. Without this an operator (who now passes the admin-panel
+        // middleware) could read aggregate subscriber counts.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            return response()->json(['success' => true, 'data' => [
+                'total_active' => 0, 'by_lang' => [], 'by_source' => [],
+            ]]);
+        }
+
         $base = NewsletterSubscription::query()->whereNull('unsubscribed_at');
 
         return response()->json([
@@ -84,6 +94,13 @@ class AdminNewsletterController extends Controller
 
     public function exportCsv(Request $request): StreamedResponse
     {
+        // Super-only — this streams every B2C subscriber's email/IP. An
+        // operator reaching this would be a direct PII export leak.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            abort(403, 'Forbidden');
+        }
+
         $filename = 'newsletter-subscribers-'.now()->format('Y-m-d-His').'.csv';
 
         return response()->streamDownload(function () use ($request): void {
@@ -122,8 +139,15 @@ class AdminNewsletterController extends Controller
         ]);
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
+        // Super-only — unsubscribing a platform B2C subscriber is a
+        // destructive moderation action, not an operator capability.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
         $sub = NewsletterSubscription::query()->findOrFail($id);
         $sub->update(['unsubscribed_at' => now()]);
 

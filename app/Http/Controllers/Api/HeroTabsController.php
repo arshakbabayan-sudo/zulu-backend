@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Admin\AdminAccessService;
 use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Localization\LocalizationService;
 use Illuminate\Http\JsonResponse;
@@ -10,6 +11,10 @@ use Illuminate\Http\Request;
 
 class HeroTabsController extends Controller
 {
+    public function __construct(
+        private AdminAccessService $adminAccessService,
+    ) {}
+
     private const KEY = 'hero_tabs_config';
 
     private const ALLOWED_SLUGS_DEFAULT = [
@@ -51,6 +56,14 @@ class HeroTabsController extends Controller
 
     public function update(Request $request, PlatformSettingsService $settings): JsonResponse
     {
+        // Platform-staff-only: writes the public homepage hero tabs. The
+        // admin-panel middleware now admits operators, so gate here — an
+        // operator must not be able to rewrite the homepage CMS.
+        $user = $request->user();
+        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
         $data = $request->validate([
             'tabs' => ['required', 'array', 'min:1'],
             'tabs.*.slug' => ['required', 'string', 'max:32'],

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Admin\AdminAccessService;
 use App\Services\Search\SavedSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,6 +12,7 @@ class SavedSearchController extends Controller
 {
     public function __construct(
         private SavedSearchService $service,
+        private AdminAccessService $adminAccessService,
     ) {}
 
     /** GET /api/customer/saved-searches */
@@ -78,9 +80,17 @@ class SavedSearchController extends Controller
         return response()->json(['success' => true, 'data' => $popular]);
     }
 
-    /** GET /api/search/trends?days=30 — admin */
+    /** GET /api/search/trends?days=30 — platform-staff only */
     public function trends(Request $request): JsonResponse
     {
+        // Platform-wide search analytics. The admin-panel middleware now
+        // admits operators, so gate here — these aggregate trends span all
+        // tenants and are a platform-staff tool.
+        $user = $request->user();
+        if ($user === null || ! $this->adminAccessService->isPlatformAdmin($user)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
         $days = max(1, min(365, (int) $request->query('days', 30)));
 
         return response()->json([
