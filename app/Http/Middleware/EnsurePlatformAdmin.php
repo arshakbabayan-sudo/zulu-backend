@@ -67,6 +67,20 @@ class EnsurePlatformAdmin
         'crm/settings',
     ];
 
+    /**
+     * Phase 6.2 — detail (show-by-id) GETs operators may reach. Each backing
+     * show() enforces per-row ownership (the row must belong to the caller's
+     * visibleCompanyIds, else 404), so an operator can open ONLY their own
+     * rows from a list. Patterns because the path carries a dynamic id.
+     *
+     * @var list<string>
+     */
+    private const OPERATOR_READABLE_PATTERNS = [
+        '#^bookings/[^/]+$#',
+        '#^companies/\d+$#',
+        '#^users/\d+$#',
+    ];
+
     public function __construct(private AdminAccessService $adminAccessService)
     {
     }
@@ -112,6 +126,16 @@ class EnsurePlatformAdmin
 
         $suffix = ltrim(substr($request->path(), strlen('api/platform-admin')), '/');
 
-        return in_array($suffix, self::OPERATOR_READABLE, true);
+        if (in_array($suffix, self::OPERATOR_READABLE, true)) {
+            return true;
+        }
+
+        foreach (self::OPERATOR_READABLE_PATTERNS as $pattern) {
+            if (preg_match($pattern, $suffix) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

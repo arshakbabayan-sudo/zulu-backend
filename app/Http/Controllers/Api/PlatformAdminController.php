@@ -91,10 +91,34 @@ class PlatformAdminController extends Controller
         return $this->paginatedCommerceResourceResponse($request, $paginator, CompanyResource::class);
     }
 
+    /**
+     * Phase 6.2 — null = caller may see every company (super-admin); otherwise
+     * the company-id allowlist the caller is scoped to. Used by detail (show)
+     * endpoints so an operator can open ONLY their own rows by id (the list
+     * endpoints are already scoped; this closes the by-id back door).
+     *
+     * @return ?list<int>
+     */
+    private function callerVisibleCompanyIds(Request $request): ?array
+    {
+        $user = $request->user();
+        if ($user === null || $this->adminAccessService->isSuperAdmin($user)) {
+            return null;
+        }
+
+        return $this->adminAccessService->visibleCompanyIds($user);
+    }
+
     public function showCompany(Request $request, Company $company): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
+        }
+
+        // Phase 6.2 ownership: a non-super caller may only open their own company.
+        $vis = $this->callerVisibleCompanyIds($request);
+        if ($vis !== null && ! in_array((int) $company->id, $vis, true)) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
         }
 
         $company->loadCount([
@@ -410,6 +434,15 @@ class PlatformAdminController extends Controller
 
         $order = \App\Models\Order::query()->whereKey($id)->first();
         if ($order === null) {
+            return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
+        }
+
+        // Phase 6.2 ownership: a non-super caller may only open a booking of
+        // their own company (seller via company_id OR referring agent).
+        $vis = $this->callerVisibleCompanyIds($request);
+        if ($vis !== null
+            && ! in_array((int) $order->company_id, $vis, true)
+            && ! in_array((int) $order->agent_company_id, $vis, true)) {
             return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
         }
 
@@ -840,6 +873,16 @@ class PlatformAdminController extends Controller
         }
 
         $user = User::query()->with('companies')->findOrFail($id);
+
+        // Phase 6.2 ownership: a non-super caller may only open a user who
+        // belongs to one of their own companies (their staff).
+        $vis = $this->callerVisibleCompanyIds($request);
+        if ($vis !== null) {
+            $userCompanyIds = $user->companies->pluck('id')->map(fn ($cid) => (int) $cid)->all();
+            if (count(array_intersect($vis, $userCompanyIds)) === 0) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+        }
 
         return response()->json([
             'success' => true,
