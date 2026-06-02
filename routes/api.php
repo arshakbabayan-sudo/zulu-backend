@@ -851,6 +851,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // ── CRM (2026-06-01) — deals pipeline + activities log ──────────
         Route::get('crm/stats', [CrmController::class, 'stats']);
+        // CRM Customers = the company's OWN buyers (scoped), not the platform
+        // B2C registry. Operator sees their buyers; super sees all.
+        Route::get('crm/customers', [CrmController::class, 'customers']);
         Route::get('crm/deals', [CrmController::class, 'listDeals']);
         Route::post('crm/deals', [CrmController::class, 'storeDeal']);
         Route::patch('crm/deals/{deal}', [CrmController::class, 'updateDeal'])->whereNumber('deal');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CrmActivity;
 use App\Models\CrmDeal;
+use App\Models\User;
 use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -272,6 +273,70 @@ class CrmController extends Controller
         $activity->update($data);
 
         return response()->json(['success' => true, 'data' => $this->activityArray($activity->fresh(['owner:id,name']))]);
+    }
+
+    // ─── Customers (the company's own buyers) ───────────────────────────────
+
+    /**
+     * CRM Customers = the people who bought from THIS company (order.user_id on
+     * orders whose seller/agent company is in the caller's scope). NOT the
+     * platform B2C registry — an operator sees only their own buyers; super
+     * sees every buyer. Shape matches the frontend CustomerRow
+     * {id,name,email,status,bookings_count} where bookings_count is the
+     * customer's order count WITH this company.
+     */
+    public function customers(Request $request): JsonResponse
+    {
+        $companyIds = $this->scopeCompanyIds($request);
+
+        // Constrains "bookings" (orders placed by the user) to the caller's
+        // companies — as seller (company_id) or referring agent
+        // (agent_company_id). null scope = super = no company filter.
+        $orderScope = function ($q) use ($companyIds): void {
+            if ($companyIds !== null) {
+                $q->where(function ($w) use ($companyIds): void {
+                    $w->whereIn('company_id', $companyIds)
+                        ->orWhereIn('agent_company_id', $companyIds);
+                });
+            }
+        };
+
+        $perPage = max(1, min((int) $request->query('per_page', 25), 200));
+
+        $query = User::query()
+            ->whereHas('bookings', $orderScope)
+            ->withCount(['bookings as bookings_count' => $orderScope]);
+
+        if (is_string($search = $request->query('search')) && trim($search) !== '') {
+            $term = trim($search);
+            $query->where(function ($q) use ($term): void {
+                $q->where('name', 'like', "%{$term}%")->orWhere('email', 'like', "%{$term}%");
+            });
+        }
+        if (is_string($status = $request->query('status')) && trim($status) !== '') {
+            $query->where('status', $status);
+        }
+
+        $page = $query->orderByDesc('id')->paginate($perPage);
+
+        $data = collect($page->items())->map(fn (User $u): array => [
+            'id' => $u->id,
+            'name' => $u->name,
+            'email' => $u->email,
+            'status' => $u->status,
+            'bookings_count' => (int) ($u->bookings_count ?? 0),
+        ])->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'total' => $page->total(),
+                'per_page' => $page->perPage(),
+            ],
+        ]);
     }
 
     // ─── Stats (Pipeline + Team feed) ───────────────────────────────────────

@@ -65,6 +65,7 @@ class EnsurePlatformAdmin
         'crm/team',
         'crm/stats',
         'crm/settings',
+        'crm/customers',
     ];
 
     /**
