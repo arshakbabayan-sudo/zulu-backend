@@ -38,6 +38,29 @@ class BookingsStatsController extends Controller
     }
 
     /**
+     * Phase 5 — restrict an orders query to the caller's visible companies
+     * (seller via company_id OR referring agent via agent_company_id). null =
+     * super-admin = no filter; [] = caller sees nothing → zero rows.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  ?list<int>  $scopeIds
+     */
+    private function applyOrderScope($query, ?array $scopeIds): void
+    {
+        if ($scopeIds === null) {
+            return;
+        }
+        if (count($scopeIds) === 0) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+        $query->where(function ($q) use ($scopeIds): void {
+            $q->whereIn('company_id', $scopeIds)->orWhereIn('agent_company_id', $scopeIds);
+        });
+    }
+
+    /**
      * GET /platform-admin/bookings/stats?range=30d
      *
      * Powers the 4 stat cards on /platform/bookings.
@@ -57,7 +80,12 @@ class BookingsStatsController extends Controller
             default => now()->subDays(30),
         };
 
-        $data = Cache::remember("bookings_stats_{$range}", 60, function () use ($rangeStart): array {
+        // Phase 5 — scope totals to the caller's visible companies (super =
+        // all). The cache key carries the scope suffix so a scoped staffer
+        // never reads the global super-admin entry.
+        [$scopeIds, $scopeSuffix] = $this->adminAccessService->statsScope($request->user());
+
+        $data = Cache::remember("bookings_stats_{$range}_{$scopeSuffix}", 60, function () use ($rangeStart, $scopeIds): array {
             if (! Schema::hasTable('orders')) {
                 return [
                     'total_count' => 0,
@@ -75,6 +103,7 @@ class BookingsStatsController extends Controller
                     $q->whereNull('metadata')
                         ->orWhereRaw("(metadata->>'legacy_origin') IS DISTINCT FROM 'package_order'");
                 });
+            $this->applyOrderScope($base, $scopeIds);
 
             $totalCount = (int) (clone $base)
                 ->where('created_at', '>=', $rangeStart)
@@ -124,7 +153,9 @@ class BookingsStatsController extends Controller
             default => now()->subDays(30),
         };
 
-        $data = Cache::remember("package_orders_stats_{$range}", 60, function () use ($rangeStart): array {
+        [$scopeIds, $scopeSuffix] = $this->adminAccessService->statsScope($request->user());
+
+        $data = Cache::remember("package_orders_stats_{$range}_{$scopeSuffix}", 60, function () use ($rangeStart, $scopeIds): array {
             // Newer model uses Order table with metadata flag.
             // Legacy table `package_orders` still exists but is no longer the
             // canonical store (see PlatformAdminService::listAllPackageOrders).
@@ -140,6 +171,7 @@ class BookingsStatsController extends Controller
             $base = DB::table('orders')
                 ->whereNull('deleted_at')
                 ->whereRaw("(metadata->>'legacy_origin') = 'package_order'");
+            $this->applyOrderScope($base, $scopeIds);
 
             $totalCount = (int) (clone $base)
                 ->where('created_at', '>=', $rangeStart)

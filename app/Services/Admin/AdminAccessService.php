@@ -347,6 +347,31 @@ class AdminAccessService
     }
 
     /**
+     * Scope descriptor for CACHED aggregate stats (RBAC blueprint Phase 5).
+     * Returns [companyIds, cacheSuffix]:
+     *   - super-admin    → [null, 'all']   (no scope; reuses the global cache)
+     *   - everyone else  → [visibleCompanyIds, 'scope_<hash>']
+     *
+     * The suffix MUST be appended to every stats cache key so a scoped caller
+     * never reads or overwrites the super-admin's global cache entry (that
+     * would leak one tenant's totals to another, or vice-versa). companyIds
+     * null = apply no filter; [] = filter to nothing (zero); non-empty = the
+     * caller's visible companies.
+     *
+     * @return array{0: ?list<int>, 1: string}
+     */
+    public function statsScope(User $user): array
+    {
+        if ($this->isSuperAdmin($user)) {
+            return [null, 'all'];
+        }
+
+        $ids = $this->visibleCompanyIds($user);
+
+        return [$ids, 'scope_'.md5(implode(',', $ids))];
+    }
+
+    /**
      * Company ids a platform-staff user (platform_admin) has been ASSIGNED by a
      * super-admin (RBAC blueprint Phase 4). Resolved from platform_staff_scopes:
      *   - direct rows (company_id set) → that company
