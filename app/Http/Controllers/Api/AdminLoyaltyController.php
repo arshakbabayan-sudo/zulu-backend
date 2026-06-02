@@ -36,6 +36,13 @@ class AdminLoyaltyController extends Controller
 
         $query = LoyaltyAccount::query()->with('user:id,name,email');
 
+        // Loyalty is B2C-global platform data — only super-admins see it.
+        // Non-super (operator/agent) get an empty list, never a leak.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $query->whereRaw('1 = 0');
+        }
+
         if ($tier = $request->query('tier')) {
             $query->where('tier', $tier);
         }

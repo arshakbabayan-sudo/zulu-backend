@@ -47,6 +47,12 @@ class AdminVisaApplicationController extends Controller
             ->with(['user:id,name,email', 'visa:id,country_id,country,name,visa_type,price'])
             ->latest('id');
 
+        // Visa applications are B2C-global — only super-admins see them.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $query->whereRaw('1 = 0');
+        }
+
         if (is_string($status = $request->query('status')) && in_array($status, ['pending', 'processing', 'approved', 'rejected'], true)) {
             $query->where('status', $status);
         }

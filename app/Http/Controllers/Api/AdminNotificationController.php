@@ -48,6 +48,12 @@ class AdminNotificationController extends Controller
             ->with('user:id,name,email')
             ->orderByDesc('created_at');
 
+        // All-users notifications are platform-global — only super-admins see them.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $query->whereRaw('1 = 0');
+        }
+
         if ($userId = $request->query('user_id')) {
             $query->where('user_id', (int) $userId);
         }
