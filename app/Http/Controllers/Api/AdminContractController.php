@@ -51,7 +51,7 @@ class AdminContractController extends Controller
         if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
             $ids = $this->adminAccessService->callerCompanyIds($user) ?: [0];
             $query->where(function ($qb) use ($ids): void {
-                $qb->whereIn('party_a_id', $ids)->orWhereIn('party_b_id', $ids);
+                $qb->whereIn('party_a_company_id', $ids)->orWhereIn('party_b_company_id', $ids);
             });
         }
 
