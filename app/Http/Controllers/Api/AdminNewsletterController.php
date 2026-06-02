@@ -4,14 +4,27 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\NewsletterSubscription;
+use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminNewsletterController extends Controller
 {
+    public function __construct(
+        private AdminAccessService $adminAccessService,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
+        // Newsletter subscribers are a platform-wide B2C list — super-only.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            return response()->json(['success' => true, 'data' => [], 'meta' => [
+                'current_page' => 1, 'last_page' => 1, 'total' => 0, 'per_page' => 25,
+            ]]);
+        }
+
         $perPage = (int) $request->query('per_page', 25);
         if ($perPage < 1) {
             $perPage = 25;

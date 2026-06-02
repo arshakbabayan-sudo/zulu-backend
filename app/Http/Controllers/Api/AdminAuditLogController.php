@@ -29,6 +29,15 @@ class AdminAuditLogController extends Controller
 
         $query = AuditLog::query()->orderByDesc('created_at');
 
+        // Tenant scope: non-super callers see only audit entries made by users
+        // of their own companies (their team's activity), not the whole
+        // platform's audit trail.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            $ids = $this->adminAccessService->callerCompanyIds($caller) ?: [0];
+            $query->whereHas('actor', fn ($q) => $q->whereHas('companies', fn ($qq) => $qq->whereIn('companies.id', $ids)));
+        }
+
         if (is_string($category = $request->query('category')) && in_array($category, AuditLog::CATEGORIES, true)) {
             $query->where('category', $category);
         }

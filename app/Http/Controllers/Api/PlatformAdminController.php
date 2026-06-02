@@ -1417,6 +1417,18 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
+        // Tenant scope (interim): reviews target a polymorphic entity (hotel /
+        // offer / package) with no direct company_id, so proper "reviews of my
+        // items" scoping needs a per-type join — done in Phase 2 with the
+        // shared resolver. Until then, non-super callers get an empty list
+        // (no cross-tenant leak) rather than every company's reviews.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            return response()->json(['success' => true, 'data' => [], 'meta' => [
+                'current_page' => 1, 'last_page' => 1, 'total' => 0, 'per_page' => 20,
+            ]]);
+        }
+
         $validated = $request->validate([
             'status' => ['nullable', 'string', Rule::in(Review::STATUSES)],
             'entity_type' => ['nullable', 'string', Rule::in(Review::TARGET_ENTITY_TYPES)],
