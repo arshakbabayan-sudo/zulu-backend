@@ -45,7 +45,13 @@ class EnsurePlatformAdmin
             ], 401);
         }
 
-        if (! $this->adminAccessService->isPlatformAdmin($user)) {
+        // Admin-panel gate (Phase 2 finding 2026-06-02): the original
+        // isPlatformAdmin check 403'd operators/agents because their roles
+        // lost `platform.*` perms in the R.1 hygiene migration. Phase 0/1
+        // controllers already scope by visibleCompanyIds — they just need
+        // to BE reachable. canAccessAdminPanel admits anyone with a
+        // role-bound membership; B2C customers stay locked out.
+        if (! $this->adminAccessService->canAccessAdminPanel($user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Forbidden',

@@ -141,6 +141,34 @@ class AdminAccessServiceScopeTest extends TestCase
         $this->assertSame([], $this->access->visibleCompanyIds($user));
     }
 
+    public function test_can_access_admin_panel_true_for_super_admin(): void
+    {
+        $this->assertTrue($this->access->canAccessAdminPanel($this->userWithRole('super_admin')));
+    }
+
+    public function test_can_access_admin_panel_true_for_platform_admin(): void
+    {
+        $this->assertTrue($this->access->canAccessAdminPanel($this->userWithRole('platform_admin')));
+    }
+
+    public function test_can_access_admin_panel_true_for_operator(): void
+    {
+        // Operator/agent roles no longer carry platform.* perms (R.1 role
+        // hygiene 2026-05-28), so isPlatformAdmin is false for them. The
+        // admin-panel gate must still let them through — Phase 0/1 + Phase 2
+        // controllers will scope their visibility to their own company.
+        $this->assertTrue($this->access->canAccessAdminPanel($this->userWithRole('operator_admin')));
+        $this->assertTrue($this->access->canAccessAdminPanel($this->userWithRole('company_admin')));
+        $this->assertTrue($this->access->canAccessAdminPanel($this->userWithRole('agent')));
+    }
+
+    public function test_can_access_admin_panel_false_for_b2c_customer(): void
+    {
+        // No UserCompany membership = B2C customer (or unverified signup).
+        $user = User::factory()->create();
+        $this->assertFalse($this->access->canAccessAdminPanel($user));
+    }
+
     private function seedRoles(): void
     {
         foreach (['super_admin', 'platform_admin', 'operator_admin', 'company_admin', 'agent'] as $name) {

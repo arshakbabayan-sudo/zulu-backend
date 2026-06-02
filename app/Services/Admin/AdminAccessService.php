@@ -209,6 +209,54 @@ class AdminAccessService
     }
 
     /**
+     * Admin-panel access gate (replaces the bare isPlatformAdmin() check that
+     * EnsurePlatformAdmin middleware used to do). Returns true for anyone who
+     * has a legitimate seat in the admin-panel UI:
+     *   - super_admin / platform_admin (existing isPlatformAdmin path), AND
+     *   - operator_admin / company_admin / agent — anyone with a role-bound
+     *     UserCompany membership.
+     *
+     * Why this matters (Phase 2 finding, 2026-06-02): after the R.1 role
+     * hygiene migration (2026-05-28) removed `platform.*` permissions from
+     * operator/agent roles, isPlatformAdmin() became false for them and the
+     * Phase 0/1 tenant scoping (which assumed they'd pass the gate and get
+     * filtered data) couldn't fire — every operator request was 403. The
+     * handoff §2 "0/0/0 operator counts" were misread 403 responses, not
+     * scoped queries returning zero rows.
+     *
+     * Anyone WITHOUT a role-bound membership (a plain B2C customer, an
+     * unverified account, an abandoned signup) still gets 403 — the
+     * admin-panel routes are not for them.
+     */
+    public function canAccessAdminPanel(User $user): bool
+    {
+        $key = 'admin_panel_'.$user->id;
+        if (array_key_exists($key, $this->cache)) {
+            return $this->cache[$key];
+        }
+
+        if ($this->isPlatformAdmin($user)) {
+            return $this->cache[$key] = true;
+        }
+
+        $loadedMemberships = $this->loadedMemberships($user);
+        if ($loadedMemberships !== null) {
+            foreach ($loadedMemberships as $membership) {
+                if ($membership->role_id !== null) {
+                    return $this->cache[$key] = true;
+                }
+            }
+
+            return $this->cache[$key] = false;
+        }
+
+        return $this->cache[$key] = UserCompany::query()
+            ->where('user_id', $user->id)
+            ->whereNotNull('role_id')
+            ->exists();
+    }
+
+    /**
      * Genuine ZULU platform staff — distinguishes a real platform_admin
      * (assigned the platform_admin role on its membership) from an operator
      * that merely carries a `platform.*` permission via its operator_admin /
