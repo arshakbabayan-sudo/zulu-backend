@@ -45,6 +45,16 @@ class AdminContractController extends Controller
             $query->where('contract_number', 'like', "%{$term}%");
         }
 
+        // Tenant scope: a contract belongs to either party company. Non-super
+        // callers see only contracts their own company is a party to.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $ids = $this->adminAccessService->callerCompanyIds($user) ?: [0];
+            $query->where(function ($qb) use ($ids): void {
+                $qb->whereIn('party_a_id', $ids)->orWhereIn('party_b_id', $ids);
+            });
+        }
+
         $perPage = min(100, max(1, (int) $request->query('per_page', 25)));
         $paginator = $query->paginate($perPage)->withQueryString();
 

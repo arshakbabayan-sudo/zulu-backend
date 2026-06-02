@@ -124,6 +124,14 @@ class AdminInsuranceController extends Controller
         $query = InsurancePolicy::query()
             ->with(['product:id,product_name,underwriter_name', 'user:id,name,email']);
 
+        // Tenant scope: a policy belongs to its product's company. Non-super
+        // callers see only policies of their own company's products.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $ids = $this->adminAccessService->callerCompanyIds($user) ?: [0];
+            $query->whereHas('product', fn ($q) => $q->whereIn('company_id', $ids));
+        }
+
         if ($status = $request->query('status')) {
             $query->where('status', $status);
         }

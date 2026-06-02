@@ -49,6 +49,13 @@ class AdminWebhookController extends Controller
             ->with('company:id,name')
             ->orderByDesc('created_at');
 
+        // Tenant scope: non-super callers see only their own company's webhooks
+        // (mandatory — overrides the optional company_id filter below).
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $query->whereIn('company_id', $this->adminAccessService->callerCompanyIds($user) ?: [0]);
+        }
+
         if ($request->filled('company_id')) {
             $query->where('company_id', (int) $request->query('company_id'));
         }

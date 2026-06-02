@@ -58,6 +58,16 @@ class AdminConnectionController extends Controller
             });
         }
 
+        // Tenant scope: a connection links two seller companies. Non-super
+        // callers see only connections their own company is part of.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $ids = $this->adminAccessService->callerCompanyIds($user) ?: [0];
+            $query->where(function ($qb) use ($ids): void {
+                $qb->whereIn('seller_a_company_id', $ids)->orWhereIn('seller_b_company_id', $ids);
+            });
+        }
+
         $perPage = min(max((int) $request->query('per_page', 50), 1), 200);
         $paginated = $query->orderByDesc('proposed_at')->paginate($perPage);
 
