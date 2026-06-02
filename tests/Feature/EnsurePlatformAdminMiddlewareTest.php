@@ -88,7 +88,11 @@ class EnsurePlatformAdminMiddlewareTest extends TestCase
         // Off-list super-only reads → 403.
         $this->getJson('/api/platform-admin/customers')->assertStatus(403);
         $this->getJson('/api/platform-admin/commission-limits')->assertStatus(403);
-        $this->getJson('/api/platform-admin/stats')->assertStatus(403);
+        $this->getJson('/api/platform-admin/loyalty/accounts')->assertStatus(403);
+
+        // Dashboard stats are now allowlisted (Phase 5) — operator reaches
+        // them scoped to their own company, NOT 403.
+        $this->assertNotSame(403, $this->getJson('/api/platform-admin/stats')->status());
 
         // Writes → 403 (deny-by-default; allowlist is GET only).
         $this->patchJson('/api/platform-admin/companies/1/toggle-seller', [])->assertStatus(403);
