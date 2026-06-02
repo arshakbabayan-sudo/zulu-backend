@@ -73,17 +73,14 @@ class CrmController extends Controller
 
     private function isSuperAdmin($user): bool
     {
+        // Delegate to the canonical resolver so CRM scoping matches the rest
+        // of the admin panel (recognises the super_admin role + super perms);
+        // keep the defensive try/catch so a model hiccup never 500s a CRM read.
         try {
-            if (isset($user->is_super_admin) && $user->is_super_admin) {
-                return true;
-            }
-            if (method_exists($user, 'isSuperAdmin')) {
-                return (bool) $user->isSuperAdmin();
-            }
+            return $user instanceof User && $this->adminAccessService->isSuperAdmin($user);
         } catch (\Throwable $e) {
-            // fall through to false
+            return false;
         }
-        return false;
     }
 
     private function ownerCompanyId(Request $request): ?int
