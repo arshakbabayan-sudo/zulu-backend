@@ -103,6 +103,52 @@ class CompanyApplicationApprovalOwnerRoleTest extends TestCase
         $this->assertSame('company_admin', $membership->role->name);
     }
 
+    /**
+     * "Become a partner" footer flow: a logged-in B2C user submits without a
+     * bearer token (public submit), so application.user_id is null but the
+     * business_email matches an existing account. Approval must ATTACH the
+     * company to that account, not throw "user already exists" and not mint a
+     * duplicate. Regression guard for the bug Arshak hit 2026-06-02.
+     */
+    public function test_attaches_to_existing_user_when_email_matches_and_user_id_null(): void
+    {
+        Role::query()->firstOrCreate(['name' => 'operator_admin']);
+        Role::query()->firstOrCreate(['name' => 'company_admin']);
+
+        $b2c = User::query()->create([
+            'name' => 'Existing B2C',
+            'email' => 'b2c-'.uniqid().'@test.local',
+            'password' => 'secret123',
+            'status' => User::STATUS_ACTIVE,
+        ]);
+
+        // user_id intentionally NULL; business_email points at the B2C account.
+        $app = $this->pendingApplication([
+            'user_id' => null,
+            'business_email' => $b2c->email,
+        ]);
+
+        $result = $this->approveSvc()->approve($app, $this->reviewer());
+
+        // Same account, not a freshly minted duplicate.
+        $this->assertSame($b2c->id, $result['user']->id);
+        $this->assertSame(
+            1,
+            User::query()->where('email', $b2c->email)->count(),
+            'Approval must not create a second user with the same email.'
+        );
+        $this->assertSame('', $result['temporary_password'], 'No temp password when attaching to an existing user.');
+
+        $membership = UserCompany::query()
+            ->where('user_id', $b2c->id)
+            ->where('company_id', $result['company']->id)
+            ->with('role')
+            ->first();
+
+        $this->assertNotNull($membership);
+        $this->assertSame('company_admin', $membership->role->name);
+    }
+
     /** Fallback: if company_admin row is absent, operator_admin is still accepted. */
     public function test_falls_back_to_operator_admin_when_company_admin_missing(): void
     {

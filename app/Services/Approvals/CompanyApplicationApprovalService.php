@@ -56,20 +56,23 @@ class CompanyApplicationApprovalService
             ]);
         }
 
+        // Resolve the owner-to-be. Three real-world cases all funnel here:
+        //   1. Authenticated partner flow → application.user_id is set.
+        //   2. "Become a partner" footer flow → a logged-in B2C user submits
+        //      with their own email, but the public submit doesn't carry a
+        //      bearer token, so user_id is null. We MUST still attach the
+        //      company to that pre-existing account rather than 500 on a
+        //      duplicate email. Resolve by business_email here.
+        //   3. Truly anonymous submission with a brand-new email → no match,
+        //      mint a fresh user on the legacy path below.
+        // The previous "A user with this business email already exists" hard
+        // stop made case 2 impossible (Arshak hit it 2026-06-02). Attaching is
+        // safe: business_email is unique on company_applications and a super
+        // admin manually approves each one, so this can't silently hijack an
+        // account.
         $existingUser = $application->user_id
             ? User::query()->find($application->user_id)
-            : null;
-
-        // Only enforce the business_email uniqueness check on the legacy path
-        // where we'd be MINTING a user from that email. When we're attaching
-        // the company to a pre-registered user, the business_email is just a
-        // contact field on the company record — it doesn't have to be unique
-        // against users.email.
-        if (! $existingUser && User::query()->where('email', $application->business_email)->exists()) {
-            throw ValidationException::withMessages([
-                'business_email' => ['A user with this business email already exists.'],
-            ]);
-        }
+            : User::query()->where('email', $application->business_email)->first();
 
         // The owner of a newly-approved company must be company_admin (rank 3 in
         // CompanyRbacController::ROLE_RANK), NOT operator_admin (rank 2). The owner
