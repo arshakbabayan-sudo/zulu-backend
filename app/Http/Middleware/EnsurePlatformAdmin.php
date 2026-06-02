@@ -66,6 +66,8 @@ class EnsurePlatformAdmin
         'crm/stats',
         'crm/settings',
         'crm/customers',
+        'stats',
+        'finance-summary',
     ];
 
     /**

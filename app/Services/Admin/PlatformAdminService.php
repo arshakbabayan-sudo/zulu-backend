@@ -22,24 +22,78 @@ class PlatformAdminService
         private PackageService $packageService
     ) {}
 
-    public function getPlatformStats(): array
+    /**
+     * Dashboard headline numbers. Phase 5: when $scopeCompanyIds is non-null
+     * (a non-super caller), every metric is restricted to those companies so
+     * an operator's dashboard shows THEIR numbers, never the platform totals.
+     * null = super = platform-wide (unchanged). The cache key carries the
+     * scope suffix so a scoped caller never reads the super global entry.
+     *
+     * @param  ?list<int>  $scopeCompanyIds
+     */
+    public function getPlatformStats(?array $scopeCompanyIds = null, string $cacheSuffix = 'all'): array
     {
-        return Cache::remember('platform_stats', 300, function () {
+        return Cache::remember('platform_stats_'.$cacheSuffix, 300, function () use ($scopeCompanyIds) {
+            // Apply a company-id filter to a builder when scoped; [] → 1=0.
+            $scoped = function ($query, string $column) use ($scopeCompanyIds) {
+                if ($scopeCompanyIds === null) {
+                    return $query;
+                }
+                if (count($scopeCompanyIds) === 0) {
+                    return $query->whereRaw('1 = 0');
+                }
+
+                return $query->whereIn($column, $scopeCompanyIds);
+            };
+            // Orders belong to the company as seller OR referring agent.
+            $scopedOrders = function ($query) use ($scopeCompanyIds) {
+                if ($scopeCompanyIds === null) {
+                    return $query;
+                }
+                if (count($scopeCompanyIds) === 0) {
+                    return $query->whereRaw('1 = 0');
+                }
+
+                return $query->where(function ($q) use ($scopeCompanyIds) {
+                    $q->whereIn('company_id', $scopeCompanyIds)
+                        ->orWhereIn('agent_company_id', $scopeCompanyIds);
+                });
+            };
+
+            $companies = fn () => $scoped(DB::table('companies'), 'id');
+            $offers = fn () => $scoped(DB::table('offers'), 'company_id');
+            $packages = fn () => $scoped(DB::table('packages'), 'company_id');
+            $orders = fn () => $scopedOrders(DB::table('orders'));
+
+            // "users_total": super → all users; scoped → distinct staff of the
+            // caller's companies (a count of platform users is meaningless to
+            // an operator).
+            if ($scopeCompanyIds === null) {
+                $usersTotal = (int) DB::table('users')->count();
+            } elseif (count($scopeCompanyIds) === 0) {
+                $usersTotal = 0;
+            } else {
+                $usersTotal = (int) DB::table('user_company')
+                    ->whereIn('company_id', $scopeCompanyIds)
+                    ->distinct()
+                    ->count('user_id');
+            }
+
             return [
-                'companies_total' => (int) DB::table('companies')->count(),
-                'companies_active' => (int) DB::table('companies')->where('governance_status', 'active')->count(),
-                'companies_suspended' => (int) DB::table('companies')->where('governance_status', 'suspended')->count(),
-                'companies_sellers' => (int) DB::table('companies')->where('is_seller', true)->count(),
-                'offers_total' => (int) DB::table('offers')->count(),
-                'offers_published' => (int) DB::table('offers')->where('status', 'published')->count(),
-                'packages_total' => (int) DB::table('packages')->count(),
-                'packages_active' => (int) DB::table('packages')->where('status', 'active')->count(),
-                'package_orders_total' => (int) DB::table('orders')->where('metadata->legacy_origin', 'package_order')->count(),
-                'package_orders_paid' => (int) DB::table('orders')->where('metadata->legacy_origin', 'package_order')->where('status', 'paid')->count(),
-                'package_orders_pending_payment' => (int) DB::table('orders')->where('metadata->legacy_origin', 'package_order')->where('status', 'pending_payment')->count(),
-                'bookings_total' => (int) DB::table('orders')->where('metadata->legacy_origin', 'booking')->count(),
-                'users_total' => (int) DB::table('users')->count(),
-                'commission_records_total' => (int) DB::table('commission_transactions')->count(),
+                'companies_total' => (int) $companies()->count(),
+                'companies_active' => (int) $companies()->where('governance_status', 'active')->count(),
+                'companies_suspended' => (int) $companies()->where('governance_status', 'suspended')->count(),
+                'companies_sellers' => (int) $companies()->where('is_seller', true)->count(),
+                'offers_total' => (int) $offers()->count(),
+                'offers_published' => (int) $offers()->where('status', 'published')->count(),
+                'packages_total' => (int) $packages()->count(),
+                'packages_active' => (int) $packages()->where('status', 'active')->count(),
+                'package_orders_total' => (int) $orders()->where('metadata->legacy_origin', 'package_order')->count(),
+                'package_orders_paid' => (int) $orders()->where('metadata->legacy_origin', 'package_order')->where('status', 'paid')->count(),
+                'package_orders_pending_payment' => (int) $orders()->where('metadata->legacy_origin', 'package_order')->where('status', 'pending_payment')->count(),
+                'bookings_total' => (int) $orders()->where('metadata->legacy_origin', 'booking')->count(),
+                'users_total' => $usersTotal,
+                'commission_records_total' => (int) $scoped(DB::table('commission_transactions'), 'seller_id')->count(),
                 'commission_records_accrued' => 0,
             ];
         });
@@ -433,18 +487,59 @@ class PlatformAdminService
         return $query;
     }
 
-    public function getFinanceSummary(): array
+    /**
+     * Finance headline numbers. Phase 5: scoped to the caller's companies when
+     * $scopeCompanyIds is non-null — payments via invoice→order→company,
+     * commissions via commission_transactions.seller_id. null = super =
+     * platform-wide. Cache key carries the scope suffix (no cross-tenant leak).
+     *
+     * @param  ?list<int>  $scopeCompanyIds
+     */
+    public function getFinanceSummary(?array $scopeCompanyIds = null, string $cacheSuffix = 'all'): array
     {
-        return Cache::remember('platform_finance_summary', 300, function () {
-            $paidSum = DB::table('payments')->where('status', Payment::STATUS_PAID)->sum('amount');
-            $commissionTotalSum = DB::table('commission_transactions')->sum('commission_amount');
+        return Cache::remember('platform_finance_summary_'.$cacheSuffix, 300, function () use ($scopeCompanyIds) {
+            // payments → invoice → order → company (payments have no company_id).
+            $applyPaymentScope = function ($q) use ($scopeCompanyIds) {
+                if ($scopeCompanyIds === null) {
+                    return $q;
+                }
+                if (count($scopeCompanyIds) === 0) {
+                    return $q->whereRaw('1 = 0');
+                }
+
+                return $q->whereExists(function ($sub) use ($scopeCompanyIds) {
+                    $sub->selectRaw('1')
+                        ->from('invoices')
+                        ->join('orders', 'orders.id', '=', 'invoices.order_id')
+                        ->whereColumn('invoices.id', 'payments.invoice_id')
+                        ->where(function ($w) use ($scopeCompanyIds) {
+                            $w->whereIn('orders.company_id', $scopeCompanyIds)
+                                ->orWhereIn('orders.agent_company_id', $scopeCompanyIds);
+                        });
+                });
+            };
+            $applyCommScope = function ($q) use ($scopeCompanyIds) {
+                if ($scopeCompanyIds === null) {
+                    return $q;
+                }
+                if (count($scopeCompanyIds) === 0) {
+                    return $q->whereRaw('1 = 0');
+                }
+
+                return $q->whereIn('seller_id', $scopeCompanyIds);
+            };
+
+            $paidSum = $applyPaymentScope(DB::table('payments'))->where('status', Payment::STATUS_PAID)->sum('amount');
+            $paidCount = $applyPaymentScope(DB::table('payments'))->where('status', Payment::STATUS_PAID)->count();
+            $commissionTotalSum = $applyCommScope(DB::table('commission_transactions'))->sum('commission_amount');
+            $commissionCount = $applyCommScope(DB::table('commission_transactions'))->count();
 
             return [
                 'total_payments_paid' => (float) ($paidSum ?? 0),
                 'total_commission_accrued' => (float) ($commissionTotalSum ?? 0),
                 'total_commission_pending' => 0.0,
-                'payments_count_paid' => (int) DB::table('payments')->where('status', Payment::STATUS_PAID)->count(),
-                'commission_records_count' => (int) DB::table('commission_transactions')->count(),
+                'payments_count_paid' => (int) $paidCount,
+                'commission_records_count' => (int) $commissionCount,
             ];
         });
     }

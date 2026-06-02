@@ -51,9 +51,13 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
+        // Phase 5: scope the dashboard numbers to the caller's companies (super
+        // = platform-wide). Operator dashboard shows THEIR numbers.
+        [$scopeIds, $scopeSuffix] = $this->adminAccessService->statsScope($request->user());
+
         return response()->json([
             'success' => true,
-            'data' => $service->getPlatformStats(),
+            'data' => $service->getPlatformStats($scopeIds, $scopeSuffix),
         ]);
     }
 
@@ -607,9 +611,12 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
+        // Phase 5: scope finance totals to the caller's companies (super = all).
+        [$scopeIds, $scopeSuffix] = $this->adminAccessService->statsScope($request->user());
+
         return response()->json([
             'success' => true,
-            'data' => $service->getFinanceSummary(),
+            'data' => $service->getFinanceSummary($scopeIds, $scopeSuffix),
         ]);
     }
 
