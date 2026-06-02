@@ -74,10 +74,19 @@ class PlatformAdminController extends Controller
         ];
 
         $perPage = $this->commerceListPerPage($request);
-        $paginator = $service->listCompanies(array_filter(
+        $cleanFilters = array_filter(
             $filters,
             static fn ($v) => $v !== null && $v !== ''
-        ), $perPage);
+        );
+
+        // Tenant scope: non-super callers see only their own company row(s).
+        // Set after array_filter so an empty list survives as a real [].
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            $cleanFilters['scope_company_ids'] = $this->adminAccessService->callerCompanyIds($caller);
+        }
+
+        $paginator = $service->listCompanies($cleanFilters, $perPage);
 
         return $this->paginatedCommerceResourceResponse($request, $paginator, CompanyResource::class);
     }
@@ -630,6 +639,14 @@ class PlatformAdminController extends Controller
         // commit 4a67bca caused a 500 on every users-list fetch.
         $query = User::query()->with('companies')->withCount('bookings')->orderByDesc('id');
 
+        // Tenant scope: non-super callers see only users who belong to their own
+        // companies (their staff), not every user on the platform.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            $ids = $this->adminAccessService->callerCompanyIds($caller) ?: [0];
+            $query->whereHas('companies', fn ($q) => $q->whereIn('companies.id', $ids));
+        }
+
         if ($request->filled('search')) {
             $search = (string) $request->query('search');
             $query->where(function ($q) use ($search): void {
@@ -691,6 +708,15 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
+        // B2C customer registry is platform-wide — only super-admins browse it.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            return response()->json(['success' => true, 'data' => [], 'meta' => [
+                'current_page' => 1, 'last_page' => 1, 'total' => 0,
+                'per_page' => $this->commerceListPerPage($request),
+            ]]);
+        }
+
         $perPage = $this->commerceListPerPage($request);
         $query = User::query()
             ->whereDoesntHave('memberships')
@@ -748,6 +774,15 @@ class PlatformAdminController extends Controller
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
             return $deny;
+        }
+
+        // Unverified-accounts moderation is a platform-wide tool — super-only.
+        $caller = $request->user();
+        if ($caller !== null && ! $this->adminAccessService->isSuperAdmin($caller)) {
+            return response()->json(['success' => true, 'data' => [], 'meta' => [
+                'current_page' => 1, 'last_page' => 1, 'total' => 0,
+                'per_page' => $this->commerceListPerPage($request),
+            ]]);
         }
 
         $perPage = $this->commerceListPerPage($request);

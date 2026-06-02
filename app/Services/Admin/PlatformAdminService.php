@@ -57,6 +57,15 @@ class PlatformAdminService
                 },
             ]);
 
+        // Tenant scope: non-super callers see only their own company row(s).
+        if (array_key_exists('scope_company_ids', $filters)) {
+            $scopeIds = array_values(array_filter(
+                array_map('intval', (array) $filters['scope_company_ids']),
+                static fn ($id) => $id > 0,
+            ));
+            $query->whereIn('id', $scopeIds ?: [0]);
+        }
+
         // Phase 7.2 — archive visibility. Default: hide archived rows.
         // Accepts archive_filter = active|archived|all.
         $archiveFilter = $filters['archive_filter'] ?? 'active';
