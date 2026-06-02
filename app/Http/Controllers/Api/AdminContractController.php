@@ -53,6 +53,13 @@ class AdminContractController extends Controller
             $query->where(function ($qb) use ($ids): void {
                 $qb->whereIn('party_a_company_id', $ids)->orWhereIn('party_b_company_id', $ids);
             });
+            // Phase 3 Layer-B: a plain employee sees only contracts they
+            // created (ContractService stamps created_by_user_id); owner /
+            // contracts.view_all holder sees the whole company.
+            $rowScopeUserId = $this->adminAccessService->employeeRowScopeUserId($user, 'contracts.view_all');
+            if ($rowScopeUserId !== null) {
+                $query->where('created_by_user_id', $rowScopeUserId);
+            }
         }
 
         $perPage = min(100, max(1, (int) $request->query('per_page', 25)));

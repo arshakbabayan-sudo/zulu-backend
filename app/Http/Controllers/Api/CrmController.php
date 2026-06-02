@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CrmActivity;
 use App\Models\CrmDeal;
+use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,10 +17,41 @@ use Illuminate\Http\Request;
  * is wrapped in a defensive helper so a model-shape mismatch can never 500 the
  * endpoint — worst case it falls back to the (safer) company-scoped view.
  *
+ * Phase 3 Layer-B: within those companies, a plain employee sees only the
+ * deals/activities they own (owner_user_id stamped on create); the company
+ * owner or a holder of crm.view_all sees the whole company.
+ *
  * Response envelope matches the rest of platform-admin: {success,data,meta}.
  */
 class CrmController extends Controller
 {
+    public function __construct(
+        private AdminAccessService $adminAccessService,
+    ) {}
+
+    /**
+     * Within-company row scope (Layer B): the user id to filter owner_user_id
+     * by, or null for "whole company" (owner / crm.view_all / super-admin).
+     * Defensive like scopeCompanyIds — any resolver hiccup falls back to the
+     * company-scoped (broader but still tenant-safe) view, never a 500.
+     */
+    private function rowScopeUserId(Request $request): ?int
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return null;
+        }
+        try {
+            if ($this->isSuperAdmin($user)) {
+                return null;
+            }
+
+            return $this->adminAccessService->employeeRowScopeUserId($user, 'crm.view_all');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     /** Company ids the caller may see, or null for "all" (super-admin). */
     private function scopeCompanyIds(Request $request): ?array
     {
@@ -77,6 +109,11 @@ class CrmController extends Controller
         $query = CrmDeal::query()->with(['customer:id,name,email', 'owner:id,name']);
         if ($companyIds !== null) {
             $query->whereIn('company_id', $companyIds);
+        }
+        // Phase 3 Layer-B: plain employee → own deals only.
+        $rowScopeUserId = $this->rowScopeUserId($request);
+        if ($rowScopeUserId !== null) {
+            $query->where('owner_user_id', $rowScopeUserId);
         }
         if ($stage = $request->query('stage')) {
             $query->where('stage', $stage);
@@ -166,6 +203,11 @@ class CrmController extends Controller
         $query = CrmActivity::query()->with(['owner:id,name']);
         if ($companyIds !== null) {
             $query->whereIn('company_id', $companyIds);
+        }
+        // Phase 3 Layer-B: plain employee → own activities only.
+        $rowScopeUserId = $this->rowScopeUserId($request);
+        if ($rowScopeUserId !== null) {
+            $query->where('owner_user_id', $rowScopeUserId);
         }
         if ($type = $request->query('type')) {
             $query->where('type', $type);
