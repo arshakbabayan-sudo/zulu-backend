@@ -935,9 +935,30 @@ class PlatformAdminController extends Controller
             }
         }
 
+        $detail = $this->platformAdminUserDetail($user);
+
+        // Directory customer detail (2026-06-03): the user's recent orders with
+        // WHO they bought from (seller company) + referring agent + amount/status.
+        // Answers "who bought what from whom" on the B2C customer detail view.
+        $detail['recent_orders'] = $user->bookings()
+            ->latest()
+            ->limit(10)
+            ->with(['company:id,name', 'agentCompany:id,name'])
+            ->get()
+            ->map(fn ($o) => [
+                'id' => $o->id,
+                'order_number' => $o->order_number,
+                'status' => $o->status,
+                'total' => $o->total,
+                'currency' => $o->currency,
+                'created_at' => $o->created_at?->toIso8601String(),
+                'seller' => $o->company ? ['id' => $o->company->id, 'name' => $o->company->name] : null,
+                'agent' => $o->agentCompany ? ['id' => $o->agentCompany->id, 'name' => $o->agentCompany->name] : null,
+            ])->values()->all();
+
         return response()->json([
             'success' => true,
-            'data' => $this->platformAdminUserDetail($user),
+            'data' => $detail,
         ]);
     }
 
@@ -1655,6 +1676,12 @@ class PlatformAdminController extends Controller
             'birth_date' => $user->birth_date?->format('Y-m-d'),
             'nationality' => $user->nationality,
             'is_super_admin' => (bool) $user->is_super_admin,
+            // Directory detail (2026-06-03): account state for the People detail
+            // views (B2C customer / Staff / Unverified).
+            'email_verified_at' => $user->email_verified_at?->toIso8601String(),
+            'intended_role' => $user->intended_role,
+            'two_factor_method' => $user->two_factor_method,
+            'two_factor_required' => (bool) $user->two_factor_required,
         ]);
     }
 
