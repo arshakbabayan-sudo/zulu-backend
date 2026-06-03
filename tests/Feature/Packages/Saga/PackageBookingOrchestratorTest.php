@@ -188,7 +188,6 @@ class PackageBookingOrchestratorTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Saga Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $packageOffer = Offer::query()->create([

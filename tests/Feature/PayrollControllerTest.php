@@ -458,7 +458,6 @@ class PayrollControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 7.15 '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

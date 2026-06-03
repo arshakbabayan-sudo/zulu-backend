@@ -178,7 +178,6 @@ class AdminBulkNotificationTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 7.6 '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

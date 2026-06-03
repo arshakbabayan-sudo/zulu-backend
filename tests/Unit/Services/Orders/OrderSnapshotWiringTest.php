@@ -32,7 +32,7 @@ class OrderSnapshotWiringTest extends TestCase
         parent::setUp();
 
         $this->companyId = DB::table('companies')->insertGetId([
-            'name' => 'Op '.uniqid(), 'type' => 'operator', 'status' => 'active',
+            'name' => 'Op '.uniqid(), 'type' => 'operator',
             'created_at' => now(), 'updated_at' => now(),
         ]);
 

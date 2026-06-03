@@ -42,8 +42,8 @@ class CrmCustomersScopeTest extends TestCase
 
     public function test_operator_sees_only_their_own_buyers(): void
     {
-        $companyA = Company::query()->create(['name' => 'Buyers A', 'type' => 'operator', 'status' => 'active']);
-        $companyB = Company::query()->create(['name' => 'Buyers B', 'type' => 'operator', 'status' => 'active']);
+        $companyA = Company::query()->create(['name' => 'Buyers A', 'type' => 'operator']);
+        $companyB = Company::query()->create(['name' => 'Buyers B', 'type' => 'operator']);
 
         $mine = $this->buyerWithOrder($companyA->id, 'mybuyer@example.test');
         $theirs = $this->buyerWithOrder($companyB->id, 'otherbuyer@example.test');
@@ -64,8 +64,8 @@ class CrmCustomersScopeTest extends TestCase
 
     public function test_super_sees_all_buyers(): void
     {
-        $companyA = Company::query()->create(['name' => 'SA', 'type' => 'operator', 'status' => 'active']);
-        $companyB = Company::query()->create(['name' => 'SB', 'type' => 'operator', 'status' => 'active']);
+        $companyA = Company::query()->create(['name' => 'SA', 'type' => 'operator']);
+        $companyB = Company::query()->create(['name' => 'SB', 'type' => 'operator']);
         $this->buyerWithOrder($companyA->id, 'a-buyer@example.test');
         $this->buyerWithOrder($companyB->id, 'b-buyer@example.test');
 

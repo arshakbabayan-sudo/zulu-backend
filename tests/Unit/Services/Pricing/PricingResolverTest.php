@@ -38,15 +38,15 @@ class PricingResolverTest extends TestCase
         parent::setUp();
 
         $this->operatorId = DB::table('companies')->insertGetId([
-            'name' => 'Op '.uniqid(), 'type' => 'operator', 'status' => 'active',
+            'name' => 'Op '.uniqid(), 'type' => 'operator',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $this->otherOperatorId = DB::table('companies')->insertGetId([
-            'name' => 'OtherOp '.uniqid(), 'type' => 'operator', 'status' => 'active',
+            'name' => 'OtherOp '.uniqid(), 'type' => 'operator',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $this->agentId = DB::table('companies')->insertGetId([
-            'name' => 'Agent '.uniqid(), 'type' => 'agent', 'status' => 'active',
+            'name' => 'Agent '.uniqid(), 'type' => 'agent',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $this->offerId = DB::table('offers')->insertGetId([

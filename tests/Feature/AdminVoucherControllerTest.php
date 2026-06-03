@@ -183,7 +183,6 @@ class AdminVoucherControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Admin Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $user = User::factory()->create();

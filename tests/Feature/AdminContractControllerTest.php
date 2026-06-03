@@ -199,7 +199,6 @@ class AdminContractControllerTest extends TestCase
         return Company::query()->create([
             'name' => $name ?? 'Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

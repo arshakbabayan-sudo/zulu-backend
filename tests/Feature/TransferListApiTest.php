@@ -217,7 +217,6 @@ class TransferListApiTest extends TestCase
         $c2 = Company::query()->create([
             'name' => 'Second Agency T',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $service = new TransferService;
         $t1 = $service->create($this->transferPayload($this->makeTransferOffer($c1, 'A')->id, ['transfer_title' => 'T1']));
@@ -523,7 +522,6 @@ class TransferListApiTest extends TestCase
         $c2 = Company::query()->create([
             'name' => 'Other Co Transfer',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
         $transfer = (new TransferService)->create($this->transferPayload($this->makeTransferOffer($c2)->id));

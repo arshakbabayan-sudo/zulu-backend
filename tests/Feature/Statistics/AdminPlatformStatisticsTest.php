@@ -26,7 +26,7 @@ class AdminPlatformStatisticsTest extends TestCase
         $admin = $this->createPlatformAdmin();
 
         // Seed some orders
-        $company = Company::query()->create(['name' => 'Stat Co', 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'Stat Co', 'type' => 'operator']);
         Order::query()->create([
             'order_number' => 'ORD-S-1',
             'company_id' => $company->id,

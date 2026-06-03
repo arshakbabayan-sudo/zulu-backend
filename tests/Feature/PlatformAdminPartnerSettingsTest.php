@@ -53,7 +53,6 @@ class PlatformAdminPartnerSettingsTest extends TestCase
         $company = Company::create([
             'name' => 'Partial Co',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'partial-co',
             'logo' => 'operators/keep.png',
             'is_partner_visible' => true,
@@ -76,7 +75,6 @@ class PlatformAdminPartnerSettingsTest extends TestCase
         $company = Company::create([
             'name' => 'Locked Co',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'locked-co',
         ]);
 

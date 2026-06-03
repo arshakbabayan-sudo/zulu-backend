@@ -28,7 +28,7 @@ class MoneyFlowTermControllerTest extends TestCase
         parent::setUp();
 
         $this->companyId = DB::table('companies')->insertGetId([
-            'name' => 'TestCo '.uniqid(), 'type' => 'operator', 'status' => 'active',
+            'name' => 'TestCo '.uniqid(), 'type' => 'operator',
             'created_at' => now(), 'updated_at' => now(),
         ]);
 

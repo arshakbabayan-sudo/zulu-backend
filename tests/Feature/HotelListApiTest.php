@@ -177,7 +177,6 @@ class HotelListApiTest extends TestCase
         $c2 = Company::query()->create([
             'name' => 'Second Agency',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $service = new HotelService;
         $h1 = $service->create($this->hotelPayload($this->makeHotelOffer($c1, 'A')->id, 'CityA', 'H1'));

@@ -102,7 +102,6 @@ class PublicHomePageApiTest extends TestCase
         $visible = Company::create([
             'name' => 'Visible Partner',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'visible-partner',
             'logo' => 'operators/visible.png',
             'is_partner_visible' => true,
@@ -110,7 +109,6 @@ class PublicHomePageApiTest extends TestCase
         Company::create([
             'name' => 'Hidden — flag off',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'hidden-flag',
             'logo' => 'operators/hidden.png',
             'is_partner_visible' => false,
@@ -118,7 +116,6 @@ class PublicHomePageApiTest extends TestCase
         Company::create([
             'name' => 'Hidden — no logo',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'hidden-nologo',
             'logo' => null,
             'is_partner_visible' => true,
@@ -126,7 +123,6 @@ class PublicHomePageApiTest extends TestCase
         Company::create([
             'name' => 'Hidden — agency type',
             'type' => 'agency',
-            'status' => 'active',
             'slug' => 'hidden-agency',
             'logo' => 'operators/agency.png',
             'is_partner_visible' => true,
@@ -155,7 +151,6 @@ class PublicHomePageApiTest extends TestCase
         return Company::create([
             'name' => 'Test Operator',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'test-operator-'.uniqid(),
             'is_partner_visible' => false,
         ]);

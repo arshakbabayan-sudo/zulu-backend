@@ -188,7 +188,6 @@ class ConnectionModelTest extends TestCase
         return Company::query()->create([
             'name' => 'Connection Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

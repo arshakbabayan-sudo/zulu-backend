@@ -172,7 +172,6 @@ class SagaRefundHappyPathTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Saga Refund Happy Co',
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $offer = Offer::query()->create([

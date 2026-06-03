@@ -201,7 +201,6 @@ class PlatformAdminUserListsTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 7.x '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

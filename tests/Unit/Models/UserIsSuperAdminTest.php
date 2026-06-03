@@ -33,7 +33,6 @@ class UserIsSuperAdminTest extends TestCase
         $id = DB::table('companies')->insertGetId([
             'name' => 'TestCo '.uniqid(),
             'type' => 'operator',
-            'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

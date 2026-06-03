@@ -109,7 +109,6 @@ class DocumentDeliveryOrderEmailTest extends TestCase
         return Company::query()->create([
             'name' => 'Document Delivery Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

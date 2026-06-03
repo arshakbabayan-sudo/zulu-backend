@@ -120,7 +120,7 @@ class SagaRefundOnRollbackTest extends TestCase
      */
     private function makePackage(array $serviceTypes): Package
     {
-        $company = Company::query()->create(['name' => 'Saga Refund Co', 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'Saga Refund Co', 'type' => 'operator']);
         $offer = Offer::query()->create(['company_id' => $company->id, 'type' => 'package', 'title' => 'P', 'price' => 100, 'currency' => 'USD', 'status' => 'active']);
         $package = Package::query()->create([
             'offer_id' => $offer->id, 'company_id' => $company->id, 'package_type' => 'fixed', 'package_title' => 'P',

@@ -272,7 +272,6 @@ class AgentOperatorRequestControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 7.7 '.$type.' '.str()->uuid(),
             'type' => $type,
-            'status' => 'active',
         ]);
     }
 

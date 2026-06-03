@@ -54,7 +54,6 @@ class OrderEventNotificationsTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Notif Pay Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $order = Order::query()->create([

@@ -108,7 +108,6 @@ class InsurancePricingAndPolicyTest extends TestCase
         $company = Company::query()->create([
             'name' => 'InsCo '.str()->random(4),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         return InsuranceProduct::query()->create([

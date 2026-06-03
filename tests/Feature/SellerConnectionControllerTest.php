@@ -243,7 +243,6 @@ class SellerConnectionControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'Conn Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

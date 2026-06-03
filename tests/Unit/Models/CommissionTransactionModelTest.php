@@ -79,7 +79,6 @@ class CommissionTransactionModelTest extends TestCase
         return Company::query()->create([
             'name' => 'Commission Tx Seller '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

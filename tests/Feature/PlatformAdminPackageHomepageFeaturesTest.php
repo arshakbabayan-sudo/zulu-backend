@@ -27,7 +27,6 @@ class PlatformAdminPackageHomepageFeaturesTest extends TestCase
         $company = Company::create([
             'name' => 'Operator Co',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'operator-co-'.uniqid(),
         ]);
 

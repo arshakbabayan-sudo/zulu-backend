@@ -215,7 +215,6 @@ class TimePunchControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'TimePunch '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

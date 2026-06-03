@@ -169,7 +169,6 @@ class BlockedDatesControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 7.2 '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

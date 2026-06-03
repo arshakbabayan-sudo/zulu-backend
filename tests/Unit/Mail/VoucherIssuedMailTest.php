@@ -100,7 +100,6 @@ class VoucherIssuedMailTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Mail Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $order = Order::query()->create([
@@ -137,7 +136,6 @@ class VoucherIssuedMailTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Mail Voucher Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $user = User::factory()->create();

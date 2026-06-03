@@ -61,7 +61,7 @@ class TenantPermissionOverrideTest extends TestCase
 
     private function company(): Company
     {
-        return Company::create(['name' => 'Co '.uniqid(), 'type' => 'agency', 'status' => 'active']);
+        return Company::create(['name' => 'Co '.uniqid(), 'type' => 'agency']);
     }
 
     private function member(string $roleKey, Company $company): User

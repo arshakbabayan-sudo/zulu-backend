@@ -111,7 +111,6 @@ class PackageOrderCreateOrderOnlyTest extends TestCase
         return Company::query()->create([
             'name' => 'Package Create Order Only Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

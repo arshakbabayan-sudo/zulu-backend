@@ -129,7 +129,6 @@ class OrderModelTest extends TestCase
         return Company::query()->create([
             'name' => 'Order Model Company '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

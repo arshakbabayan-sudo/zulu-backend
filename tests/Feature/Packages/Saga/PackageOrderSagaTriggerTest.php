@@ -59,7 +59,6 @@ class PackageOrderSagaTriggerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Trigger Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $packageOffer = Offer::query()->create([

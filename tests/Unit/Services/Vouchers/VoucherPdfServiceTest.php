@@ -82,7 +82,6 @@ class VoucherPdfServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'PDF Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $user = User::factory()->create();

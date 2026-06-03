@@ -25,7 +25,6 @@ class GeoRestrictionServiceTest extends TestCase
         return Company::query()->create(array_merge([
             'name' => 'Test Co',
             'type' => 'agency',
-            'status' => 'active',
             'country' => 'Armenia',
             'is_airline' => false,
         ], $attrs));

@@ -217,7 +217,6 @@ class VoucherServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'VS Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $user = User::factory()->create();

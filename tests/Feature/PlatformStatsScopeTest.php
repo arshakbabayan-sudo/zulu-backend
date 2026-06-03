@@ -30,8 +30,8 @@ class PlatformStatsScopeTest extends TestCase
 
     public function test_platform_stats_scopes_orders_to_company(): void
     {
-        $a = Company::query()->create(['name' => 'PS A', 'type' => 'operator', 'status' => 'active']);
-        $b = Company::query()->create(['name' => 'PS B', 'type' => 'operator', 'status' => 'active']);
+        $a = Company::query()->create(['name' => 'PS A', 'type' => 'operator']);
+        $b = Company::query()->create(['name' => 'PS B', 'type' => 'operator']);
         $buyer = User::factory()->create();
         foreach ([$a->id, $a->id, $b->id] as $cid) {
             Order::query()->create([
@@ -65,7 +65,7 @@ class PlatformStatsScopeTest extends TestCase
         // part. Correctness with real money is verified live (super has real
         // payments/commissions); building valid commission_transactions rows
         // needs commission_rules + order_items FKs, out of scope for a unit.
-        $a = Company::query()->create(['name' => 'FS A', 'type' => 'operator', 'status' => 'active']);
+        $a = Company::query()->create(['name' => 'FS A', 'type' => 'operator']);
         $svc = app(PlatformAdminService::class);
 
         $all = $svc->getFinanceSummary(null, 'all');

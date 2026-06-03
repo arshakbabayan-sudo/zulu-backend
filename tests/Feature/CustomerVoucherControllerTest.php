@@ -142,7 +142,6 @@ class CustomerVoucherControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Cust Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $order = Order::query()->create([

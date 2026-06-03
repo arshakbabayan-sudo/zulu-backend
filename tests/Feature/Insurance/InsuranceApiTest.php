@@ -107,7 +107,7 @@ class InsuranceApiTest extends TestCase
     public function test_admin_store_product(): void
     {
         $admin = $this->createPlatformAdmin();
-        $company = Company::query()->create(['name' => 'Co', 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'Co', 'type' => 'operator']);
 
         Sanctum::actingAs($admin);
         $response = $this->postJson('/api/platform-admin/insurance/products', [
@@ -157,7 +157,7 @@ class InsuranceApiTest extends TestCase
      */
     private function makeProduct(array $overrides = []): InsuranceProduct
     {
-        $company = Company::query()->create(['name' => 'Co '.str()->random(4), 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'Co '.str()->random(4), 'type' => 'operator']);
 
         return InsuranceProduct::query()->create(array_merge([
             'company_id' => $company->id,

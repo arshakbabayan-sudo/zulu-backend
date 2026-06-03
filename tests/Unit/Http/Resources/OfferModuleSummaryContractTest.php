@@ -24,7 +24,6 @@ class OfferModuleSummaryContractTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Contract Co',
             'type' => 'agency',
-            'status' => 'active',
         ]);
 
         $offer = Offer::query()->create([

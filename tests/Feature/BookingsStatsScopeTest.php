@@ -50,7 +50,7 @@ class BookingsStatsScopeTest extends TestCase
     private function staffOn(string $role): User
     {
         $user = User::factory()->create();
-        $home = Company::query()->create(['name' => 'Home '.uniqid(), 'type' => 'operator', 'status' => 'active']);
+        $home = Company::query()->create(['name' => 'Home '.uniqid(), 'type' => 'operator']);
         $user->companies()->attach($home->id, ['role_id' => Role::query()->where('name', $role)->value('id')]);
 
         return $user->fresh();
@@ -58,8 +58,8 @@ class BookingsStatsScopeTest extends TestCase
 
     public function test_super_sees_all_companies_but_staff_sees_only_assigned(): void
     {
-        $companyA = Company::query()->create(['name' => 'Stats A', 'type' => 'operator', 'status' => 'active']);
-        $companyB = Company::query()->create(['name' => 'Stats B', 'type' => 'operator', 'status' => 'active']);
+        $companyA = Company::query()->create(['name' => 'Stats A', 'type' => 'operator']);
+        $companyB = Company::query()->create(['name' => 'Stats B', 'type' => 'operator']);
 
         $this->paidBooking($companyA->id, 100);
         $this->paidBooking($companyB->id, 200);
@@ -82,7 +82,7 @@ class BookingsStatsScopeTest extends TestCase
 
     public function test_staff_without_assignment_sees_zero(): void
     {
-        $company = Company::query()->create(['name' => 'Stats C', 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'Stats C', 'type' => 'operator']);
         $this->paidBooking($company->id, 500);
 
         $staff = $this->staffOn('platform_admin'); // no platform_staff_scope rows

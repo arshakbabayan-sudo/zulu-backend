@@ -32,7 +32,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -51,7 +50,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -89,7 +87,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -122,7 +119,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -141,7 +137,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -160,7 +155,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -220,7 +214,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -255,7 +248,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -274,7 +266,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -356,7 +347,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -415,7 +405,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,
@@ -473,7 +462,6 @@ class OfferNormalizationServiceTest extends TestCase
         $company = Company::query()->create([
             'name' => 'C1',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,

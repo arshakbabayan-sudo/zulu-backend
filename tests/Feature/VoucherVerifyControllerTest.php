@@ -132,7 +132,6 @@ class VoucherVerifyControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Verify Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $user = User::factory()->create();

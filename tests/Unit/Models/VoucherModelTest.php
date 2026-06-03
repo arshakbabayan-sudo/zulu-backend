@@ -200,7 +200,6 @@ class VoucherModelTest extends TestCase
         return Company::query()->create([
             'name' => 'Voucher Issuer '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

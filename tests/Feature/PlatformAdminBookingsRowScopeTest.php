@@ -46,7 +46,7 @@ class PlatformAdminBookingsRowScopeTest extends TestCase
 
     public function test_employee_sees_only_their_own_sold_bookings(): void
     {
-        $company = Company::query()->create(['name' => 'RowScope Co', 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'RowScope Co', 'type' => 'operator']);
         $buyer = User::factory()->create();
         $employee = User::factory()->create();
         $colleague = User::factory()->create();
@@ -72,7 +72,7 @@ class PlatformAdminBookingsRowScopeTest extends TestCase
 
     public function test_owner_view_sees_whole_company(): void
     {
-        $company = Company::query()->create(['name' => 'RowScope Co2', 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'RowScope Co2', 'type' => 'operator']);
         $buyer = User::factory()->create();
         $employee = User::factory()->create();
 
@@ -92,8 +92,8 @@ class PlatformAdminBookingsRowScopeTest extends TestCase
 
     public function test_other_company_rows_never_leak_through_attribution(): void
     {
-        $companyA = Company::query()->create(['name' => 'RS A', 'type' => 'operator', 'status' => 'active']);
-        $companyB = Company::query()->create(['name' => 'RS B', 'type' => 'operator', 'status' => 'active']);
+        $companyA = Company::query()->create(['name' => 'RS A', 'type' => 'operator']);
+        $companyB = Company::query()->create(['name' => 'RS B', 'type' => 'operator']);
         $buyer = User::factory()->create();
         $employee = User::factory()->create();
 

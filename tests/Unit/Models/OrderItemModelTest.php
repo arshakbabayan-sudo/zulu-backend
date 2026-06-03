@@ -123,7 +123,6 @@ class OrderItemModelTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Order Item Test Company '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
         $user = User::factory()->create();
 

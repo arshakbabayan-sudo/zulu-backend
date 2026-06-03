@@ -34,7 +34,7 @@ class OrderPaidWireUpTest extends TestCase
 
         $user = User::factory()->create();
         $company = Company::query()->create([
-            'name' => 'WH Co', 'type' => 'operator', 'status' => 'active',
+            'name' => 'WH Co', 'type' => 'operator',
         ]);
 
         // Subscribe to order.paid

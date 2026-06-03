@@ -173,7 +173,6 @@ class OperatorCommissionControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 6B '.$type.' '.str()->uuid(),
             'type' => $type,
-            'status' => 'active',
         ]);
     }
 

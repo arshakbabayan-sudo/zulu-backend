@@ -85,7 +85,6 @@ class BookingCreateOrderOnlyTest extends TestCase
         return Company::query()->create([
             'name' => 'Booking Create Order Only Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

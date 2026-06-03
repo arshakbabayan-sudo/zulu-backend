@@ -83,7 +83,6 @@ class CommissionAccrualCurrencyTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Currency Test Company '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         CommissionRule::query()->create([

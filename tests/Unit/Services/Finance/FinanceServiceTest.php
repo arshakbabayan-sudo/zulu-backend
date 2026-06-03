@@ -113,7 +113,6 @@ class FinanceServiceTest extends TestCase
         return Company::query()->create([
             'name' => 'Finance Service Seller '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

@@ -122,7 +122,6 @@ class CommissionManagementServiceTest extends TestCase
         return Company::query()->create([
             'name' => 'Commission Mgmt Seller '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

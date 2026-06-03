@@ -40,7 +40,6 @@ class OfferReviewServiceTest extends TestCase
         $this->company = Company::query()->create([
             'name' => 'Test Operator',
             'type' => 'tour_operator',
-            'status' => 'active',
         ]);
 
         $this->operator = $this->makeUserAttached('op');
@@ -317,7 +316,6 @@ class OfferReviewServiceTest extends TestCase
         $other = Company::query()->create([
             'name' => 'Other Op',
             'type' => 'tour_operator',
-            'status' => 'active',
         ]);
 
         $mine = $this->makeOffer(Offer::STATUS_PENDING_REVIEW);

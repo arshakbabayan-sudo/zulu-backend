@@ -170,7 +170,6 @@ class ContractModelTest extends TestCase
         return Company::query()->create([
             'name' => 'Contract Test Co '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

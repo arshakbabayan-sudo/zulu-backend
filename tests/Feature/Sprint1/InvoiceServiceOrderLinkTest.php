@@ -244,7 +244,6 @@ class InvoiceServiceOrderLinkTest extends TestCase
         return Company::query()->create([
             'name' => 'Invoice Link Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

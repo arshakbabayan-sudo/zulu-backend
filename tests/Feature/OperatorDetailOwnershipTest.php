@@ -31,8 +31,8 @@ class OperatorDetailOwnershipTest extends TestCase
         foreach (['super_admin', 'company_admin'] as $r) {
             Role::query()->firstOrCreate(['name' => $r]);
         }
-        $this->companyA = Company::query()->create(['name' => 'Own A', 'type' => 'operator', 'status' => 'active']);
-        $this->companyB = Company::query()->create(['name' => 'Other B', 'type' => 'operator', 'status' => 'active']);
+        $this->companyA = Company::query()->create(['name' => 'Own A', 'type' => 'operator']);
+        $this->companyB = Company::query()->create(['name' => 'Other B', 'type' => 'operator']);
 
         $this->operator = User::factory()->create();
         $this->operator->companies()->attach($this->companyA->id, ['role_id' => Role::query()->where('name', 'company_admin')->value('id')]);

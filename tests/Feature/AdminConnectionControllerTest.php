@@ -153,7 +153,6 @@ class AdminConnectionControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'Admin Conn Test '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

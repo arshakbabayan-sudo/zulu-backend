@@ -260,7 +260,6 @@ class AdminAccessServiceScopeTest extends TestCase
         return Company::query()->create([
             'name' => 'ScopeTest '.uniqid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 
@@ -269,7 +268,6 @@ class AdminAccessServiceScopeTest extends TestCase
         return Company::query()->create([
             'name' => 'ScopeTest '.uniqid(),
             'type' => 'operator',
-            'status' => 'active',
             'country' => $country,
         ]);
     }

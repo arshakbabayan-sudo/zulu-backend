@@ -168,7 +168,6 @@ class FinanceServiceAgentCommissionTest extends TestCase
         return Company::query()->create([
             'name' => 'Agent Commission '.$type.' '.str()->uuid(),
             'type' => $type,
-            'status' => 'active',
         ]);
     }
 

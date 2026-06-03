@@ -179,7 +179,6 @@ class TransferServiceFoundationTest extends TestCase
         $companyB = Company::query()->create([
             'name' => 'Other Tenant Co',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $offer = $this->makeTransferOffer($companyA);
         $service = new TransferService;

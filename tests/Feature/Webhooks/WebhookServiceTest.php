@@ -155,7 +155,6 @@ class WebhookServiceTest extends TestCase
         return Company::query()->create([
             'name' => 'WH '.str()->random(4),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

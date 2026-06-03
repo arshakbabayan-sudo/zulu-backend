@@ -191,7 +191,6 @@ class SubscriptionsControllerTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 7.11 '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

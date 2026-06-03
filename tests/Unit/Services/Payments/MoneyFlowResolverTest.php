@@ -25,15 +25,15 @@ class MoneyFlowResolverTest extends TestCase
         parent::setUp();
 
         $this->operatorId = DB::table('companies')->insertGetId([
-            'name' => 'Op '.uniqid(), 'type' => 'operator', 'status' => 'active',
+            'name' => 'Op '.uniqid(), 'type' => 'operator',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $this->agentId = DB::table('companies')->insertGetId([
-            'name' => 'Agent '.uniqid(), 'type' => 'agent', 'status' => 'active',
+            'name' => 'Agent '.uniqid(), 'type' => 'agent',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $this->otherAgentId = DB::table('companies')->insertGetId([
-            'name' => 'OtherAgent '.uniqid(), 'type' => 'agent', 'status' => 'active',
+            'name' => 'OtherAgent '.uniqid(), 'type' => 'agent',
             'created_at' => now(), 'updated_at' => now(),
         ]);
     }

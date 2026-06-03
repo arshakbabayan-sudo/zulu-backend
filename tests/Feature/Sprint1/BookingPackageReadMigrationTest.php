@@ -234,7 +234,6 @@ class BookingPackageReadMigrationTest extends TestCase
         return Company::query()->create([
             'name' => 'Booking Package Read Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

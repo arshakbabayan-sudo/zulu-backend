@@ -45,7 +45,6 @@ class EnsurePlatformAdminMiddlewareTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Test Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
         $user = User::query()->create([
             'name' => 'Middleware Test',
@@ -71,7 +70,7 @@ class EnsurePlatformAdminMiddlewareTest extends TestCase
     public function test_operator_reaches_allowlisted_reads_only(): void
     {
         $role = Role::query()->firstOrCreate(['name' => 'company_admin']);
-        $company = Company::query()->create(['name' => 'Op Co '.str()->uuid(), 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'Op Co '.str()->uuid(), 'type' => 'operator']);
         $operator = User::query()->create([
             'name' => 'Op', 'email' => 'op-'.str()->uuid().'@example.test',
             'password' => bcrypt('password'), 'status' => User::STATUS_ACTIVE,

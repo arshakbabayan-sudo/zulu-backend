@@ -247,7 +247,6 @@ class ReviewServiceOrderLookupTest extends TestCase
         return Company::query()->create([
             'name' => 'Review Lookup Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

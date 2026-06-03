@@ -116,7 +116,6 @@ class AdminVisaApplicationControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Visa Co '.uniqid(),
             'type' => 'tour_operator',
-            'status' => 'active',
         ]);
         $offer = Offer::query()->create([
             'company_id' => $company->id,

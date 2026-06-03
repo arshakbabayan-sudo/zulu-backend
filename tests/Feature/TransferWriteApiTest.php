@@ -348,7 +348,6 @@ class TransferWriteApiTest extends TestCase
         $c2 = Company::query()->create([
             'name' => 'Other tenant transfer',
             'type' => 'agency',
-            'status' => 'active',
         ]);
         $this->assertNotSame($c1->id, $c2->id);
 

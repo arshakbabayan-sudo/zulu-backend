@@ -31,7 +31,6 @@ class AdminWebhookControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Test Co '.uniqid(),
             'type' => 'tour_operator',
-            'status' => 'active',
         ]);
 
         $sub = WebhookSubscription::query()->create([
@@ -77,7 +76,6 @@ class AdminWebhookControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Test Co '.uniqid(),
             'type' => 'tour_operator',
-            'status' => 'active',
         ]);
 
         $sub = WebhookSubscription::query()->create([
@@ -115,7 +113,6 @@ class AdminWebhookControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Test Co '.uniqid(),
             'type' => 'tour_operator',
-            'status' => 'active',
         ]);
 
         $sub = WebhookSubscription::query()->create([
@@ -145,7 +142,6 @@ class AdminWebhookControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Test Co '.uniqid(),
             'type' => 'tour_operator',
-            'status' => 'active',
         ]);
         $sub = WebhookSubscription::query()->create([
             'company_id' => $company->id,

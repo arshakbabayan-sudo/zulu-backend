@@ -31,7 +31,7 @@ class PlatformStaffScopeControllerTest extends TestCase
     private function userWithRole(string $roleName): User
     {
         $user = User::factory()->create();
-        $company = Company::query()->create(['name' => 'Co '.uniqid(), 'type' => 'operator', 'status' => 'active']);
+        $company = Company::query()->create(['name' => 'Co '.uniqid(), 'type' => 'operator']);
         $user->companies()->attach($company->id, ['role_id' => Role::query()->where('name', $roleName)->value('id')]);
 
         return $user->fresh();
@@ -51,8 +51,8 @@ class PlatformStaffScopeControllerTest extends TestCase
     {
         $super = $this->userWithRole('super_admin');
         $staff = $this->userWithRole('platform_admin');
-        $a = Company::query()->create(['name' => 'Assign A', 'type' => 'operator', 'status' => 'active', 'country' => 'Armenia']);
-        $b = Company::query()->create(['name' => 'Assign B', 'type' => 'operator', 'status' => 'active', 'country' => 'Egypt']);
+        $a = Company::query()->create(['name' => 'Assign A', 'type' => 'operator', 'country' => 'Armenia']);
+        $b = Company::query()->create(['name' => 'Assign B', 'type' => 'operator', 'country' => 'Egypt']);
 
         Sanctum::actingAs($super);
 
@@ -77,8 +77,8 @@ class PlatformStaffScopeControllerTest extends TestCase
     {
         $super = $this->userWithRole('super_admin');
         $staff = $this->userWithRole('platform_admin');
-        $a = Company::query()->create(['name' => 'Repl A', 'type' => 'operator', 'status' => 'active']);
-        $c = Company::query()->create(['name' => 'Repl C', 'type' => 'operator', 'status' => 'active']);
+        $a = Company::query()->create(['name' => 'Repl A', 'type' => 'operator']);
+        $c = Company::query()->create(['name' => 'Repl C', 'type' => 'operator']);
 
         PlatformStaffScope::query()->create(['user_id' => $staff->id, 'company_id' => $a->id]);
 

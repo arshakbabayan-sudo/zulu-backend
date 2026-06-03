@@ -167,7 +167,6 @@ class PlanGateServiceTest extends TestCase
         return Company::query()->create([
             'name' => 'PlanGate '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 }

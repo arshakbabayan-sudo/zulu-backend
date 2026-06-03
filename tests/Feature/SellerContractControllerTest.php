@@ -119,7 +119,6 @@ class SellerContractControllerTest extends TestCase
         $company = Company::query()->create([
             'name' => 'Seller '.str()->random(6),
             'type' => 'operator',
-            'status' => 'active',
         ]);
 
         $role = Role::query()->firstOrCreate(
