@@ -110,6 +110,8 @@ class AdminContractTemplateController extends Controller
 
         $data = $request->validate([
             'name' => 'sometimes|string|max:255',
+            'type' => ['sometimes', 'string', Rule::in(ContractTemplate::TYPES)],
+            'language' => ['sometimes', 'string', Rule::in(ContractTemplate::LANGUAGES)],
             'body' => 'sometimes|string',
             'variables' => 'sometimes|array',
             'active' => 'sometimes|boolean',
