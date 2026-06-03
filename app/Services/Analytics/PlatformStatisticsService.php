@@ -99,10 +99,10 @@ class PlatformStatisticsService
     private function sellerStats(): array
     {
         return [
-            'total' => Company::query()->where('status', 'active')->count(),
+            'total' => Company::query()->where('governance_status', 'active')->count(),
             'by_type' => Company::query()
                 ->selectRaw('type, count(*) as count')
-                ->where('status', 'active')
+                ->where('governance_status', 'active')
                 ->groupBy('type')
                 ->pluck('count', 'type'),
         ];

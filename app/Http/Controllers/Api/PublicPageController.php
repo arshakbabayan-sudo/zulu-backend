@@ -147,7 +147,7 @@ class PublicPageController extends Controller
         $rows = Company::query()
             ->where('is_partner_visible', true)
             ->where('type', 'operator')
-            ->where('status', 'active')
+            ->where('governance_status', 'active')
             ->whereNotNull('logo')
             ->where('logo', '!=', '')
             ->orderBy('name', 'asc')
