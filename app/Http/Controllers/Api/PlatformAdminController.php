@@ -1271,6 +1271,50 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Seller-application DETAIL — lets the admin open a single application to see
+     * who applied, for which service, and the review trail (the list row alone
+     * was not openable). Super sees any; a scoped admin only their own company's.
+     */
+    public function showSellerApplication(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $application = CompanySellerApplication::query()
+            ->with(['company:id,name,type,country,city', 'reviewer:id,name,email'])
+            ->findOrFail($id);
+
+        // Tenant scope: a non-super caller may only open their own company's application.
+        $user = $request->user();
+        if ($user !== null && ! $this->adminAccessService->isSuperAdmin($user)) {
+            $visible = $this->adminAccessService->visibleCompanyIds($user) ?: [0];
+            if (! in_array((int) $application->company_id, $visible, true)) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+        }
+
+        $row = $this->sellerApplicationToAdminRow($application);
+        $row['company'] = $application->company ? [
+            'id' => $application->company->id,
+            'name' => $application->company->name,
+            'type' => $application->company->type,
+            'country' => $application->company->country,
+            'city' => $application->company->city,
+        ] : null;
+        $row['reviewer'] = $application->reviewer ? [
+            'id' => $application->reviewer->id,
+            'name' => $application->reviewer->name,
+            'email' => $application->reviewer->email,
+        ] : null;
+
+        return response()->json([
+            'success' => true,
+            'data' => $row,
+        ]);
+    }
+
     public function approveSellerApplication(Request $request, int $id, SellerApplicationService $service): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {

@@ -785,6 +785,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('companies/{company}/archive', [PlatformAdminController::class, 'archiveCompany'])->whereNumber('company');
         Route::post('companies/{company}/restore', [PlatformAdminController::class, 'restoreCompany'])->whereNumber('company');
         Route::get('seller-applications', [PlatformAdminController::class, 'listSellerApplications']);
+        Route::get('seller-applications/{id}', [PlatformAdminController::class, 'showSellerApplication'])->whereNumber('id');
         Route::post('seller-applications/{id}/approve', [PlatformAdminController::class, 'approveSellerApplication'])->whereNumber('id');
         Route::post('seller-applications/{id}/reject', [PlatformAdminController::class, 'rejectSellerApplication'])->whereNumber('id');
         Route::get('approvals', [PlatformAdminController::class, 'approvals']);
