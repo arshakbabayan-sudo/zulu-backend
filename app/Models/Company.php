@@ -34,7 +34,6 @@ class Company extends Model
         'source_lang',
         'name',
         'type',
-        'status',
         'slug',
         'legal_name',
         'tax_id',

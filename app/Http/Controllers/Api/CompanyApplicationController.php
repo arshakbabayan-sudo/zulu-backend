@@ -122,6 +122,9 @@ class CompanyApplicationController extends Controller
                 CompanyApplication::STATUS_REJECTED,
             ])],
             'company_type' => ['nullable', 'string', Rule::in(['agent', 'operator'])],
+            // Link the company-detail "Applications" tab to its own application
+            // by FK instead of fragile name-matching (two companies can share a name).
+            'company_id' => ['nullable', 'integer'],
         ]);
 
         $query = CompanyApplication::query()
@@ -134,6 +137,10 @@ class CompanyApplicationController extends Controller
 
         if (! empty($validated['company_type'])) {
             $query->where('company_type', $validated['company_type']);
+        }
+
+        if (! empty($validated['company_id'])) {
+            $query->where('company_id', $validated['company_id']);
         }
 
         /** @var LengthAwarePaginator $paginator */

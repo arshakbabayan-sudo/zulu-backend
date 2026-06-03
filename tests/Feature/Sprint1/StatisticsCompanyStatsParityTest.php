@@ -209,7 +209,6 @@ class StatisticsCompanyStatsParityTest extends TestCase
         return Company::query()->create([
             'name' => 'Statistics Parity Co '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

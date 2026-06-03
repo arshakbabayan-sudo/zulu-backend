@@ -780,6 +780,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::patch('companies/{company}/permissions', [PlatformAdminController::class, 'updateCompanyPermissions'])->whereNumber('company');
         Route::patch('companies/{company}/toggle-seller', [PlatformAdminController::class, 'toggleCompanySellerStatus'])->whereNumber('company');
         Route::patch('companies/{company}/partner-settings', [PlatformAdminController::class, 'updateCompanyPartnerSettings'])->whereNumber('company');
+        Route::patch('companies/{company}/profile', [PlatformAdminController::class, 'updateCompanyProfile'])->whereNumber('company');
         // Phase 7.2 — admin archive/restore (super-admin only enforced in controller)
         Route::post('companies/{company}/archive', [PlatformAdminController::class, 'archiveCompany'])->whereNumber('company');
         Route::post('companies/{company}/restore', [PlatformAdminController::class, 'restoreCompany'])->whereNumber('company');

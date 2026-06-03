@@ -137,6 +137,50 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Admin edit of a company's editable profile fields (identity + contact +
+     * address). Super-admin or the company's own scoped platform admin only.
+     * Lifecycle (governance_status), seller flags, archive, partner visibility
+     * and Stripe/Drive state are each managed by their own dedicated endpoints
+     * — this one only covers the plain descriptive fields.
+     */
+    public function updateCompanyProfile(Request $request, Company $company): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        // Ownership: a non-super caller may only edit their own company.
+        $vis = $this->callerVisibleCompanyIds($request);
+        if ($vis !== null && ! in_array((int) $company->id, $vis, true)) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $validated = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'legal_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'type' => ['sometimes', 'string', Rule::in(Company::TYPES)],
+            'tax_id' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'country' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:128'],
+            'address' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'website' => ['sometimes', 'nullable', 'string', 'max:512'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
+        ]);
+
+        foreach ($validated as $field => $value) {
+            $company->{$field} = $value;
+        }
+        $company->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Company profile updated',
+            'data' => CompanyResource::make($company->fresh())->toArray($request),
+        ]);
+    }
+
     public function changeGovernance(Request $request, Company $company, PlatformAdminService $service): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {

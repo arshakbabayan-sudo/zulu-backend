@@ -15,7 +15,6 @@ class PublicCatalogTestSeeder extends Seeder
             ['name' => 'Zulu Public Catalog Seed Company'],
             [
                 'type' => 'operator',
-                'status' => 'active',
             ]
         );
 

@@ -142,7 +142,6 @@ class CompanyModulePermissionsTest extends TestCase
         return Company::query()->create([
             'name' => 'Phase 6A '.str()->uuid(),
             'type' => 'operator',
-            'status' => 'active',
         ]);
     }
 

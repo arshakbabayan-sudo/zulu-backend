@@ -150,7 +150,7 @@ class PlatformAdminService
             $query->where('type', $filters['type']);
         }
 
-        $allowedSorts = ['id', 'name', 'type', 'status', 'governance_status', 'is_seller', 'created_at'];
+        $allowedSorts = ['id', 'name', 'type', 'governance_status', 'is_seller', 'created_at'];
         $sortBy = isset($filters['sort_by']) && in_array($filters['sort_by'], $allowedSorts, true)
             ? $filters['sort_by']
             : 'id';

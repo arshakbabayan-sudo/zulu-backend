@@ -113,7 +113,6 @@ class CompanyApplicationApprovalService
                 'address' => $application->actual_address,
                 'phone' => $application->phone,
                 'tax_id' => $application->tax_id,
-                'status' => 'active',
                 'profile_completed' => false,
             ]);
 

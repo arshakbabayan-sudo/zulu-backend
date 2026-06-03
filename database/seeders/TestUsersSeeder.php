@@ -25,7 +25,6 @@ class TestUsersSeeder extends Seeder
                 'address' => 'Platform HQ',
                 'phone' => '+37400000000',
                 'tax_id' => 'PLATFORM001',
-                'status' => 'active',
                 'is_seller' => false,
                 'profile_completed' => true,
             ]
@@ -61,7 +60,6 @@ class TestUsersSeeder extends Seeder
                 'address' => '1 Test Street, Yerevan',
                 'phone' => '+37491000001',
                 'tax_id' => 'TEST123456',
-                'status' => 'active',
                 'is_seller' => true,
                 'profile_completed' => true,
             ]

@@ -23,7 +23,6 @@ class CompanyResource extends JsonResource
             'translation_status' => $this->computeTranslationStatus($lang, ['description', 'address']),
             'name' => $this->name,
             'type' => $this->type,
-            'status' => $this->status,
             'legal_name' => $this->legal_name,
             'slug' => $this->slug,
             'tax_id' => $this->tax_id,
@@ -49,6 +48,13 @@ class CompanyResource extends JsonResource
             'archived_at' => $this->archived_at?->toIso8601String(),
             'archived_by_user_id' => $this->archived_by_user_id,
             'archived_reason' => $this->archived_reason,
+            // P0-1 — Stripe Connect readiness (operational flags only; the
+            // OAuth/access tokens stay in $hidden and never serialize). Feeds
+            // the Companies list "Payments-ready" column + the detail Payments tab.
+            'stripe_connect_id' => $this->stripe_connect_id,
+            'stripe_charges_enabled' => (bool) $this->stripe_charges_enabled,
+            'stripe_payouts_enabled' => (bool) $this->stripe_payouts_enabled,
+            'stripe_details_submitted' => (bool) $this->stripe_details_submitted,
         ];
     }
 }

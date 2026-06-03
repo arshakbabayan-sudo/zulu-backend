@@ -27,7 +27,6 @@ class PlatformAdminPartnerSettingsTest extends TestCase
         $company = Company::create([
             'name' => 'ACME Tours',
             'type' => 'operator',
-            'status' => 'active',
             'slug' => 'acme-tours',
             'logo' => null,
             'is_partner_visible' => false,

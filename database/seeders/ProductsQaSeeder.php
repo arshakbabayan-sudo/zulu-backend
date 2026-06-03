@@ -21,7 +21,6 @@ class ProductsQaSeeder extends Seeder
             ['name' => 'Zulu QA Operator'],
             [
                 'type' => 'operator',
-                'status' => 'active',
             ]
         );
 

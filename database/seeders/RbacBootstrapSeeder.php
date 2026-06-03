@@ -171,7 +171,7 @@ class RbacBootstrapSeeder extends Seeder
 
         $company = Company::query()->firstOrCreate(
             ['name' => 'ZULU Test Agency'],
-            ['type' => 'agency', 'status' => 'active']
+            ['type' => 'agency']
         );
 
         $admin = User::query()->firstOrCreate(
