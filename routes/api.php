@@ -105,6 +105,7 @@ use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PlatformStaffScopeController;
 use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\PublicPageController;
+use App\Http\Controllers\Api\RefundRequestController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\SavedTravelerController;
@@ -358,6 +359,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     Route::get('account/me', [AccountController::class, 'me']);
     Route::get('account/dashboard', [AccountController::class, 'dashboard']);
+
+    // Account → customer-initiated refund requests (admin review queue = P1-2).
+    Route::get('account/refund-requests', [RefundRequestController::class, 'index']);
+    Route::post('account/refund-requests', [RefundRequestController::class, 'store']);
 
     // Favorites (Phase 5 — heart icon on listing cards). Endpoints pre-built
     // in Phase 2 so the frontend can wire to a stable URL before the UI lands.
