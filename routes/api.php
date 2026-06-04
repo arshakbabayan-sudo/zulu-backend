@@ -107,6 +107,7 @@ use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
+use App\Http\Controllers\Api\SavedTravelerController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\SellerWebhookController;
@@ -550,6 +551,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('account/saved-items', [AccountController::class, 'savedItems']);
     Route::post('account/saved-items', [AccountController::class, 'saveItem']);
     Route::delete('account/saved-items/{item}', [AccountController::class, 'removeSavedItem'])->whereNumber('item');
+
+    // Account → Travelers (saved companions, reused to pre-fill bookings).
+    Route::get('account/travelers', [SavedTravelerController::class, 'index']);
+    Route::post('account/travelers', [SavedTravelerController::class, 'store']);
+    Route::put('account/travelers/{traveler}', [SavedTravelerController::class, 'update'])->whereNumber('traveler');
+    Route::delete('account/travelers/{traveler}', [SavedTravelerController::class, 'destroy'])->whereNumber('traveler');
 
     // Multi-device sessions (Sanctum tokens) + self-service password change.
     Route::get('account/sessions', [AccountController::class, 'listSessions']);
