@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CustomerPartner;
+use App\Models\Offer;
+use App\Services\Selling\CustomerSellerOptionsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -156,5 +158,16 @@ class CustomerPartnerController extends Controller
 
             return response()->json(['success' => true]);
         });
+    }
+
+    /** GET /api/offers/{offer}/seller-options[?quantity=1] — the sellers (+ prices) this customer can buy through. */
+    public function offerOptions(Request $request, Offer $offer, CustomerSellerOptionsService $service): JsonResponse
+    {
+        $quantity = max(1, (int) $request->query('quantity', 1));
+
+        return response()->json([
+            'success' => true,
+            'data' => $service->optionsFor($offer, $request->user(), $quantity),
+        ]);
     }
 }

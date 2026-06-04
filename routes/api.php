@@ -733,6 +733,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('customer/partners', [CustomerPartnerController::class, 'store']);
     Route::put('customer/partners/reorder', [CustomerPartnerController::class, 'reorder']);
     Route::delete('customer/partners/{partner}', [CustomerPartnerController::class, 'destroy'])->whereNumber('partner');
+    // Sellers (+ prices) a customer can buy a given offer through (market + partner-agents).
+    Route::get('offers/{offer}/seller-options', [CustomerPartnerController::class, 'offerOptions'])->whereNumber('offer');
 
     // P0-1 step 1.3 — customer-side Stripe PaymentIntent (creates Invoice +
     // pending Payment + Stripe intent with marketplace split from step 1.2).

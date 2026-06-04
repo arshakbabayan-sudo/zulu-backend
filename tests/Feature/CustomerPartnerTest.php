@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\Company;
 use App\Models\CustomerPartner;
+use App\Models\Offer;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -109,5 +110,36 @@ class CustomerPartnerTest extends TestCase
         // Another user cannot delete this customer's partner.
         Sanctum::actingAs($other, ['*']);
         $this->deleteJson("/api/customer/partners/{$idB}")->assertStatus(404);
+    }
+
+    public function test_seller_options_lists_market_and_partner_agent_default(): void
+    {
+        $operator = Company::query()->create(['name' => 'Operator X', 'type' => 'operator', 'country' => 'Armenia']);
+        $agent = Company::query()->create(['name' => 'Aram Agent', 'type' => 'agency', 'country' => 'Armenia']);
+        $offer = Offer::query()->create([
+            'source_lang' => 'en',
+            'company_id' => $operator->id,
+            'type' => 'hotel',
+            'title' => 'Test Hotel Offer',
+            'price' => 90,
+            'currency' => 'USD',
+            'status' => 'published',
+        ]);
+
+        Sanctum::actingAs(User::factory()->create(), ['*']);
+        // Ani prefers the agent for Armenia.
+        $this->postJson('/api/customer/partners', ['partner_company_id' => $agent->id, 'country' => 'Armenia'])->assertCreated();
+
+        $res = $this->getJson("/api/offers/{$offer->id}/seller-options")->assertOk();
+
+        $res->assertJsonPath('data.market.company_id', $operator->id)
+            ->assertJsonPath('data.options.0.seller_company_id', $agent->id)
+            ->assertJsonPath('data.options.0.is_agent', true)
+            ->assertJsonPath('data.options.0.is_default', true)
+            ->assertJsonPath('data.default_company_id', $agent->id);
+
+        // Operator-direct is always available as a fallback option.
+        $ids = collect($res->json('data.options'))->pluck('seller_company_id');
+        $this->assertTrue($ids->contains($operator->id));
     }
 }
