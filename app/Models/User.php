@@ -57,6 +57,16 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
         // "Permissions" drawer for employees.
         'two_factor_method',
         'two_factor_required',
+        // B2C account profile + preferences (2026-06-05).
+        'surname',
+        'gender',
+        'preferred_currency',
+        'timezone',
+        'emergency_contact_name',
+        'emergency_contact_phone',
+        'emergency_contact_relationship',
+        'travel_preferences',
+        'marketing_opt_in',
     ];
 
     /**
@@ -89,6 +99,8 @@ class User extends Authenticatable implements CanResetPasswordContract, MustVeri
             'nationality' => 'encrypted',
             'two_factor_required' => 'boolean',
             'email_verification_code_expires_at' => 'datetime',
+            'travel_preferences' => 'array',
+            'marketing_opt_in' => 'boolean',
         ];
     }
 

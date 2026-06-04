@@ -24,6 +24,15 @@ class UserAccountService
             'birth_date' => $user->birth_date?->format('Y-m-d'),
             'nationality' => $user->nationality,
             'location' => $user->location,
+            'surname' => $user->surname,
+            'gender' => $user->gender,
+            'preferred_currency' => $user->preferred_currency,
+            'timezone' => $user->timezone,
+            'emergency_contact_name' => $user->emergency_contact_name,
+            'emergency_contact_phone' => $user->emergency_contact_phone,
+            'emergency_contact_relationship' => $user->emergency_contact_relationship,
+            'travel_preferences' => $user->travel_preferences,
+            'marketing_opt_in' => (bool) $user->marketing_opt_in,
             'status' => $user->status,
             'created_at' => $user->created_at?->toIso8601String(),
         ];
@@ -39,6 +48,16 @@ class UserAccountService
             'birth_date' => ['sometimes', 'nullable', 'date'],
             'nationality' => ['sometimes', 'nullable', 'string', 'max:64'],
             'location' => ['sometimes', 'nullable', 'string', 'max:120'],
+            // B2C account profile + travel preferences (2026-06-05).
+            'surname' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'gender' => ['sometimes', 'nullable', 'string', 'max:16'],
+            'preferred_currency' => ['sometimes', 'nullable', 'string', 'max:8'],
+            'timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'emergency_contact_name' => ['sometimes', 'nullable', 'string', 'max:190'],
+            'emergency_contact_phone' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'emergency_contact_relationship' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'travel_preferences' => ['sometimes', 'nullable', 'array'],
+            'marketing_opt_in' => ['sometimes', 'boolean'],
         ])->validate();
 
         $user->fill($validated);
