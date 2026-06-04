@@ -42,15 +42,15 @@ use App\Http\Controllers\Api\AISearchController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BlockedDatesController;
+use App\Http\Controllers\Api\BookingsStatsController;
 use App\Http\Controllers\Api\BrandSettingsController;
 use App\Http\Controllers\Api\CarController;
 use App\Http\Controllers\Api\CasesController;
 use App\Http\Controllers\Api\CatalogController;
+use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\CommissionController;
 use App\Http\Controllers\Api\CommissionLimitController;
 use App\Http\Controllers\Api\CompanyApplicationController;
-use App\Http\Controllers\Api\InvitationController;
-use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\CompanyRbacController;
 use App\Http\Controllers\Api\ConnectionController;
@@ -58,6 +58,7 @@ use App\Http\Controllers\Api\CrmController;
 use App\Http\Controllers\Api\CustomerCartController;
 use App\Http\Controllers\Api\CustomerInsuranceController;
 use App\Http\Controllers\Api\CustomerLoyaltyController;
+use App\Http\Controllers\Api\CustomerPartnerController;
 use App\Http\Controllers\Api\CustomerStatsController;
 use App\Http\Controllers\Api\CustomerSupportController;
 use App\Http\Controllers\Api\CustomerVoucherController;
@@ -65,27 +66,28 @@ use App\Http\Controllers\Api\CustomFieldsController;
 use App\Http\Controllers\Api\DiscoveryController;
 use App\Http\Controllers\Api\EmailVerificationController;
 use App\Http\Controllers\Api\ErrorReportController;
+use App\Http\Controllers\Api\ExchangeRateController;
 use App\Http\Controllers\Api\ExcursionController;
 use App\Http\Controllers\Api\FileAssetController;
-use App\Http\Controllers\Api\GoogleDriveAuthController;
-use App\Http\Controllers\Api\StripeConnectController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FinanceStatsController;
-use App\Http\Controllers\Api\MarketplaceStatsController;
-use App\Http\Controllers\Api\BookingsStatsController;
 use App\Http\Controllers\Api\FlightController;
 use App\Http\Controllers\Api\FooterController;
+use App\Http\Controllers\Api\GoogleDriveAuthController;
 use App\Http\Controllers\Api\HeaderMenuController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\HeroTabsController;
 use App\Http\Controllers\Api\HotelController;
 use App\Http\Controllers\Api\ImportSessionController;
 use App\Http\Controllers\Api\ImportUploadController;
+use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LocalizationController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\MarketplaceStatsController;
 use App\Http\Controllers\Api\MediaUploadController;
 use App\Http\Controllers\Api\Modules\UserVisaApiController;
+use App\Http\Controllers\Api\MoneyFlowTermController;
 use App\Http\Controllers\Api\NewsletterController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
@@ -101,6 +103,7 @@ use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PlatformAdminBannerController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PlatformStaffScopeController;
+use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\PublicPageController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SavedSearchController;
@@ -109,6 +112,7 @@ use App\Http\Controllers\Api\SellerContractController;
 use App\Http\Controllers\Api\SellerWebhookController;
 use App\Http\Controllers\Api\ServiceCatalogController;
 use App\Http\Controllers\Api\StorefrontPackageController;
+use App\Http\Controllers\Api\StripeConnectController;
 use App\Http\Controllers\Api\SubscriptionsController;
 use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TimeOffController;
@@ -721,6 +725,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('package-orders', [PackageOrderController::class, 'index']);
     Route::get('package-orders/{order}', [PackageOrderController::class, 'show'])->whereNumber('order');
     Route::post('package-orders/{order}/pay', [PackageOrderController::class, 'markPaid'])->whereNumber('order');
+
+    // Seller-attribution (2026-06-04) — B2C customer's "My partners" list
+    // (preferred sellers per country, ranked). See docs/blueprints/
+    // seller-attribution-architecture-2026-06-04.md.
+    Route::get('customer/partners', [CustomerPartnerController::class, 'index']);
+    Route::post('customer/partners', [CustomerPartnerController::class, 'store']);
+    Route::put('customer/partners/reorder', [CustomerPartnerController::class, 'reorder']);
+    Route::delete('customer/partners/{partner}', [CustomerPartnerController::class, 'destroy'])->whereNumber('partner');
+
     // P0-1 step 1.3 — customer-side Stripe PaymentIntent (creates Invoice +
     // pending Payment + Stripe intent with marketplace split from step 1.2).
     // NOTE: no whereNumber — Order ids are UUIDs (HasUuids), not integers.
@@ -967,23 +980,23 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // Phase 1 / Step D.1 — pricing rules CRUD + test panel.
         // Super-admin only (Form Request authorize() + controller guard).
-        Route::get('pricing-rules', [\App\Http\Controllers\Api\PricingRuleController::class, 'index']);
-        Route::post('pricing-rules', [\App\Http\Controllers\Api\PricingRuleController::class, 'store']);
-        Route::post('pricing-rules/test', [\App\Http\Controllers\Api\PricingRuleController::class, 'test']);
-        Route::patch('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'update']);
-        Route::delete('pricing-rules/{pricingRule}', [\App\Http\Controllers\Api\PricingRuleController::class, 'destroy']);
+        Route::get('pricing-rules', [PricingRuleController::class, 'index']);
+        Route::post('pricing-rules', [PricingRuleController::class, 'store']);
+        Route::post('pricing-rules/test', [PricingRuleController::class, 'test']);
+        Route::patch('pricing-rules/{pricingRule}', [PricingRuleController::class, 'update']);
+        Route::delete('pricing-rules/{pricingRule}', [PricingRuleController::class, 'destroy']);
 
         // Phase Զ.15 / Item 16-17 — manual FX rate admin CRUD.
-        Route::get('exchange-rates', [\App\Http\Controllers\Api\ExchangeRateController::class, 'index']);
-        Route::post('exchange-rates', [\App\Http\Controllers\Api\ExchangeRateController::class, 'store']);
-        Route::patch('exchange-rates/{exchangeRate}', [\App\Http\Controllers\Api\ExchangeRateController::class, 'update']);
-        Route::delete('exchange-rates/{exchangeRate}', [\App\Http\Controllers\Api\ExchangeRateController::class, 'destroy']);
+        Route::get('exchange-rates', [ExchangeRateController::class, 'index']);
+        Route::post('exchange-rates', [ExchangeRateController::class, 'store']);
+        Route::patch('exchange-rates/{exchangeRate}', [ExchangeRateController::class, 'update']);
+        Route::delete('exchange-rates/{exchangeRate}', [ExchangeRateController::class, 'destroy']);
 
         // Phase 1 / Step D.2 — money flow terms CRUD (mirror pattern).
-        Route::get('money-flow-terms', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'index']);
-        Route::post('money-flow-terms', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'store']);
-        Route::patch('money-flow-terms/{moneyFlowTerm}', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'update']);
-        Route::delete('money-flow-terms/{moneyFlowTerm}', [\App\Http\Controllers\Api\MoneyFlowTermController::class, 'destroy']);
+        Route::get('money-flow-terms', [MoneyFlowTermController::class, 'index']);
+        Route::post('money-flow-terms', [MoneyFlowTermController::class, 'store']);
+        Route::patch('money-flow-terms/{moneyFlowTerm}', [MoneyFlowTermController::class, 'update']);
+        Route::delete('money-flow-terms/{moneyFlowTerm}', [MoneyFlowTermController::class, 'destroy']);
 
         // Visa application review queue (PART 16, Sprint 63)
         Route::get('visa-applications', [AdminVisaApplicationController::class, 'index']);
