@@ -119,6 +119,7 @@ use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TimeOffController;
 use App\Http\Controllers\Api\TimePunchController;
 use App\Http\Controllers\Api\TransferController;
+use App\Http\Controllers\Api\TravelDocumentController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UnsubscribeController;
 use App\Http\Controllers\Api\UserFavoritesController;
@@ -557,6 +558,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('account/travelers', [SavedTravelerController::class, 'store']);
     Route::put('account/travelers/{traveler}', [SavedTravelerController::class, 'update'])->whereNumber('traveler');
     Route::delete('account/travelers/{traveler}', [SavedTravelerController::class, 'destroy'])->whereNumber('traveler');
+
+    // Account → Travel documents (the owner's passport / licence / loyalty wallet).
+    Route::get('account/documents', [TravelDocumentController::class, 'index']);
+    Route::post('account/documents', [TravelDocumentController::class, 'store']);
+    Route::put('account/documents/{document}', [TravelDocumentController::class, 'update'])->whereNumber('document');
+    Route::delete('account/documents/{document}', [TravelDocumentController::class, 'destroy'])->whereNumber('document');
 
     // Multi-device sessions (Sanctum tokens) + self-service password change.
     Route::get('account/sessions', [AccountController::class, 'listSessions']);
