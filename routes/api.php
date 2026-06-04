@@ -874,6 +874,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('users/{id}', [PlatformAdminController::class, 'showUser'])->whereNumber('id');
         Route::patch('users/{id}', [PlatformAdminController::class, 'updateUser'])->whereNumber('id');
         Route::patch('users/{id}/deactivate', [PlatformAdminController::class, 'deactivateUser'])->whereNumber('id');
+        // Admin notes on a user — 2026-06-04 admin v3 (Management → B2C
+        // customers detail Notes sub-tab + Add note hero action).
+        Route::get('users/{id}/notes', [PlatformAdminController::class, 'listUserNotes'])->whereNumber('id');
+        Route::post('users/{id}/notes', [PlatformAdminController::class, 'storeUserNote'])->whereNumber('id');
         // Phase 7.1 — admin-initiated deletion (2-button approach)
         Route::post('users/{id}/anonymize', [PlatformAdminController::class, 'anonymizeUser'])->whereNumber('id');
         Route::delete('users/{id}/hard', [PlatformAdminController::class, 'hardDeleteUser'])->whereNumber('id');

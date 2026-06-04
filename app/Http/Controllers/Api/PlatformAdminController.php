@@ -20,6 +20,9 @@ use App\Models\PlatformSetting;
 use App\Models\Review;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\UserNote;
+use App\Models\LoyaltyAccount;
+use App\Models\LoyaltyTransaction;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Admin\PlatformAdminService;
 use App\Services\Approvals\ApprovalService;
@@ -956,10 +959,123 @@ class PlatformAdminController extends Controller
                 'agent' => $o->agentCompany ? ['id' => $o->agentCompany->id, 'name' => $o->agentCompany->name] : null,
             ])->values()->all();
 
+        // Loyalty (2026-06-04 admin v3): wire the Customer detail Loyalty tab +
+        // Summary card. Each B2C customer has at most one LoyaltyAccount row;
+        // sum the transaction columns to compute lifetime earned/redeemed (the
+        // running balance is denormalised on the account itself).
+        $loyalty = LoyaltyAccount::query()->where('user_id', $user->id)->first();
+        if ($loyalty !== null) {
+            // `loyalty_transactions.points` is always a positive int; `type`
+            // separates earn/redeem/expire/adjust. Lifetime earned = sum of
+            // earn rows; lifetime redeemed = sum of redeem rows.
+            $earned = (int) LoyaltyTransaction::query()
+                ->where('account_id', $loyalty->id)
+                ->where('type', 'earn')
+                ->sum('points');
+            $redeemed = (int) LoyaltyTransaction::query()
+                ->where('account_id', $loyalty->id)
+                ->where('type', 'redeem')
+                ->sum('points');
+            $detail['loyalty'] = [
+                'tier' => $loyalty->tier,
+                'points_balance' => (int) $loyalty->points_balance,
+                'points_earned' => $earned,
+                'points_redeemed' => $redeemed,
+            ];
+        } else {
+            $detail['loyalty'] = null;
+        }
+
+        // Admin notes — recent first, max 10 inline on detail.
+        $detail['notes'] = UserNote::query()
+            ->where('user_id', $user->id)
+            ->with('author:id,name')
+            ->latest()
+            ->limit(10)
+            ->get()
+            ->map(fn ($n) => [
+                'id' => $n->id,
+                'body' => $n->body,
+                'created_at' => $n->created_at?->toIso8601String(),
+                'author' => $n->author ? ['id' => $n->author->id, 'name' => $n->author->name] : null,
+            ])->values()->all();
+
         return response()->json([
             'success' => true,
             'data' => $detail,
         ]);
+    }
+
+    /** GET /platform-admin/users/{id}/notes — full notes list, paginated. */
+    public function listUserNotes(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+        $user = User::query()->findOrFail($id);
+        $vis = $this->callerVisibleCompanyIds($request);
+        if ($vis !== null) {
+            $ucIds = $user->companies()->pluck('companies.id')->map(fn ($cid) => (int) $cid)->all();
+            if (count(array_intersect($vis, $ucIds)) === 0) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+        }
+        $perPage = max(1, min(50, (int) $request->query('per_page', 20)));
+        $page = UserNote::query()
+            ->where('user_id', $user->id)
+            ->with('author:id,name')
+            ->latest()
+            ->paginate($perPage);
+        $data = $page->getCollection()->map(fn ($n) => [
+            'id' => $n->id,
+            'body' => $n->body,
+            'created_at' => $n->created_at?->toIso8601String(),
+            'author' => $n->author ? ['id' => $n->author->id, 'name' => $n->author->name] : null,
+        ])->values()->all();
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'per_page' => $page->perPage(),
+                'total' => $page->total(),
+            ],
+        ]);
+    }
+
+    /** POST /platform-admin/users/{id}/notes — append a new admin note. */
+    public function storeUserNote(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+        $user = User::query()->findOrFail($id);
+        $vis = $this->callerVisibleCompanyIds($request);
+        if ($vis !== null) {
+            $ucIds = $user->companies()->pluck('companies.id')->map(fn ($cid) => (int) $cid)->all();
+            if (count(array_intersect($vis, $ucIds)) === 0) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+        }
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:4000'],
+        ]);
+        $note = UserNote::query()->create([
+            'user_id' => $user->id,
+            'author_user_id' => $request->user()?->id,
+            'body' => $validated['body'],
+        ]);
+        $note->load('author:id,name');
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $note->id,
+                'body' => $note->body,
+                'created_at' => $note->created_at?->toIso8601String(),
+                'author' => $note->author ? ['id' => $note->author->id, 'name' => $note->author->name] : null,
+            ],
+        ], 201);
     }
 
     public function updateUser(Request $request, int $id): JsonResponse
