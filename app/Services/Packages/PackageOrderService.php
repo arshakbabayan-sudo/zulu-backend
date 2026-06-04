@@ -143,11 +143,21 @@ class PackageOrderService
             $isBookable = (bool) $package->is_bookable;
             $orderStatus = $isBookable ? 'pending_payment' : 'cart';
 
+            // Attribute the sale to the acting seller employee when the order is
+            // placed by a member of the selling company (operator/agent) — null
+            // for B2C self-service. Powers CRM "Team" + employee row-scope.
+            $sellerCompanyIds = array_values(array_filter([$package->company_id, $agentCompanyId]));
+            $soldByUserId = $sellerCompanyIds !== []
+                && $user->companies()->whereIn('companies.id', $sellerCompanyIds)->exists()
+                ? $user->id
+                : null;
+
             $order = $this->orderService->create(
                 [
                     'user_id' => $user->id,
                     'company_id' => $package->company_id,
                     'agent_company_id' => $agentCompanyId,
+                    'sold_by_user_id' => $soldByUserId,
                     'currency' => $currency,
                     'order_number' => $orderNumber,
                     'buyer_type' => 'client',

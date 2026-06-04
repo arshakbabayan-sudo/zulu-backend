@@ -2,6 +2,7 @@
 
 namespace App\Services\Bookings;
 
+use App\Models\BlockedDate;
 use App\Models\Flight;
 use App\Models\Offer;
 use App\Models\Order;
@@ -52,7 +53,7 @@ class BookingService
             if ($startDate !== null) {
                 $itemType = $offer->type;
                 $companyId = $offer->company_id ?? null;
-                $blocked = \App\Models\BlockedDate::query()
+                $blocked = BlockedDate::query()
                     ->when($companyId, fn ($q) => $q->where('company_id', $companyId))
                     ->where(function ($q) use ($itemType, $offer) {
                         // Either an offer-level block (item_type=offer, item_id=offer.id)
@@ -60,7 +61,7 @@ class BookingService
                         $q->where(function ($q2) use ($offer) {
                             $q2->where('item_type', 'offer')->where('item_id', $offer->id);
                         });
-                        if (in_array($itemType, \App\Models\BlockedDate::ITEM_TYPES, true)) {
+                        if (in_array($itemType, BlockedDate::ITEM_TYPES, true)) {
                             $q->orWhere(function ($q2) use ($itemType, $offer) {
                                 // For per-vertical items (hotel/flight/etc.), the item_id is the
                                 // typed-row id stored on the offer (e.g. offer->hotel_id).
@@ -153,11 +154,25 @@ class BookingService
         $mappedPassengers = $this->normalizePassengers($passengersData);
         $itemsPayload = $this->buildOrderItemsPayload($itemsData, $offers->all(), $currency, $mappedPassengers);
 
+        // Attribute the sale to the acting seller employee (operator/agent) when
+        // the order is created by a member of the selling company — null for B2C
+        // self-service. Powers CRM "Team" attribution + employee row-scope.
+        $actingUser = auth()->user();
+        $sellerCompanyIds = array_values(array_filter([
+            $bookingData['company_id'] ?? null,
+            $bookingData['agent_company_id'] ?? null,
+        ]));
+        $soldByUserId = $actingUser !== null && $sellerCompanyIds !== []
+            && $actingUser->companies()->whereIn('companies.id', $sellerCompanyIds)->exists()
+            ? $actingUser->id
+            : null;
+
         return $this->orderService->create(
             [
                 'user_id' => $bookingData['user_id'] ?? null,
                 'company_id' => $bookingData['company_id'] ?? null,
                 'agent_company_id' => $bookingData['agent_company_id'] ?? null,
+                'sold_by_user_id' => $soldByUserId,
                 'currency' => $currency,
                 'buyer_type' => 'client',
                 'status' => 'pending_payment',

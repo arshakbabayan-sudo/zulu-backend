@@ -138,6 +138,14 @@ class OrderService
                 'metadata' => $orderData['metadata'] ?? null,
             ]);
 
+            // `sold_by_user_id` records WHICH employee made the sale (CRM "Team"
+            // attribution + employee row-scope). Intentionally NOT in Order::$fillable
+            // (clients must not spoof it), so the trusted caller passes it in
+            // $orderData and we forceFill it server-side.
+            if (! empty($orderData['sold_by_user_id'])) {
+                $order->forceFill(['sold_by_user_id' => (int) $orderData['sold_by_user_id']])->save();
+            }
+
             $idByIndex = [];
 
             foreach ($itemsData as $idx => $item) {
@@ -240,7 +248,7 @@ class OrderService
     private function createItem(
         Order $order,
         array $item,
-        \App\Services\Pricing\DTOs\PricingResolutionResult $resolved,
+        PricingResolutionResult $resolved,
         ?string $parentItemId
     ): OrderItem {
         if (! isset($item['item_type']) || ! in_array($item['item_type'], OrderItem::ITEM_TYPES, true)) {
