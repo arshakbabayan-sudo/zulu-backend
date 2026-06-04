@@ -9,6 +9,7 @@ use App\Models\CustomerPartner;
 use App\Models\Offer;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -141,5 +142,29 @@ class CustomerPartnerTest extends TestCase
         // Operator-direct is always available as a fallback option.
         $ids = collect($res->json('data.options'))->pluck('seller_company_id');
         $this->assertTrue($ids->contains($operator->id));
+    }
+
+    public function test_resolve_chosen_agent_attributes_or_rejects(): void
+    {
+        $customer = User::factory()->create();
+        $supplier = Company::query()->create(['name' => 'Op', 'type' => 'operator']);
+        $agent = Company::query()->create(['name' => 'Ag', 'type' => 'agency']);
+        CustomerPartner::query()->create([
+            'customer_user_id' => $customer->id,
+            'partner_company_id' => $agent->id,
+            'country' => 'Armenia',
+            'rank' => 1,
+        ]);
+
+        // No seller / the supplier itself → direct purchase (null agent).
+        $this->assertNull(CustomerPartner::resolveChosenAgent($customer->id, null, $supplier->id));
+        $this->assertNull(CustomerPartner::resolveChosenAgent($customer->id, $supplier->id, $supplier->id));
+        // A partner-agent → the sale is attributed to that agent.
+        $this->assertSame($agent->id, CustomerPartner::resolveChosenAgent($customer->id, $agent->id, $supplier->id));
+
+        // A company that is NOT one of the customer's partners → rejected (anti-spoof).
+        $stranger = Company::query()->create(['name' => 'X', 'type' => 'agency']);
+        $this->expectException(ValidationException::class);
+        CustomerPartner::resolveChosenAgent($customer->id, $stranger->id, $supplier->id);
     }
 }

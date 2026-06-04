@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\OrderResource;
+use App\Models\CustomerPartner;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Package;
@@ -36,9 +37,18 @@ class PackageOrderController extends Controller
             'infants_count' => ['sometimes', 'integer', 'min:0'],
             'booking_channel' => ['sometimes', 'string', Rule::in(Order::BOOKING_CHANNELS)],
             'notes' => ['nullable', 'string'],
+            // Seller-attribution: the company the customer chose to buy through
+            // (a partner-agent, or the operator itself for a direct purchase).
+            'seller_company_id' => ['sometimes', 'nullable', 'integer'],
         ]);
 
         $package = Package::query()->findOrFail((int) $validated['package_id']);
+
+        $agentCompanyId = CustomerPartner::resolveChosenAgent(
+            (int) $request->user()->id,
+            isset($validated['seller_company_id']) ? (int) $validated['seller_company_id'] : null,
+            $package->company_id !== null ? (int) $package->company_id : null,
+        );
 
         $input = [
             'adults_count' => $validated['adults_count'] ?? 1,
@@ -46,6 +56,7 @@ class PackageOrderController extends Controller
             'infants_count' => $validated['infants_count'] ?? 0,
             'booking_channel' => $validated['booking_channel'] ?? 'public_b2c',
             'notes' => $validated['notes'] ?? null,
+            'agent_company_id' => $agentCompanyId,
         ];
 
         $order = $service->createOrder($package, $request->user(), $input);
