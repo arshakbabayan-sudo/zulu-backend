@@ -357,6 +357,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('localization/scan/status', [LocalizationController::class, 'scanStatus']);
 
     Route::get('account/me', [AccountController::class, 'me']);
+    Route::get('account/dashboard', [AccountController::class, 'dashboard']);
 
     // Favorites (Phase 5 — heart icon on listing cards). Endpoints pre-built
     // in Phase 2 so the frontend can wire to a stable URL before the UI lands.

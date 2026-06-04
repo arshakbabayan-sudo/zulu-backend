@@ -13,6 +13,7 @@ use App\Services\UserAccount\DataExportService;
 use App\Services\UserAccount\UserAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -20,6 +21,30 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AccountController extends Controller
 {
+    /** GET /api/account/dashboard — overview counts + recent bookings (account home). */
+    public function dashboard(Request $request): JsonResponse
+    {
+        $userId = (int) $request->user()->id;
+        $orders = DB::table('orders')->where('user_id', $userId);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'bookings' => [
+                    'total' => (clone $orders)->count(),
+                    'upcoming' => (clone $orders)->whereIn('status', ['pending_payment', 'paid', 'confirmed'])->count(),
+                ],
+                'travelers_count' => DB::table('saved_travelers')->where('user_id', $userId)->count(),
+                'documents_count' => DB::table('travel_documents')->where('user_id', $userId)->count(),
+                'partners_count' => DB::table('customer_partners')->where('customer_user_id', $userId)->count(),
+                'saved_items_count' => DB::table('saved_items')->where('user_id', $userId)->count(),
+                'recent_orders' => DB::table('orders')->where('user_id', $userId)
+                    ->orderByDesc('created_at')->limit(5)
+                    ->get(['id', 'order_number', 'status', 'total', 'currency', 'created_at']),
+            ],
+        ]);
+    }
+
     public function me(Request $request): JsonResponse
     {
         return response()->json([
