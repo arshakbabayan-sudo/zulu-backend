@@ -204,6 +204,21 @@ class AccountController extends Controller
         return response()->json(['success' => true, 'data' => ['is_set' => false]]);
     }
 
+    /**
+     * GET /api/account/profile — the full B2C account profile (every editable
+     * field the account page needs to pre-fill: surname, gender, preferred
+     * currency, timezone, emergency contact, travel preferences, marketing
+     * opt-in). The lighter /account/me (UserResource) omits these, so the
+     * account redesign reads its profile + preferences panes from here.
+     */
+    public function profile(Request $request, UserAccountService $service): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $service->getProfile($request->user()),
+        ]);
+    }
+
     public function updateProfile(Request $request, UserAccountService $service): JsonResponse
     {
         $user = $service->updateProfile($request->user(), $request->all());

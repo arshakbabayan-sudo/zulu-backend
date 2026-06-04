@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Services\UserAccount\UserAccountService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /** Account #1 Profile + #14 Preferences extra fields (surname/gender/currency/
@@ -42,5 +43,30 @@ class AccountProfileFieldsTest extends TestCase
         $this->assertSame('vegetarian', $profile['travel_preferences']['meal']);
         $this->assertSame('Aram', $profile['emergency_contact_name']);
         $this->assertTrue($profile['marketing_opt_in']);
+    }
+
+    public function test_get_account_profile_endpoint_returns_full_profile(): void
+    {
+        $user = User::factory()->create(['name' => 'John']);
+        app(UserAccountService::class)->updateProfile($user, [
+            'surname' => 'Smith',
+            'gender' => 'male',
+            'preferred_currency' => 'EUR',
+            'emergency_contact_name' => 'Jane',
+            'travel_preferences' => ['seat' => 'aisle'],
+            'marketing_opt_in' => true,
+        ]);
+
+        Sanctum::actingAs($user->fresh());
+
+        $this->getJson('/api/account/profile')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.surname', 'Smith')
+            ->assertJsonPath('data.gender', 'male')
+            ->assertJsonPath('data.preferred_currency', 'EUR')
+            ->assertJsonPath('data.emergency_contact_name', 'Jane')
+            ->assertJsonPath('data.travel_preferences.seat', 'aisle')
+            ->assertJsonPath('data.marketing_opt_in', true);
     }
 }

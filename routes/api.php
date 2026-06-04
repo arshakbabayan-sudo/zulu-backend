@@ -553,6 +553,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         ->where('voucher', '[0-9a-f-]{36}')
         ->middleware('throttle:6,1');
     Route::post('rollout/admin-next/screen-view', [AdminRolloutTelemetryController::class, 'screenView']);
+    Route::get('account/profile', [AccountController::class, 'profile']);
     Route::patch('account/profile', [AccountController::class, 'updateProfile']);
     Route::get('account/trips', [AccountController::class, 'tripHistory']);
     Route::get('account/saved-items', [AccountController::class, 'savedItems']);
