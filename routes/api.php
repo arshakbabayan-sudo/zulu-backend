@@ -457,12 +457,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('agent-operator-requests/{id}/messages', [AgentOperatorRequestController::class, 'storeMessage'])->whereNumber('id');
 
     // Operator commission settings (Phase 6B — operator → agent split)
-    Route::get('operator/commission-settings', [OperatorCommissionController::class, 'index']);
-    Route::patch('operator/commission-settings', [OperatorCommissionController::class, 'upsertDefault']);
+    // RBAC #2 — view gated on commissions.view, writes on commissions.manage
+    // (super/platform bypass; operator owner holds both, agents hold neither).
+    Route::get('operator/commission-settings', [OperatorCommissionController::class, 'index'])->middleware('permission:commissions.view');
+    Route::patch('operator/commission-settings', [OperatorCommissionController::class, 'upsertDefault'])->middleware('permission:commissions.manage');
     Route::patch('operator/commission-settings/agents/{agent}', [OperatorCommissionController::class, 'upsertOverride'])
-        ->whereNumber('agent');
+        ->whereNumber('agent')->middleware('permission:commissions.manage');
     Route::delete('operator/commission-settings/agents/{agent}', [OperatorCommissionController::class, 'deleteOverride'])
-        ->whereNumber('agent');
+        ->whereNumber('agent')->middleware('permission:commissions.manage');
 
     // Seller contracts (PART 05)
     Route::get('seller/contracts', [SellerContractController::class, 'index']);
@@ -668,12 +670,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('payments/{payment}/fail', [PaymentController::class, 'fail']);
     Route::post('payments/{payment}/refund', [PaymentController::class, 'refund']);
 
-    Route::get('commissions', [CommissionController::class, 'index']);
+    // RBAC #2 — commission reads gated on commissions.view / commission_records.view
+    // (operator+agent hold these); policy writes on commissions.update/.manage
+    // (operator owner holds them, agents do not). createPolicy stays super-only via
+    // its existing inline guard. updatePolicy/deactivate already own-scope-check inside.
+    Route::get('commissions', [CommissionController::class, 'index'])->middleware('permission:commissions.view');
     Route::post('commissions', [CommissionController::class, 'createPolicy']);
-    Route::get('commissions/{ruleId}', [CommissionController::class, 'show'])->whereUuid('ruleId');
-    Route::patch('commissions/{ruleId}', [CommissionController::class, 'updatePolicy'])->whereUuid('ruleId');
-    Route::post('commissions/{ruleId}/deactivate', [CommissionController::class, 'deactivatePolicy'])->whereUuid('ruleId');
-    Route::get('commission-records', [CommissionController::class, 'indexRecords']);
+    Route::get('commissions/{ruleId}', [CommissionController::class, 'show'])->whereUuid('ruleId')->middleware('permission:commissions.view');
+    Route::patch('commissions/{ruleId}', [CommissionController::class, 'updatePolicy'])->whereUuid('ruleId')->middleware('permission:commissions.update');
+    Route::post('commissions/{ruleId}/deactivate', [CommissionController::class, 'deactivatePolicy'])->whereUuid('ruleId')->middleware('permission:commissions.manage');
+    Route::get('commission-records', [CommissionController::class, 'indexRecords'])->middleware('permission:commission_records.view');
 
     Route::prefix('finance')->group(function () {
         // RBAC #2 — per-action permission gates (first enforcement batch, 2026-06-05).
