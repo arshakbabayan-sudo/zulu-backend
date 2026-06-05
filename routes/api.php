@@ -676,14 +676,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('commission-records', [CommissionController::class, 'indexRecords']);
 
     Route::prefix('finance')->group(function () {
-        Route::get('summary', [FinanceController::class, 'companySummary']);
-        Route::get('entitlements', [FinanceController::class, 'entitlements']);
-        Route::post('entitlements/mark-payable', [FinanceController::class, 'markPayable']);
-        Route::get('settlements', [FinanceController::class, 'settlements']);
-        Route::post('settlements', [FinanceController::class, 'createSettlement']);
-        Route::patch('settlements/{settlement}/status', [FinanceController::class, 'updateSettlementStatus'])->whereNumber('settlement');
+        // RBAC #2 — per-action permission gates (first enforcement batch, 2026-06-05).
+        // super_admin / platform_admin bypass the middleware entirely; the operator
+        // owner (company_admin) holds finance.*.view + .manage, agents hold the
+        // .view perms only → agents are denied the manage actions, owners are not.
+        Route::get('summary', [FinanceController::class, 'companySummary'])->middleware('permission:finance.entitlements.view');
+        Route::get('entitlements', [FinanceController::class, 'entitlements'])->middleware('permission:finance.entitlements.view');
+        Route::post('entitlements/mark-payable', [FinanceController::class, 'markPayable'])->middleware('permission:finance.entitlements.manage');
+        Route::get('settlements', [FinanceController::class, 'settlements'])->middleware('permission:finance.settlements.view');
+        Route::post('settlements', [FinanceController::class, 'createSettlement'])->middleware('permission:finance.settlements.manage');
+        Route::patch('settlements/{settlement}/status', [FinanceController::class, 'updateSettlementStatus'])->whereNumber('settlement')->middleware('permission:finance.settlements.manage');
         // Finance group v2 — Transactions page Export CSV (entitlements + settlements).
-        Route::get('export-csv', [FinanceController::class, 'exportCsv']);
+        Route::get('export-csv', [FinanceController::class, 'exportCsv'])->middleware('permission:finance.settlements.view');
     });
 
     Route::get('visas', [VisaController::class, 'index']);
