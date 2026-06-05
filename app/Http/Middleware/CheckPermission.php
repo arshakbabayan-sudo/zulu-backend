@@ -63,6 +63,21 @@ class CheckPermission
             return (int) $routeCompany;
         }
 
-        return $this->companyAccessService->resolveOperatorAdminCompanyId($user);
+        $companyId = $this->companyAccessService->resolveOperatorAdminCompanyId($user);
+        if ($companyId !== null) {
+            return $companyId;
+        }
+
+        // RBAC #2 fix: resolveOperatorAdminCompanyId only resolves a company for
+        // "operator admin" roles, so plain tenants (e.g. agents) got null here and
+        // were 403'd on EVERY gated route even when their role holds the permission.
+        // Fall back to the user's first company membership so the permission check
+        // runs against the right tenant. (Super/platform already bypassed above.)
+        $firstCompanyId = $user->memberships()
+            ->whereNotNull('role_id')
+            ->orderBy('id')
+            ->value('company_id');
+
+        return $firstCompanyId !== null ? (int) $firstCompanyId : null;
     }
 }
