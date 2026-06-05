@@ -73,18 +73,17 @@ class FinanceController extends Controller
 
     public function markPayable(Request $request, FinanceService $service): JsonResponse
     {
-        if (! $this->adminAccessService->isSuperAdmin($request->user())) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
-        }
-
         $validated = $request->validate([
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'entitlement_ids' => ['required', 'array', 'min:1'],
             'entitlement_ids.*' => ['integer'],
         ]);
+
+        // RBAC #2 — an owner with finance.entitlements.manage may mark payable on
+        // their OWN company; super/platform bypass. (Was a super-only inline guard.)
+        if ($response = $this->ensureFinanceCompanyAccess($request, (int) $validated['company_id'], 'finance.entitlements.manage')) {
+            return $response;
+        }
 
         $company = Company::query()->findOrFail((int) $validated['company_id']);
         $ids = array_map('intval', $validated['entitlement_ids']);
@@ -120,13 +119,6 @@ class FinanceController extends Controller
 
     public function createSettlement(Request $request, FinanceService $service): JsonResponse
     {
-        if (! $this->adminAccessService->isSuperAdmin($request->user())) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
-        }
-
         $validated = $request->validate([
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'entitlement_ids' => ['required', 'array', 'min:1'],
@@ -135,6 +127,12 @@ class FinanceController extends Controller
             'period_label' => ['nullable', 'string', 'max:128'],
             'notes' => ['nullable', 'string'],
         ]);
+
+        // RBAC #2 — an owner with finance.settlements.manage may create a settlement
+        // for their OWN company; super/platform bypass. (Was a super-only inline guard.)
+        if ($response = $this->ensureFinanceCompanyAccess($request, (int) $validated['company_id'], 'finance.settlements.manage')) {
+            return $response;
+        }
 
         $company = Company::query()->findOrFail((int) $validated['company_id']);
         $ids = array_map('intval', $validated['entitlement_ids']);
@@ -158,11 +156,10 @@ class FinanceController extends Controller
 
     public function updateSettlementStatus(Request $request, Settlement $settlement, FinanceService $service): JsonResponse
     {
-        if (! $this->adminAccessService->isSuperAdmin($request->user())) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Forbidden',
-            ], 403);
+        // RBAC #2 — an owner with finance.settlements.manage may update a settlement
+        // of their OWN company; super/platform bypass. (Was a super-only inline guard.)
+        if ($response = $this->ensureFinanceCompanyAccess($request, (int) $settlement->company_id, 'finance.settlements.manage')) {
+            return $response;
         }
 
         $validated = $request->validate([
