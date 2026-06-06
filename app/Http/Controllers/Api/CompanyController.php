@@ -39,9 +39,11 @@ class CompanyController extends Controller
      * Higher rank = more powerful. Granting a role requires caller's rank ≥ granted rank.
      */
     private const ROLE_RANK = [
-        // company_admin = company owner (top); operator_admin = director under
-        // them; a director must not edit the owner's rights (Phase R.1).
+        // company_admin = operator-company owner (top); agent = agency-company
+        // owner (also top of its own company — RBAC #2 Part Բ). operator_admin
+        // (legacy "director") is retired but kept here harmlessly for any old row.
         'company_admin' => 4,
+        'agent' => 4,
         'admin' => 4,
         'operator_admin' => 3,
         'company_operator' => 2,

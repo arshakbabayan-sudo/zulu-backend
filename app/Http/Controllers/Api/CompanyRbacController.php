@@ -33,6 +33,7 @@ class CompanyRbacController extends Controller
     /** Role privilege rank — mirrors CompanyController::ROLE_RANK. */
     private const ROLE_RANK = [
         'company_admin' => 4,
+        'agent' => 4,
         'admin' => 4,
         'operator_admin' => 3,
         'company_operator' => 2,

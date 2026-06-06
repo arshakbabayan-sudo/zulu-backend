@@ -166,4 +166,61 @@ class CompanyApplicationApprovalOwnerRoleTest extends TestCase
         $this->assertNotNull($membership);
         $this->assertSame('operator_admin', $membership->role->name);
     }
+
+    /** RBAC #2 Part Բ — an AGENCY application's owner gets the `agent` role (not company_admin). */
+    public function test_agency_owner_gets_agent_role(): void
+    {
+        Role::query()->firstOrCreate(['name' => 'company_admin']);
+        Role::query()->firstOrCreate(['name' => 'agent']);
+
+        $app = $this->pendingApplication(['company_type' => CompanyApplication::TYPE_AGENT]);
+        $result = $this->approveSvc()->approve($app, $this->reviewer());
+
+        $membership = UserCompany::query()
+            ->where('user_id', $result['user']->id)
+            ->where('company_id', $result['company']->id)
+            ->with('role')
+            ->first();
+
+        $this->assertNotNull($membership);
+        $this->assertSame('agent', $membership->role->name);
+    }
+
+    /** RBAC #2 Part Բ — operator applications are unaffected: owner still gets company_admin. */
+    public function test_operator_owner_still_gets_company_admin_with_agent_role_present(): void
+    {
+        Role::query()->firstOrCreate(['name' => 'company_admin']);
+        Role::query()->firstOrCreate(['name' => 'agent']);
+
+        $app = $this->pendingApplication(['company_type' => CompanyApplication::TYPE_OPERATOR]);
+        $result = $this->approveSvc()->approve($app, $this->reviewer());
+
+        $membership = UserCompany::query()
+            ->where('user_id', $result['user']->id)
+            ->where('company_id', $result['company']->id)
+            ->with('role')
+            ->first();
+
+        $this->assertNotNull($membership);
+        $this->assertSame('company_admin', $membership->role->name);
+    }
+
+    /** RBAC #2 Part Բ — if the `agent` role row is missing, an agency owner falls back to the operator role. */
+    public function test_agency_owner_falls_back_when_agent_role_missing(): void
+    {
+        Role::query()->firstOrCreate(['name' => 'company_admin']);
+        // intentionally no `agent` role
+
+        $app = $this->pendingApplication(['company_type' => CompanyApplication::TYPE_AGENT]);
+        $result = $this->approveSvc()->approve($app, $this->reviewer());
+
+        $membership = UserCompany::query()
+            ->where('user_id', $result['user']->id)
+            ->where('company_id', $result['company']->id)
+            ->with('role')
+            ->first();
+
+        $this->assertNotNull($membership);
+        $this->assertSame('company_admin', $membership->role->name);
+    }
 }

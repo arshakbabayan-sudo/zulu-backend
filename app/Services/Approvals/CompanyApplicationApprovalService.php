@@ -74,27 +74,35 @@ class CompanyApplicationApprovalService
             ? User::query()->find($application->user_id)
             : User::query()->where('email', $application->business_email)->first();
 
-        // The owner of a newly-approved company must be company_admin (rank 3 in
-        // CompanyRbacController::ROLE_RANK), NOT operator_admin (rank 2). The owner
-        // has to outrank the staff they later add via the permissions drawer; if
-        // they were operator_admin they'd be rank-equal to their own employees and
-        // the "can this caller grant this role" ceiling would break. Phase R model:
-        // company_admin = owner. We still fall back through the compat names in case
-        // a deployment lacks the company_admin role row.
-        $operatorRole = Role::query()
-            ->whereIn('name', self::OPERATOR_ROLE_COMPAT_NAMES)
-            ->orderByRaw("CASE name
-                WHEN 'company_admin' THEN 0
-                WHEN 'operator_admin' THEN 1
-                WHEN 'company_operator' THEN 2
-                WHEN 'admin' THEN 3
-                ELSE 99
-            END")
-            ->first();
+        // RBAC #2 Part Բ — the new owner's role depends on the application type:
+        //   • agency   → `agent`         (agency-company owner)
+        //   • operator → `company_admin` (operator-company owner)
+        // Both are rank-4 owners (CompanyController::ROLE_RANK) so they outrank the
+        // staff they later add via the permissions drawer. Each role's ACTION
+        // permissions are managed by a super-admin in Settings → Permissions; the
+        // `agent` role is intentionally view-only until configured there (Arshak
+        // controls what agents may do). Operator still falls back through the compat
+        // names in case a deployment lacks the company_admin row.
+        $operatorRole = (string) $application->company_type === CompanyApplication::TYPE_AGENT
+            ? Role::query()->where('name', 'agent')->first()
+            : null;
+
+        if ($operatorRole === null) {
+            $operatorRole = Role::query()
+                ->whereIn('name', self::OPERATOR_ROLE_COMPAT_NAMES)
+                ->orderByRaw("CASE name
+                    WHEN 'company_admin' THEN 0
+                    WHEN 'operator_admin' THEN 1
+                    WHEN 'company_operator' THEN 2
+                    WHEN 'admin' THEN 3
+                    ELSE 99
+                END")
+                ->first();
+        }
 
         if ($operatorRole === null) {
             throw ValidationException::withMessages([
-                'role' => ['company_admin compatibility role is not configured.'],
+                'role' => ['No suitable owner role is configured.'],
             ]);
         }
 
