@@ -32,6 +32,28 @@ class AdminRbacController extends Controller
      * Only permissions that actually exist in the seeder are referenced.
      */
     private const PERMISSION_TREE = [
+        // Left menu (RBAC #2 Part Ա, 2026-06-06) — one checkbox per sidebar group.
+        // Checking it shows that group in the operator/agent left menu; the
+        // action permissions in the sections below gate what they can DO inside.
+        // Listed FIRST so it's the prominent control Arshak reaches for.
+        'menu' => [
+            'label' => 'Left menu (visibility)',
+            'items' => [
+                'dashboard' => ['label' => 'Dashboard', 'permissions' => ['menu.dashboard.view']],
+                'inventory' => ['label' => 'Inventory', 'permissions' => ['menu.inventory.view']],
+                'bookings' => ['label' => 'Bookings', 'permissions' => ['menu.bookings.view']],
+                'crm' => ['label' => 'CRM', 'permissions' => ['menu.crm.view']],
+                'chat' => ['label' => 'Chat', 'permissions' => ['menu.chat.view']],
+                'finance' => ['label' => 'Finance', 'permissions' => ['menu.finance.view']],
+                'my_company' => ['label' => 'My company', 'permissions' => ['menu.my_company.view']],
+                'hr' => ['label' => 'HR', 'permissions' => ['menu.hr.view']],
+                'management' => ['label' => 'Management', 'permissions' => ['menu.management.view']],
+                'files' => ['label' => 'File manager', 'permissions' => ['menu.files.view']],
+                'inbox' => ['label' => 'Inbox', 'permissions' => ['menu.inbox.view']],
+                'settings' => ['label' => 'Settings', 'permissions' => ['menu.settings.view']],
+                'profile' => ['label' => 'My profile', 'permissions' => ['menu.profile.view']],
+            ],
+        ],
         'dashboard' => [
             'label' => 'Dashboard',
             'items' => [
