@@ -75,6 +75,12 @@ class AdminRbacController extends Controller
             'label' => 'CRM',
             'items' => [
                 'access' => ['label' => 'Show & access', 'permissions' => ['crm.view']],
+                // #4 (2026-06-06) — HR + File manager folded INTO CRM. Team &
+                // employees (was the HR section) + Files (was its own section) now
+                // live here; Contracts (instances) are also under CRM, gated by
+                // crm.view (no separate contract permission).
+                'team' => ['label' => 'Team & employees', 'permissions' => ['company.users.manage']],
+                'files' => ['label' => 'Files', 'permissions' => ['files.view']],
             ],
         ],
         'chat' => [
@@ -103,13 +109,7 @@ class AdminRbacController extends Controller
                 'seller' => ['label' => 'Seller settings', 'permissions' => ['seller_permissions.view']],
             ],
         ],
-        'hr' => [
-            'label' => 'HR',
-            'items' => [
-                'access' => ['label' => 'Show & access', 'permissions' => ['hr.view']],
-                'employees' => ['label' => 'Employees', 'permissions' => ['company.users.manage']],
-            ],
-        ],
+        // #4 (2026-06-06) — 'hr' section removed; folded into CRM (Team & employees).
         'management' => [
             'label' => 'Management',
             'items' => [
@@ -121,12 +121,7 @@ class AdminRbacController extends Controller
                 'oversight' => ['label' => 'Platform oversight', 'permissions' => ['platform.orders.list', 'platform.payments.list', 'platform.packages.moderate', 'platform.inventory.view', 'platform.inventory.manage']],
             ],
         ],
-        'files' => [
-            'label' => 'File manager',
-            'items' => [
-                'access' => ['label' => 'Show & access', 'permissions' => ['files.view']],
-            ],
-        ],
+        // #4 (2026-06-06) — 'files' section removed; folded into CRM (Files item).
         'inbox' => [
             'label' => 'Inbox',
             'items' => [
