@@ -510,12 +510,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // ── Internal chat (2026-06-01, Phase 1 — polling) ──────────────────
     // Company-scoped; every action guards membership + participation inside
     // the controller. Auth-only (not platform-admin) since any staff member
-    // in a company can chat with colleagues.
-    Route::get('chat/colleagues', [ChatController::class, 'colleagues']);
-    Route::get('chat/conversations', [ChatController::class, 'conversations']);
-    Route::post('chat/conversations', [ChatController::class, 'storeConversation']);
-    Route::get('chat/conversations/{conversation}/messages', [ChatController::class, 'messages'])->whereNumber('conversation');
-    Route::post('chat/conversations/{conversation}/messages', [ChatController::class, 'sendMessage'])->whereNumber('conversation');
+    // in a company can chat with colleagues. RBAC #2 — Chat section gate: no
+    // chat.view ⇒ no access (super/platform bypass; operators/agents hold it).
+    Route::middleware('permission:chat.view')->group(function () {
+        Route::get('chat/colleagues', [ChatController::class, 'colleagues']);
+        Route::get('chat/conversations', [ChatController::class, 'conversations']);
+        Route::post('chat/conversations', [ChatController::class, 'storeConversation']);
+        Route::get('chat/conversations/{conversation}/messages', [ChatController::class, 'messages'])->whereNumber('conversation');
+        Route::post('chat/conversations/{conversation}/messages', [ChatController::class, 'sendMessage'])->whereNumber('conversation');
+    });
 
     // Customer saved searches (PART 20)
     Route::get('customer/saved-searches', [SavedSearchController::class, 'index']);
