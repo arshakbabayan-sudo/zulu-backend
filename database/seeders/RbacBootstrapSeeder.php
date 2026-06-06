@@ -133,17 +133,17 @@ class RbacBootstrapSeeder extends Seeder
     private const MENU_DEFAULTS = [
         'platform_admin' => 'ALL',
         'company_admin'  => ['dashboard', 'inventory', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'hr', 'files', 'inbox', 'settings', 'profile'],
-        'operator_admin' => ['dashboard', 'inventory', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'hr', 'files', 'inbox', 'settings', 'profile'],
         'agent'          => ['dashboard', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'hr', 'files', 'inbox', 'settings', 'profile'],
     ];
 
     public function run(): void
     {
+        // RBAC #2 Part Բ — `operator_admin` retired (4-role model). Not seeded;
+        // the 2026_06_06_000030 migration drops it on existing installs.
         $roles = [
             'super_admin' => Role::query()->firstOrCreate(['name' => 'super_admin']),
             'platform_admin' => Role::query()->firstOrCreate(['name' => 'platform_admin']),
             'company_admin' => Role::query()->firstOrCreate(['name' => 'company_admin']),
-            'operator_admin' => Role::query()->firstOrCreate(['name' => 'operator_admin']),
             'agent' => Role::query()->firstOrCreate(['name' => 'agent']),
         ];
 
@@ -172,7 +172,6 @@ class RbacBootstrapSeeder extends Seeder
 
         $roles['super_admin']->permissions()->sync($allIds);
         $roles['company_admin']->permissions()->sync($companyScopedIds);
-        $roles['operator_admin']->permissions()->sync($companyScopedIds);
 
         $platformPermissionIds = array_map(
             fn (string $n) => $permissionModels[$n]->id,
