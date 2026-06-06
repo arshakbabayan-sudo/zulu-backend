@@ -1139,7 +1139,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Operator inventory oversight lists (Sanctum; same RBAC as admin/inventory via AdminAccessService).
     Route::prefix('operator')->group(function () {
         Route::get('statistics', [OperatorStatisticsController::class, 'show']);
-        Route::prefix('inventory')->name('api.operator.inventory.')->group(function () {
+        // RBAC #2 — Inventory section gate. No `inventory.view` ⇒ no API access
+        // by any means (agents lack it → 403; operators/super hold it → pass).
+        Route::prefix('inventory')->name('api.operator.inventory.')->middleware('permission:inventory.view')->group(function () {
             Route::get('flights', [AdminInventoryController::class, 'flights'])->name('flights');
             Route::get('hotels', [AdminInventoryController::class, 'hotels'])->name('hotels');
             Route::get('transfers', [AdminInventoryController::class, 'transfers'])->name('transfers');
