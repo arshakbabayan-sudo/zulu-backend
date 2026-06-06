@@ -154,6 +154,7 @@ class AdminRbacController extends Controller
             ->map(fn (Role $r) => [
                 'id' => $r->id,
                 'name' => $r->name,
+                'display_name' => $r->display_name,
                 'description' => $r->description,
                 'scope' => $r->scope,
                 'memberships_count' => $r->memberships_count ?? 0,
@@ -205,6 +206,7 @@ class AdminRbacController extends Controller
         }
 
         $data = $request->validate([
+            'display_name' => 'sometimes|nullable|string|max:100',
             'description' => 'sometimes|nullable|string|max:255',
             'scope' => 'sometimes|in:platform,company',
         ]);
@@ -270,6 +272,7 @@ class AdminRbacController extends Controller
         return [
             'id' => $role->id,
             'name' => $role->name,
+            'display_name' => $role->display_name,
             'description' => $role->description,
             'scope' => $role->scope,
             'memberships_count' => $role->memberships()->count(),
