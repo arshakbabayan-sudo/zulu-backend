@@ -31,38 +31,28 @@ class AdminRbacController extends Controller
      * Shape: section => [ label, items => [ key => [label, permissions[]] ] ].
      * Only permissions that actually exist in the seeder are referenced.
      */
+    /**
+     * Menu-mirror permission tree (RBAC #2 redo, 2026-06-06).
+     *
+     * The SECTIONS here ARE the left-menu items (one per sidebar group, in menu
+     * order). Each section's first item, "Show & access", holds the single
+     * `<section>.view` gate — granting it shows the menu item AND allows page +
+     * API access; revoking it removes access by EVERY route (menu hidden, direct
+     * URL forbidden, API 403). The remaining items are the section's action
+     * permissions. There is NO separate "Left menu" list — this is the one list.
+     */
     private const PERMISSION_TREE = [
-        // Left menu (RBAC #2 Part Ա, 2026-06-06) — one checkbox per sidebar group.
-        // Checking it shows that group in the operator/agent left menu; the
-        // action permissions in the sections below gate what they can DO inside.
-        // Listed FIRST so it's the prominent control Arshak reaches for.
-        'menu' => [
-            'label' => 'Left menu (visibility)',
-            'items' => [
-                'dashboard' => ['label' => 'Dashboard', 'permissions' => ['menu.dashboard.view']],
-                'inventory' => ['label' => 'Inventory', 'permissions' => ['menu.inventory.view']],
-                'bookings' => ['label' => 'Bookings', 'permissions' => ['menu.bookings.view']],
-                'crm' => ['label' => 'CRM', 'permissions' => ['menu.crm.view']],
-                'chat' => ['label' => 'Chat', 'permissions' => ['menu.chat.view']],
-                'finance' => ['label' => 'Finance', 'permissions' => ['menu.finance.view']],
-                'my_company' => ['label' => 'My company', 'permissions' => ['menu.my_company.view']],
-                'hr' => ['label' => 'HR', 'permissions' => ['menu.hr.view']],
-                'management' => ['label' => 'Management', 'permissions' => ['menu.management.view']],
-                'files' => ['label' => 'File manager', 'permissions' => ['menu.files.view']],
-                'inbox' => ['label' => 'Inbox', 'permissions' => ['menu.inbox.view']],
-                'settings' => ['label' => 'Settings', 'permissions' => ['menu.settings.view']],
-                'profile' => ['label' => 'My profile', 'permissions' => ['menu.profile.view']],
-            ],
-        ],
         'dashboard' => [
             'label' => 'Dashboard',
             'items' => [
-                'overview' => ['label' => 'Overview & stats', 'permissions' => ['platform.stats.view']],
+                'access' => ['label' => 'Show & access', 'permissions' => ['dashboard.view']],
+                'stats' => ['label' => 'Platform stats', 'permissions' => ['platform.stats.view']],
             ],
         ],
         'inventory' => [
             'label' => 'Inventory',
             'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['inventory.view']],
                 'hotels' => ['label' => 'Hotels', 'permissions' => ['hotels.view', 'hotels.create', 'hotels.update', 'hotels.delete']],
                 'flights' => ['label' => 'Flights', 'permissions' => ['flights.view', 'flights.create', 'flights.update', 'flights.delete']],
                 'cars' => ['label' => 'Cars', 'permissions' => ['cars.view', 'cars.create', 'cars.update', 'cars.delete']],
@@ -76,13 +66,27 @@ class AdminRbacController extends Controller
         'bookings' => [
             'label' => 'Bookings',
             'items' => [
-                'bookings' => ['label' => 'Bookings', 'permissions' => ['bookings.view', 'bookings.create', 'bookings.confirm', 'bookings.cancel']],
+                'access' => ['label' => 'Show & view', 'permissions' => ['bookings.view']],
+                'manage' => ['label' => 'Manage bookings', 'permissions' => ['bookings.create', 'bookings.confirm', 'bookings.cancel']],
                 'package_orders' => ['label' => 'Package orders', 'permissions' => ['package_orders.view', 'package_orders.manage']],
+            ],
+        ],
+        'crm' => [
+            'label' => 'CRM',
+            'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['crm.view']],
+            ],
+        ],
+        'chat' => [
+            'label' => 'Chat',
+            'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['chat.view']],
             ],
         ],
         'finance' => [
             'label' => 'Finance',
             'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['finance.view']],
                 'invoices' => ['label' => 'Invoices', 'permissions' => ['invoices.view', 'invoices.create', 'invoices.issue', 'invoices.pay', 'invoices.cancel']],
                 'payments' => ['label' => 'Payments', 'permissions' => ['payments.view', 'payments.create', 'payments.pay', 'payments.capture', 'payments.fail', 'payments.refund']],
                 'commissions' => ['label' => 'Commissions', 'permissions' => ['commissions.view', 'commissions.create', 'commissions.update', 'commissions.manage', 'commission_records.view']],
@@ -91,36 +95,58 @@ class AdminRbacController extends Controller
                 'platform_finance' => ['label' => 'Platform finance', 'permissions' => ['platform.finance.view']],
             ],
         ],
+        'my_company' => [
+            'label' => 'My company',
+            'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['my_company.view']],
+                'profile' => ['label' => 'Company profile', 'permissions' => ['companies.view_dashboard', 'companies.edit_profile']],
+                'seller' => ['label' => 'Seller settings', 'permissions' => ['seller_permissions.view']],
+            ],
+        ],
+        'hr' => [
+            'label' => 'HR',
+            'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['hr.view']],
+                'employees' => ['label' => 'Employees', 'permissions' => ['company.users.manage']],
+            ],
+        ],
         'management' => [
             'label' => 'Management',
             'items' => [
-                'companies' => ['label' => 'Companies & access', 'permissions' => ['companies.view', 'companies.view_dashboard', 'companies.edit_profile', 'companies.manage_seller_permissions', 'platform.companies.list', 'platform.companies.governance']],
+                'access' => ['label' => 'Show & access', 'permissions' => ['management.view']],
+                'companies' => ['label' => 'Companies & access', 'permissions' => ['companies.view', 'companies.manage_seller_permissions', 'platform.companies.list', 'platform.companies.governance']],
                 'approvals' => ['label' => 'Approvals', 'permissions' => ['platform.approvals.list', 'platform.approvals.manage']],
+                'users' => ['label' => 'Users', 'permissions' => ['platform.users.list']],
                 'reviews' => ['label' => 'Reviews', 'permissions' => ['reviews.view', 'reviews.create', 'reviews.moderate']],
                 'oversight' => ['label' => 'Platform oversight', 'permissions' => ['platform.orders.list', 'platform.payments.list', 'platform.packages.moderate', 'platform.inventory.view', 'platform.inventory.manage']],
             ],
         ],
-        'directory' => [
-            'label' => 'Directory',
+        'files' => [
+            'label' => 'File manager',
             'items' => [
-                'users' => ['label' => 'Users', 'permissions' => ['platform.users.list']],
-                'employees' => ['label' => 'Company employees', 'permissions' => ['company.users.manage']],
+                'access' => ['label' => 'Show & access', 'permissions' => ['files.view']],
+            ],
+        ],
+        'inbox' => [
+            'label' => 'Inbox',
+            'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['inbox.view']],
             ],
         ],
         'settings' => [
             'label' => 'Settings',
             'items' => [
+                'access' => ['label' => 'Show & access', 'permissions' => ['settings.view']],
                 'localization' => ['label' => 'Localization', 'permissions' => ['localization.view', 'localization.manage']],
                 'platform_settings' => ['label' => 'Platform settings', 'permissions' => ['platform.settings.manage']],
                 'imports' => ['label' => 'Imports', 'permissions' => ['imports.upload']],
-                'seller_permissions' => ['label' => 'Seller permissions', 'permissions' => ['seller_permissions.view']],
             ],
         ],
-        'account' => [
-            'label' => 'My account',
+        'profile' => [
+            'label' => 'My profile',
             'items' => [
-                'profile' => ['label' => 'Profile', 'permissions' => ['account.update_profile']],
-                'saved' => ['label' => 'Saved items', 'permissions' => ['saved_items.manage']],
+                'access' => ['label' => 'Show & access', 'permissions' => ['profile.view']],
+                'account' => ['label' => 'Account', 'permissions' => ['account.update_profile', 'saved_items.manage']],
             ],
         ],
     ];
@@ -259,12 +285,38 @@ class AdminRbacController extends Controller
             'permission_ids.*' => 'integer|exists:permissions,id',
         ]);
 
-        $role->permissions()->sync($data['permission_ids']);
+        // P4 fix — the tree only MANAGES the permissions it actually displays.
+        // Any permission the role holds that is NOT in the tree (e.g. the
+        // platform.admin / platform.manage / super_admin escalators that never
+        // appear in the menu tree) is preserved, so saving a role from the tree
+        // can never silently strip it. Only tree-managed perms are synced from
+        // the submitted set.
+        $treeManaged = $this->treePermissionIds();
+        $submittedTree = array_values(array_intersect(array_map('intval', $data['permission_ids']), $treeManaged));
+        $current = $role->permissions()->pluck('permissions.id')->all();
+        $preservedNonTree = array_values(array_diff($current, $treeManaged));
+
+        $role->permissions()->sync(array_values(array_unique(array_merge($submittedTree, $preservedNonTree))));
 
         return response()->json([
             'success' => true,
             'data' => $this->serializeRole($role->fresh(['permissions'])),
         ]);
+    }
+
+    /** Permission ids for every permission named anywhere in PERMISSION_TREE. */
+    private function treePermissionIds(): array
+    {
+        $names = [];
+        foreach (self::PERMISSION_TREE as $section) {
+            foreach ($section['items'] as $item) {
+                foreach ($item['permissions'] as $permName) {
+                    $names[] = $permName;
+                }
+            }
+        }
+
+        return Permission::query()->whereIn('name', array_values(array_unique($names)))->pluck('id')->all();
     }
 
     private function serializeRole(Role $role): array

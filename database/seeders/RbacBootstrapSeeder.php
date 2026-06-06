@@ -111,26 +111,43 @@ class RbacBootstrapSeeder extends Seeder
         'reviews.view',
         'reviews.moderate',
         'imports.upload',
-        // Left-menu visibility (RBAC #2 Part Ա, 2026-06-06). One per sidebar
-        // group — gates whether the group shows for a role. Granted explicitly
-        // per role below (NOT via the generic action-permission logic).
-        'menu.dashboard.view',
-        'menu.inventory.view',
-        'menu.bookings.view',
-        'menu.crm.view',
-        'menu.chat.view',
-        'menu.finance.view',
-        'menu.my_company.view',
-        'menu.hr.view',
-        'menu.management.view',
-        'menu.files.view',
-        'menu.inbox.view',
-        'menu.settings.view',
-        'menu.profile.view',
+        // RBAC #2 (redo) — one "view/access" gate per LEFT-MENU section. Granting
+        // it shows the menu item AND allows page + API access; revoking it removes
+        // access by every route. Granted explicitly per role below (NOT via the
+        // generic action logic). `bookings.view` (above) is the Bookings gate.
+        'dashboard.view',
+        'inventory.view',
+        'crm.view',
+        'chat.view',
+        'finance.view',
+        'my_company.view',
+        'hr.view',
+        'management.view',
+        'files.view',
+        'inbox.view',
+        'settings.view',
+        'profile.view',
     ];
 
-    /** Default menu-group grants per role (mirrors the menu-permissions migration). */
-    private const MENU_DEFAULTS = [
+    /** menu section key => its single view/access gate permission. */
+    private const SECTION_VIEW = [
+        'dashboard' => 'dashboard.view',
+        'inventory' => 'inventory.view',
+        'bookings' => 'bookings.view',
+        'crm' => 'crm.view',
+        'chat' => 'chat.view',
+        'finance' => 'finance.view',
+        'my_company' => 'my_company.view',
+        'hr' => 'hr.view',
+        'management' => 'management.view',
+        'files' => 'files.view',
+        'inbox' => 'inbox.view',
+        'settings' => 'settings.view',
+        'profile' => 'profile.view',
+    ];
+
+    /** Default section gates per role — mirrors the section-view migration + today's menu. */
+    private const SECTION_DEFAULTS = [
         'platform_admin' => 'ALL',
         'company_admin'  => ['dashboard', 'inventory', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'hr', 'files', 'inbox', 'settings', 'profile'],
         'agent'          => ['dashboard', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'hr', 'files', 'inbox', 'settings', 'profile'],
@@ -162,7 +179,7 @@ class RbacBootstrapSeeder extends Seeder
         $companyScopedNames = array_filter(
             array_keys($permissionModels),
             fn (string $n) => ! str_starts_with($n, 'platform.')
-                && ! str_starts_with($n, 'menu.') // menu.* granted explicitly per role below
+                && ! in_array($n, array_values(self::SECTION_VIEW), true) // section gates granted explicitly per role below
                 && ! in_array($n, ['super_admin', 'localization.manage'], true)
         );
         $companyScopedIds = array_map(
@@ -189,26 +206,23 @@ class RbacBootstrapSeeder extends Seeder
             array_keys($permissionModels),
             fn (string $n) => str_ends_with($n, '.view')
                 && ! str_starts_with($n, 'platform.')
-                && ! str_starts_with($n, 'menu.') // menu.* granted explicitly below
+                && ! in_array($n, array_values(self::SECTION_VIEW), true) // section gates granted explicitly below
         );
         $roles['agent']->permissions()->sync(
             array_map(fn (string $n) => $permissionModels[$n]->id, $agentView)
         );
 
-        // Left-menu visibility grants (RBAC #2 Part Ա). super_admin already has
-        // every permission via the sync($allIds) above; the rest get the default
-        // menu set per MENU_DEFAULTS (additive — keeps their action perms intact).
-        foreach (self::MENU_DEFAULTS as $roleName => $groups) {
+        // Section view/access gates (RBAC #2 redo). super_admin already has every
+        // permission via sync($allIds); the rest get the default gate set per
+        // SECTION_DEFAULTS (additive — keeps their action perms intact).
+        foreach (self::SECTION_DEFAULTS as $roleName => $groups) {
             if (! isset($roles[$roleName])) {
                 continue;
             }
-            $menuIds = $groups === 'ALL'
-                ? array_map(
-                    fn (string $n) => $permissionModels[$n]->id,
-                    array_values(array_filter(array_keys($permissionModels), fn (string $n) => str_starts_with($n, 'menu.')))
-                )
-                : array_map(fn (string $g) => $permissionModels["menu.{$g}.view"]->id, $groups);
-            $roles[$roleName]->permissions()->syncWithoutDetaching($menuIds);
+            $gateIds = $groups === 'ALL'
+                ? array_map(fn (string $name) => $permissionModels[$name]->id, array_values(self::SECTION_VIEW))
+                : array_map(fn (string $g) => $permissionModels[self::SECTION_VIEW[$g]]->id, $groups);
+            $roles[$roleName]->permissions()->syncWithoutDetaching($gateIds);
         }
 
         $company = Company::query()->firstOrCreate(
