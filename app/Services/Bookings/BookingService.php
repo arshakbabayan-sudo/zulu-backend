@@ -8,6 +8,7 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Services\Finance\FinanceService;
+use App\Services\Notifications\NotificationService;
 use App\Services\Orders\OrderService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -18,8 +19,14 @@ use Illuminate\Validation\ValidationException;
 class BookingService
 {
     public function __construct(
-        private OrderService $orderService
+        private OrderService $orderService,
+        private ?NotificationService $notificationService = null,
     ) {}
+
+    private function notifications(): NotificationService
+    {
+        return $this->notificationService ?? app(NotificationService::class);
+    }
 
     /**
      * @param  array<int,array{offer_id:int,price:numeric,start_date?:string,end_date?:string}>  $itemsData
@@ -167,7 +174,7 @@ class BookingService
             ? $actingUser->id
             : null;
 
-        return $this->orderService->create(
+        $order = $this->orderService->create(
             [
                 'user_id' => $bookingData['user_id'] ?? null,
                 'company_id' => $bookingData['company_id'] ?? null,
@@ -182,6 +189,22 @@ class BookingService
             ],
             $itemsPayload
         );
+
+        // Notify the attributed company's staff (admin top-bar bell) that a B2C
+        // booking was just placed, so the seller can follow up and close the
+        // sale. Best-effort; a notification failure never blocks the booking.
+        if ($order->status === 'pending_payment') {
+            try {
+                $this->notifications()->notifyCompanyStaffOfBooking($order);
+            } catch (\Throwable $e) {
+                Log::warning('Booking-placed notification dispatch failed', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $order;
     }
 
     public function confirm(Order $order): Order

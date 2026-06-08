@@ -69,7 +69,7 @@ class PackageOrderService
             ]);
         }
 
-        return DB::transaction(function () use ($package, $user, $adultsCount, $childrenCount, $infantsCount, $bookingChannel, $notes, $agentCompanyId) {
+        $order = DB::transaction(function () use ($package, $user, $adultsCount, $childrenCount, $infantsCount, $bookingChannel, $notes, $agentCompanyId): Order {
             $package->loadMissing(['components.offer', 'offer']);
 
             if ($package->status !== 'active' || ! $package->is_public) {
@@ -199,6 +199,23 @@ class PackageOrderService
 
             return $order;
         });
+
+        // Notify the attributed company's staff (admin top-bar bell) that a B2C
+        // booking was just placed, so the seller can follow up and close the
+        // sale. Only for actually-placed bookings (a non-bookable package lands
+        // as a 'cart' draft); best-effort, never blocks order creation.
+        if ($order->status === 'pending_payment') {
+            try {
+                $this->notificationService->notifyCompanyStaffOfBooking($order);
+            } catch (\Throwable $e) {
+                Log::warning('Booking-placed notification dispatch failed', [
+                    'order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $order;
     }
 
     public function markPaid(Order $order): Order

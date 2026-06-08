@@ -25,6 +25,11 @@ class Notification extends Model
         'order.cancelled',
         'order.paid',
         'order.fulfilled',
+        // Fired to the staff of the company a B2C booking is attributed to
+        // (the partner the customer picked, or the supplying operator) the
+        // moment the customer places the booking — surfaces on the admin
+        // top-bar bell so the seller can follow up and close the sale.
+        'booking.created',
         'payment.succeeded',
         'payment.failed',
         'voucher.issued',

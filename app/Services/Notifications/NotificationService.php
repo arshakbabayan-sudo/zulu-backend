@@ -3,7 +3,9 @@
 namespace App\Services\Notifications;
 
 use App\Mail\GenericNotificationMail;
+use App\Models\Company;
 use App\Models\Notification;
+use App\Models\Order;
 use App\Models\User;
 use App\Models\UserNotificationPreference;
 use App\Services\Localization\LocalizationService;
@@ -102,6 +104,108 @@ class NotificationService
             'related_company_id' => isset($validated['related_company_id']) ? (int) $validated['related_company_id'] : null,
             'priority' => $priority,
         ]);
+    }
+
+    /**
+     * Notify every staff member of the company a B2C booking is attributed to —
+     * the partner the customer picked (agent_company_id), or the supplying
+     * operator (company_id) for a direct purchase — that a new booking was just
+     * placed, so the seller can reach out and help close the sale. Surfaces on
+     * the admin top-bar bell (in-app only; deliberately no email — would spam
+     * every employee on each booking).
+     *
+     * No-op when: the booking has no attributed company, or it was created BY a
+     * member of the selling company (sold_by_user_id set → the seller already
+     * knows). Each recipient is best-effort — one failed row never blocks the rest.
+     */
+    public function notifyCompanyStaffOfBooking(Order $order): void
+    {
+        // A seller employee placed this booking themselves → they already know.
+        if ($order->sold_by_user_id !== null) {
+            return;
+        }
+
+        $companyId = $order->agent_company_id ?? $order->company_id;
+        if ($companyId === null) {
+            return;
+        }
+
+        $company = Company::query()
+            ->with('users:id,name,preferred_language')
+            ->find($companyId);
+        if ($company === null) {
+            return;
+        }
+
+        $order->loadMissing('user:id,name');
+        $rawName = $order->user?->name;
+        $customerName = is_string($rawName) && trim($rawName) !== '' ? trim($rawName) : null;
+        $orderNumber = (string) ($order->order_number ?? '');
+
+        foreach ($company->users as $staff) {
+            try {
+                $copy = $this->bookingPlacedCopy(
+                    (string) ($staff->preferred_language ?? ''),
+                    $customerName,
+                    $orderNumber,
+                );
+
+                $this->createForEvent([
+                    'user_id' => (int) $staff->id,
+                    'event_type' => 'booking.created',
+                    'title' => $copy['title'],
+                    'message' => $copy['message'],
+                    'subject_type' => 'order',
+                    'related_company_id' => (int) $companyId,
+                    'priority' => 'high',
+                    'variables' => [
+                        'order_number' => $orderNumber,
+                        'user_name' => $customerName ?? '',
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Booking-placed staff notification failed', [
+                    'order_id' => $order->id,
+                    'staff_user_id' => $staff->id ?? null,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Localized in-app copy for the booking.created staff notification, in the
+     * recipient's preferred language (Armenian default, + English / Russian).
+     * Serves as the fallback when no editable notification template exists yet
+     * for the event.
+     *
+     * @return array{title: string, message: string}
+     */
+    private function bookingPlacedCopy(string $lang, ?string $customerName, string $orderNumber): array
+    {
+        $code = strtolower(substr(trim($lang), 0, 2));
+        $ref = $orderNumber !== '' ? ' '.$orderNumber : '';
+
+        return match ($code) {
+            'ru' => [
+                'title' => 'Новое бронирование',
+                'message' => ($customerName ?? 'Клиент')
+                    .' оформил(а) бронирование'.$ref
+                    .'. Свяжитесь с клиентом, чтобы завершить продажу.',
+            ],
+            'en' => [
+                'title' => 'New booking',
+                'message' => ($customerName ?? 'A customer')
+                    .' placed a booking'.$ref
+                    .'. Reach out to the customer to complete the sale.',
+            ],
+            default => [
+                'title' => 'Նոր ամրագրում',
+                'message' => ($customerName ?? 'Հաճախորդ')
+                    .'ը ամրագրում դրեց'.$ref
+                    .'։ Կապ պահիր հաճախորդի հետ՝ վաճառքն ավարտելու համար։',
+            ],
+        };
     }
 
     /**
