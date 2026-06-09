@@ -3,12 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\CrmActivity;
+use App\Models\CrmCompanySetting;
 use App\Models\CrmDeal;
+use App\Models\CrmEmployeeCompensation;
+use App\Models\Order;
 use App\Models\User;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Admin\CompanyAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 /**
  * CRM — deals (sales pipeline) + activities (interaction log).
@@ -28,6 +34,7 @@ class CrmController extends Controller
 {
     public function __construct(
         private AdminAccessService $adminAccessService,
+        private CompanyAccessService $companyAccessService,
     ) {}
 
     /**
@@ -68,6 +75,7 @@ class CrmController extends Controller
         } catch (\Throwable $e) {
             $ids = [];
         }
+
         return $ids ?: [0];
     }
 
@@ -146,7 +154,7 @@ class CrmController extends Controller
             'value_amount' => ['nullable', 'numeric'],
             'currency' => ['nullable', 'string', 'max:3'],
             'service_type' => ['nullable', 'string', 'max:50'],
-            'stage' => ['nullable', 'string', 'in:' . implode(',', CrmDeal::STAGES)],
+            'stage' => ['nullable', 'string', 'in:'.implode(',', CrmDeal::STAGES)],
             'probability' => ['nullable', 'integer', 'min:0', 'max:100'],
             'source' => ['nullable', 'string', 'max:50'],
             'expected_close_date' => ['nullable', 'date'],
@@ -171,7 +179,7 @@ class CrmController extends Controller
             'value_amount' => ['nullable', 'numeric'],
             'currency' => ['nullable', 'string', 'max:3'],
             'service_type' => ['nullable', 'string', 'max:50'],
-            'stage' => ['nullable', 'string', 'in:' . implode(',', CrmDeal::STAGES)],
+            'stage' => ['nullable', 'string', 'in:'.implode(',', CrmDeal::STAGES)],
             'probability' => ['nullable', 'integer', 'min:0', 'max:100'],
             'source' => ['nullable', 'string', 'max:50'],
             'expected_close_date' => ['nullable', 'date'],
@@ -235,12 +243,12 @@ class CrmController extends Controller
     public function storeActivity(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'type' => ['required', 'string', 'in:' . implode(',', CrmActivity::TYPES)],
+            'type' => ['required', 'string', 'in:'.implode(',', CrmActivity::TYPES)],
             'subject' => ['required', 'string', 'max:255'],
             'body' => ['nullable', 'string'],
-            'subject_type' => ['nullable', 'string', 'in:' . implode(',', CrmActivity::SUBJECT_TYPES)],
+            'subject_type' => ['nullable', 'string', 'in:'.implode(',', CrmActivity::SUBJECT_TYPES)],
             'subject_id' => ['nullable', 'integer'],
-            'status' => ['nullable', 'string', 'in:' . implode(',', CrmActivity::STATUSES)],
+            'status' => ['nullable', 'string', 'in:'.implode(',', CrmActivity::STATUSES)],
             'due_at' => ['nullable', 'date'],
         ]);
 
@@ -258,7 +266,7 @@ class CrmController extends Controller
         $data = $request->validate([
             'subject' => ['sometimes', 'string', 'max:255'],
             'body' => ['nullable', 'string'],
-            'status' => ['nullable', 'string', 'in:' . implode(',', CrmActivity::STATUSES)],
+            'status' => ['nullable', 'string', 'in:'.implode(',', CrmActivity::STATUSES)],
             'due_at' => ['nullable', 'date'],
             'completed_at' => ['nullable', 'date'],
         ]);
@@ -412,6 +420,7 @@ class CrmController extends Controller
         if ($explicit !== null && $explicit !== '') {
             return (int) $explicit;
         }
+
         return $this->ownerCompanyId($request);
     }
 
@@ -431,18 +440,18 @@ class CrmController extends Controller
         // Period: default to the current calendar month (YYYY-MM via ?month).
         $month = (string) $request->query('month', now()->format('Y-m'));
         try {
-            $start = \Illuminate\Support\Carbon::createFromFormat('Y-m-d H:i:s', $month . '-01 00:00:00')->startOfMonth();
+            $start = Carbon::createFromFormat('Y-m-d H:i:s', $month.'-01 00:00:00')->startOfMonth();
         } catch (\Throwable $e) {
             $start = now()->startOfMonth();
         }
         $end = (clone $start)->endOfMonth();
 
-        $company = \App\Models\Company::query()->with(['users:id,name,email'])->find($companyId);
+        $company = Company::query()->with(['users:id,name,email'])->find($companyId);
         if ($company === null) {
             return response()->json(['success' => false, 'message' => 'Company not found'], 404);
         }
 
-        $comp = \App\Models\CrmEmployeeCompensation::query()
+        $comp = CrmEmployeeCompensation::query()
             ->where('company_id', $companyId)
             ->get()
             ->keyBy('user_id');
@@ -458,7 +467,7 @@ class CrmController extends Controller
             // of the deals this employee won in the period, grouped by currency.
             // (The order-based path + the Options sales_count_statuses gate
             // still exist for direct bookings; see $countStatuses below.)
-            $revenueByCurrency = \App\Models\CrmDeal::query()
+            $revenueByCurrency = CrmDeal::query()
                 ->where('owner_user_id', $emp->id)
                 ->where('stage', 'won')
                 ->whereBetween('updated_at', [$start, $end])
@@ -471,7 +480,7 @@ class CrmController extends Controller
             // Informational: direct bookings attributed to this employee that
             // also reached a counted status (the order path; usually 0 until a
             // booking flow stamps sold_by_user_id).
-            $directOrders = \App\Models\Order::query()
+            $directOrders = Order::query()
                 ->where('sold_by_user_id', $emp->id)
                 ->whereIn('status', $countStatuses)
                 ->whereBetween('created_at', [$start, $end])
@@ -517,10 +526,11 @@ class CrmController extends Controller
     /** Resolve the counted-sale statuses for a company (with default). */
     private function salesCountStatusesFor(int $companyId): array
     {
-        $row = \App\Models\CrmCompanySetting::query()->where('company_id', $companyId)->first();
+        $row = CrmCompanySetting::query()->where('company_id', $companyId)->first();
+
         return $row
             ? $row->salesCountStatuses()
-            : \App\Models\CrmCompanySetting::DEFAULT_SALES_STATUSES;
+            : CrmCompanySetting::DEFAULT_SALES_STATUSES;
     }
 
     public function getSettings(Request $request): JsonResponse
@@ -531,8 +541,8 @@ class CrmController extends Controller
                 'success' => true,
                 'data' => [
                     'company_id' => null,
-                    'sales_count_statuses' => \App\Models\CrmCompanySetting::DEFAULT_SALES_STATUSES,
-                    'sales_status_options' => \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS,
+                    'sales_count_statuses' => CrmCompanySetting::DEFAULT_SALES_STATUSES,
+                    'sales_status_options' => CrmCompanySetting::SALES_STATUS_OPTIONS,
                 ],
             ]);
         }
@@ -542,7 +552,7 @@ class CrmController extends Controller
             'data' => [
                 'company_id' => $companyId,
                 'sales_count_statuses' => $this->salesCountStatusesFor($companyId),
-                'sales_status_options' => \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS,
+                'sales_status_options' => CrmCompanySetting::SALES_STATUS_OPTIONS,
             ],
         ]);
     }
@@ -552,11 +562,11 @@ class CrmController extends Controller
         $data = $request->validate([
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'sales_count_statuses' => ['required', 'array', 'min:1'],
-            'sales_count_statuses.*' => ['string', 'in:' . implode(',', \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS)],
+            'sales_count_statuses.*' => ['string', 'in:'.implode(',', CrmCompanySetting::SALES_STATUS_OPTIONS)],
         ]);
 
         $companyId = (int) $data['company_id'];
-        $row = \App\Models\CrmCompanySetting::query()->firstOrNew(['company_id' => $companyId]);
+        $row = CrmCompanySetting::query()->firstOrNew(['company_id' => $companyId]);
         $settings = $row->settings ?? [];
         $settings['sales_count_statuses'] = array_values(array_unique($data['sales_count_statuses']));
         $row->settings = $settings;
@@ -568,7 +578,7 @@ class CrmController extends Controller
             'data' => [
                 'company_id' => $companyId,
                 'sales_count_statuses' => $row->salesCountStatuses(),
-                'sales_status_options' => \App\Models\CrmCompanySetting::SALES_STATUS_OPTIONS,
+                'sales_status_options' => CrmCompanySetting::SALES_STATUS_OPTIONS,
             ],
         ]);
     }
@@ -577,15 +587,37 @@ class CrmController extends Controller
     {
         $data = $request->validate([
             'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'model' => ['required', 'string', 'in:' . implode(',', \App\Models\CrmEmployeeCompensation::MODELS)],
+            'model' => ['required', 'string', 'in:'.implode(',', CrmEmployeeCompensation::MODELS)],
             'base_amount' => ['nullable', 'numeric', 'min:0'],
             'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'currency' => ['nullable', 'string', 'max:3'],
             'notes' => ['nullable', 'string'],
         ]);
 
-        $cfg = \App\Models\CrmEmployeeCompensation::updateOrCreate(
-            ['user_id' => $userId, 'company_id' => $data['company_id']],
+        $companyId = (int) $data['company_id'];
+        $user = $request->user();
+
+        // Authorisation gate. The platform-admin middleware now ADMITS a company
+        // owner to this write, so the real ownership check lives here. Super /
+        // platform staff keep their existing governance access; a tenant owner
+        // (operator/agent) may set pay ONLY for an employee of a company they
+        // manage. A plain employee, or a cross-company attempt, is refused.
+        if (! $this->adminAccessService->isPlatformAdmin($user)) {
+            $company = Company::query()->find($companyId);
+            if ($company === null
+                || ! $this->companyAccessService->canManageCompany($user, $company)) {
+                return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+            }
+            if (! $company->users()->whereKey($userId)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee is not a member of this company',
+                ], 422);
+            }
+        }
+
+        $cfg = CrmEmployeeCompensation::updateOrCreate(
+            ['user_id' => $userId, 'company_id' => $companyId],
             [
                 'model' => $data['model'],
                 'base_amount' => $data['base_amount'] ?? 0,
@@ -599,7 +631,7 @@ class CrmController extends Controller
         return response()->json(['success' => true, 'data' => $this->compensationArray($cfg->fresh())]);
     }
 
-    private function compensationArray(\App\Models\CrmEmployeeCompensation $c): array
+    private function compensationArray(CrmEmployeeCompensation $c): array
     {
         return [
             'id' => $c->id,

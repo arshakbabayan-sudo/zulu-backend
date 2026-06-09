@@ -84,9 +84,26 @@ class EnsurePlatformAdmin
         '#^users/\d+$#',
     ];
 
-    public function __construct(private AdminAccessService $adminAccessService)
-    {
-    }
+    /**
+     * Phase 7 (2026-06-09) — tenant WRITE endpoints a company OWNER (operator/
+     * agent) may reach to manage their OWN company. Unlike the read allowlist
+     * these are MUTATIONS, so the backing controller MUST re-check ownership
+     * (canManageCompany on the target company + the row belongs to it) — this
+     * middleware only ADMITS the request; the controller is the real gate.
+     * Super-admins + platform staff bypass above. Keep this list tiny and only
+     * add a path whose controller provably enforces company scope.
+     *
+     * @var array<string, list<string>> HTTP method => suffix regex patterns
+     */
+    private const OPERATOR_WRITABLE_PATTERNS = [
+        'PUT' => [
+            // Company owner sets one of their OWN employees' pay.
+            // CrmController::setCompensation enforces canManageCompany + member.
+            '#^crm/team/\d+/compensation$#',
+        ],
+    ];
+
+    public function __construct(private AdminAccessService $adminAccessService) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -111,7 +128,7 @@ class EnsurePlatformAdmin
         // everything off the list stay 403 (no cross-tenant mutation, no leak
         // of unscoped/super-only data).
         if ($this->adminAccessService->canAccessAdminPanel($user)
-            && $this->isOperatorReadable($request)) {
+            && ($this->isOperatorReadable($request) || $this->isOperatorWritable($request))) {
             return $next($request);
         }
 
@@ -134,6 +151,24 @@ class EnsurePlatformAdmin
         }
 
         foreach (self::OPERATOR_READABLE_PATTERNS as $pattern) {
+            if (preg_match($pattern, $suffix) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isOperatorWritable(Request $request): bool
+    {
+        $patterns = self::OPERATOR_WRITABLE_PATTERNS[$request->method()] ?? [];
+        if ($patterns === []) {
+            return false;
+        }
+
+        $suffix = ltrim(substr($request->path(), strlen('api/platform-admin')), '/');
+
+        foreach ($patterns as $pattern) {
             if (preg_match($pattern, $suffix) === 1) {
                 return true;
             }
