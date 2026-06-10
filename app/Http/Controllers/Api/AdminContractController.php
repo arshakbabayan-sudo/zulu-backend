@@ -10,6 +10,7 @@ use App\Services\Admin\AdminAccessService;
 use App\Services\Contracts\ContractService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class AdminContractController extends Controller
@@ -43,6 +44,12 @@ class AdminContractController extends Controller
         if (is_string($q = $request->query('q')) && trim($q) !== '') {
             $term = trim($q);
             $query->where('contract_number', 'like', "%{$term}%");
+        }
+
+        // template_id is a native uuid column — only apply when the value is a
+        // well-formed uuid (a garbage string would raise 22P02 on Postgres).
+        if (is_string($templateId = $request->query('template_id')) && Str::isUuid($templateId)) {
+            $query->where('template_id', $templateId);
         }
 
         // Tenant scope: a contract belongs to either party company. Non-super

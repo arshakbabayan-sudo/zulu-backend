@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Pdf\FinanceSummaryPdfService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -444,9 +446,19 @@ class FinanceStatsController extends Controller
         }
 
         $range = (string) $request->query('range', '30d');
+
+        return response()->json(['success' => true, 'data' => $this->revenueByServiceData($range)]);
+    }
+
+    /**
+     * Shared aggregate builder for revenueByService (JSON) and summaryPdf
+     * (PDF export). Cached under the same key the JSON endpoint always used.
+     */
+    private function revenueByServiceData(string $range): array
+    {
         $rangeStart = $this->rangeStart($range);
 
-        $data = Cache::remember("platform_revenue_by_service_{$range}", 120, function () use ($rangeStart) {
+        return Cache::remember("platform_revenue_by_service_{$range}", 120, function () use ($rangeStart) {
             // Join chain: payments → invoices → orders → order_items.
             // order_items.item_type IS the service type (flight/hotel/transfer/
             // car/excursion/visa/insurance/package — enforced by a DB check
@@ -481,8 +493,6 @@ class FinanceStatsController extends Controller
                 ];
             })->values()->toArray();
         });
-
-        return response()->json(['success' => true, 'data' => $data]);
     }
 
     /**
@@ -557,9 +567,43 @@ class FinanceStatsController extends Controller
         }
 
         $range = (string) $request->query('range', '30d');
+
+        return response()->json(['success' => true, 'data' => $this->summaryV2Data($range)]);
+    }
+
+    /**
+     * GET /platform-admin/finance-summary/pdf?range=30d
+     *
+     * Roadmap §6 — one-page PDF snapshot of the Finance summary dashboard.
+     * Reuses the exact summaryV2 + revenueByService aggregates (same server
+     * cache) and streams the download via FinanceSummaryPdfService.
+     */
+    public function summaryPdf(Request $request, FinanceSummaryPdfService $pdfService): JsonResponse|Response
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $range = (string) $request->query('range', '30d');
+        if (! in_array($range, ['7d', '30d', '90d', 'year'], true)) {
+            $range = '30d';
+        }
+
+        $summary = $this->summaryV2Data($range);
+        $summary['revenue_by_service'] = $this->revenueByServiceData($range);
+
+        return $pdfService->generate($summary, $range);
+    }
+
+    /**
+     * Shared aggregate builder for summaryV2 (JSON) and summaryPdf (PDF
+     * export). Cached under the same key the JSON endpoint always used.
+     */
+    private function summaryV2Data(string $range): array
+    {
         $rangeStart = $this->rangeStart($range);
 
-        $data = Cache::remember("platform_finance_summary_v2_{$range}", 60, function () use ($rangeStart) {
+        return Cache::remember("platform_finance_summary_v2_{$range}", 60, function () use ($rangeStart) {
             $paidSum = (float) DB::table('payments')->where('status', Payment::STATUS_PAID)->sum('amount');
             $paidCount = (int) DB::table('payments')->where('status', Payment::STATUS_PAID)->count();
 
@@ -593,13 +637,18 @@ class FinanceStatsController extends Controller
 
             // Pending payment age metrics — uses created_at as proxy for "when
             // the invoice was issued" since invoices share creation timing.
+            // EXTRACT(... FROM interval) / NOW() are Postgres-only; the SQLite
+            // branch (tests) computes day diffs via julianday instead.
+            $driver = Schema::getConnection()->getDriverName();
             $pendingAge = DB::table('payments')
                 ->whereIn('status', [Payment::STATUS_PENDING, 'processing'])
-                ->selectRaw(
-                    'COUNT(*) AS cnt,
-                     COALESCE(EXTRACT(DAY FROM AVG(NOW() - created_at)), 0) AS avg_days,
-                     COALESCE(EXTRACT(DAY FROM MAX(NOW() - created_at)), 0) AS oldest_days'
-                )
+                ->selectRaw($driver === 'pgsql'
+                    ? 'COUNT(*) AS cnt,
+                       COALESCE(EXTRACT(DAY FROM AVG(NOW() - created_at)), 0) AS avg_days,
+                       COALESCE(EXTRACT(DAY FROM MAX(NOW() - created_at)), 0) AS oldest_days'
+                    : "COUNT(*) AS cnt,
+                       COALESCE(AVG(julianday('now') - julianday(created_at)), 0) AS avg_days,
+                       COALESCE(MAX(julianday('now') - julianday(created_at)), 0) AS oldest_days")
                 ->first();
 
             return [
@@ -622,7 +671,5 @@ class FinanceStatsController extends Controller
                 ],
             ];
         });
-
-        return response()->json(['success' => true, 'data' => $data]);
     }
 }

@@ -157,6 +157,29 @@ class AdminContractControllerTest extends TestCase
         $this->assertSame('sent', $response->json('data.0.status'));
     }
 
+    public function test_index_filters_by_template_id(): void
+    {
+        $admin = $this->createPlatformAdmin();
+        $this->createDraftContract($admin); // other template
+        $template = $this->createTemplate('platform');
+        $seller = $this->createCompany();
+
+        Sanctum::actingAs($admin);
+        $created = $this->postJson('/api/platform-admin/contracts', [
+            'template_id' => $template->id,
+            'party_b_company_id' => $seller->id,
+            'commission_clause' => ['rate_pct' => 10],
+            'payment_terms' => ['frequency' => 'monthly'],
+        ]);
+        $created->assertStatus(201);
+
+        $response = $this->getJson('/api/platform-admin/contracts?template_id='.$template->id);
+
+        $response->assertOk();
+        $this->assertSame(1, $response->json('meta.total'));
+        $this->assertSame($template->id, $response->json('data.0.template_id'));
+    }
+
     private function createPlatformAdmin(): User
     {
         $this->seed(RbacBootstrapSeeder::class);

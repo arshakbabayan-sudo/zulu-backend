@@ -863,6 +863,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('commissions/stats', [FinanceStatsController::class, 'commissions']);
         Route::get('vouchers/stats', [FinanceStatsController::class, 'vouchers']);
         Route::get('finance-summary/v2', [FinanceStatsController::class, 'summaryV2']);
+        // Roadmap §6 — one-page PDF export of the Finance summary dashboard.
+        Route::get('finance-summary/pdf', [FinanceStatsController::class, 'summaryPdf']);
         Route::get('finance/revenue-by-service', [FinanceStatsController::class, 'revenueByService']);
         Route::get('finance/payment-methods', [FinanceStatsController::class, 'paymentMethods']);
         Route::get('finance/recent-transactions', [FinanceStatsController::class, 'recentTransactions']);
