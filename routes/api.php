@@ -420,6 +420,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Time-off / non-service hours (Phase 7.13)
     Route::get('time-off', [TimeOffController::class, 'index']);
     Route::post('time-off', [TimeOffController::class, 'store']);
+    // Edit an existing entry (creator while pending, or company manager/super).
+    Route::patch('time-off/{id}', [TimeOffController::class, 'update'])->whereNumber('id');
     Route::patch('time-off/{id}/decide', [TimeOffController::class, 'decide'])->whereNumber('id');
 
     // Time punches — clock in / out (shift attendance counterpart to time-off)
@@ -905,6 +907,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // CRM Customers = the company's OWN buyers (scoped), not the platform
         // B2C registry. Operator sees their buyers; super sees all.
         Route::get('crm/customers', [CrmController::class, 'customers']);
+        // Full-dataset stat cards for CRM → Customers (same tenant scope).
+        Route::get('crm/customers/stats', [CrmController::class, 'customersStats']);
         Route::get('crm/deals', [CrmController::class, 'listDeals']);
         Route::post('crm/deals', [CrmController::class, 'storeDeal']);
         Route::patch('crm/deals/{deal}', [CrmController::class, 'updateDeal'])->whereNumber('deal');

@@ -344,6 +344,43 @@ class CrmController extends Controller
         ]);
     }
 
+    /**
+     * Full-dataset stat cards for CRM → Customers, scoped IDENTICALLY to
+     * customers(). The customer set = the caller's OWN buyers (users with >=1
+     * order where the caller's company is the seller or referring agent). super
+     * = no company filter. Returned over the WHOLE scoped set, not one page:
+     *   active           = scoped buyers whose account status is 'active'
+     *   with_bookings    = scoped buyers with >=1 order (the whole set, since a
+     *                      buyer is DEFINED by having a scoped order)
+     *   new_this_month   = scoped buyers created in the current calendar month
+     */
+    public function customersStats(Request $request): JsonResponse
+    {
+        $companyIds = $this->scopeCompanyIds($request);
+
+        $orderScope = function ($q) use ($companyIds): void {
+            if ($companyIds !== null) {
+                $q->where(function ($w) use ($companyIds): void {
+                    $w->whereIn('company_id', $companyIds)
+                        ->orWhereIn('agent_company_id', $companyIds);
+                });
+            }
+        };
+
+        $base = fn () => User::query()->whereHas('bookings', $orderScope);
+
+        $monthStart = Carbon::now()->startOfMonth();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'active' => (int) $base()->where('status', User::STATUS_ACTIVE)->count(),
+                'with_bookings' => (int) $base()->count(),
+                'new_this_month' => (int) $base()->where('created_at', '>=', $monthStart)->count(),
+            ],
+        ]);
+    }
+
     // ─── Stats (Pipeline + Team feed) ───────────────────────────────────────
 
     public function stats(Request $request): JsonResponse

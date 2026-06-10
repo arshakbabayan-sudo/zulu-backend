@@ -908,6 +908,26 @@ class PlatformAdminController extends Controller
             ]);
         })->values()->all();
 
+        // Full-dataset stat cards for /platform/unverified. Computed over the
+        // SAME "unverified" set the list uses (status=pending OR no verified
+        // email) + the same search filter, so the cards never disagree with the
+        // page. "intended_staff" = rows whose intended_role is set (the visitor
+        // came in via a partner-register flow → operator/agent, i.e. staff).
+        $statsBase = static function () use ($request) {
+            $q = User::query()->where(function ($q): void {
+                $q->where('status', 'pending')->orWhereNull('email_verified_at');
+            });
+            if ($request->filled('search')) {
+                $search = (string) $request->query('search');
+                $q->where(function ($w) use ($search): void {
+                    $w->where('name', 'like', '%'.$search.'%')
+                        ->orWhere('email', 'like', '%'.$search.'%');
+                });
+            }
+
+            return $q;
+        };
+
         return response()->json([
             'success' => true,
             'data' => $data,
@@ -916,6 +936,11 @@ class PlatformAdminController extends Controller
                 'last_page' => $paginator->lastPage(),
                 'total' => $paginator->total(),
                 'per_page' => $paginator->perPage(),
+                'stats' => [
+                    'stale_30d' => (int) $statsBase()->where('created_at', '<', now()->subDays(30))->count(),
+                    'new_7d' => (int) $statsBase()->where('created_at', '>=', now()->subDays(7))->count(),
+                    'intended_staff' => (int) $statsBase()->whereNotNull('intended_role')->count(),
+                ],
             ],
         ]);
     }

@@ -97,6 +97,66 @@ class TimeOffController extends Controller
         ], 201);
     }
 
+    /**
+     * Edit an existing time-off entry (the work-hours "edit" action).
+     *
+     * Auth mirrors store()/decide(): the creator may edit their OWN entry while
+     * it is still `pending`; a company manager (member of the entry's company)
+     * or a super admin may edit at any time (decide-level auth). Anyone else is
+     * forbidden. Editable fields are exactly what store() accepts (type, dates,
+     * hours, notes). Status is NOT mutated here — that stays on decide().
+     */
+    public function update(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $row = TimeOffRecord::query()->find($id);
+        if ($row === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $isSuper = $this->adminAccessService->isSuperAdmin($user);
+        // Manager = belongs to the entry's company (same tenant scope index() uses).
+        $isManager = $isSuper || $user->companies()->whereKey($row->company_id)->exists();
+        $isOwner = $row->user_id === $user->id;
+
+        if (! $isOwner && ! $isManager) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        // A plain creator may only edit while pending; a manager/super may edit
+        // a decided entry (decide-level auth).
+        if (! $isManager && $row->status !== 'pending') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only pending entries can be edited.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'type' => ['sometimes', 'required', Rule::in(TimeOffRecord::TYPES)],
+            'starts_on' => ['sometimes', 'required', 'date'],
+            'ends_on' => ['sometimes', 'required', 'date', 'after_or_equal:starts_on'],
+            'hours_total' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
+        ]);
+
+        foreach (['type', 'starts_on', 'ends_on', 'hours_total', 'notes'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $row->{$field} = $validated[$field];
+            }
+        }
+        $row->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->serialize($row->fresh(['user', 'company', 'decidedBy'])),
+        ]);
+    }
+
     public function decide(Request $request, int $id): JsonResponse
     {
         $row = TimeOffRecord::query()->find($id);
