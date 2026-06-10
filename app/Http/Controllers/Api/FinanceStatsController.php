@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Services\Admin\AdminAccessService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -45,7 +46,7 @@ class FinanceStatsController extends Controller
         return null;
     }
 
-    private function rangeStart(string $range): \Carbon\Carbon
+    private function rangeStart(string $range): Carbon
     {
         return match ($range) {
             '7d' => now()->subDays(7),
@@ -446,10 +447,13 @@ class FinanceStatsController extends Controller
         $rangeStart = $this->rangeStart($range);
 
         $data = Cache::remember("platform_revenue_by_service_{$range}", 120, function () use ($rangeStart) {
-            // Join chain: payments → invoices → orders → order_items → offers
-            // We aggregate by offers.service_type (or the offer.offerable_type
-            // fallback when service_type is null on legacy rows).
-            if (! Schema::hasTable('order_items') || ! Schema::hasTable('offers')) {
+            // Join chain: payments → invoices → orders → order_items.
+            // order_items.item_type IS the service type (flight/hotel/transfer/
+            // car/excursion/visa/insurance/package — enforced by a DB check
+            // constraint), so no offers join is needed. The previous version
+            // joined offers ON order_items.offer_id — a column that does not
+            // exist — so every request 500'd (roadmap 10.06 §2).
+            if (! Schema::hasTable('order_items')) {
                 return [];
             }
 
@@ -457,10 +461,9 @@ class FinanceStatsController extends Controller
                 ->join('invoices', 'invoices.id', '=', 'payments.invoice_id')
                 ->join('orders', 'orders.id', '=', 'invoices.order_id')
                 ->join('order_items', 'order_items.order_id', '=', 'orders.id')
-                ->leftJoin('offers', 'offers.id', '=', 'order_items.offer_id')
                 ->where('payments.status', Payment::STATUS_PAID)
                 ->where('payments.paid_at', '>=', $rangeStart)
-                ->selectRaw('COALESCE(offers.service_type, order_items.item_type, ?) AS service, SUM(order_items.total) AS amount', ['other'])
+                ->selectRaw('COALESCE(order_items.item_type, ?) AS service, SUM(order_items.total) AS amount', ['other'])
                 ->groupBy('service')
                 ->orderByDesc('amount')
                 ->get();
