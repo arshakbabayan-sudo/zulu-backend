@@ -210,7 +210,11 @@ class AdminRbacController extends Controller
         ]);
 
         if (! empty($data['permission_ids'])) {
-            $role->permissions()->sync($data['permission_ids']);
+            $permissionIds = array_map('intval', $data['permission_ids']);
+            if (! $role->isPlatformScoped()) {
+                $permissionIds = array_values(array_diff($permissionIds, $this->platformOnlyPermissionIds()));
+            }
+            $role->permissions()->sync($permissionIds);
         }
 
         return response()->json([
@@ -233,6 +237,13 @@ class AdminRbacController extends Controller
         ]);
 
         $role->fill($data)->save();
+
+        // §7 guard — demoting a role to company scope must shed any platform.*
+        // grants it held, or the demotion would leave a tenant role that still
+        // unlocks platform-staff access.
+        if (! $role->isPlatformScoped()) {
+            $role->permissions()->detach($this->platformOnlyPermissionIds());
+        }
 
         return response()->json([
             'success' => true,
@@ -291,12 +302,39 @@ class AdminRbacController extends Controller
         $current = $role->permissions()->pluck('permissions.id')->all();
         $preservedNonTree = array_values(array_diff($current, $treeManaged));
 
-        $role->permissions()->sync(array_values(array_unique(array_merge($submittedTree, $preservedNonTree))));
+        $next = array_values(array_unique(array_merge($submittedTree, $preservedNonTree)));
+
+        // §7 guard — a company-scoped role must never hold platform.* (or an
+        // escalator): AdminAccessService::isPlatformAdmin() treats ANY
+        // platform.* grant as full platform-staff unlock, so one ticked
+        // "Platform stats" checkbox silently promoted every operator/agent.
+        // Applies to the preserved set too, so pollution can't survive a save.
+        if (! $role->isPlatformScoped()) {
+            $next = array_values(array_diff($next, $this->platformOnlyPermissionIds()));
+        }
+
+        $role->permissions()->sync($next);
 
         return response()->json([
             'success' => true,
             'data' => $this->serializeRole($role->fresh(['permissions'])),
         ]);
+    }
+
+    /**
+     * Ids of permissions a company-scoped role must never hold: anything
+     * platform.* plus the super_admin / platform.admin / platform.manage
+     * escalators (see AdminAccessService::isPlatformAdmin / isSuperAdmin).
+     */
+    private function platformOnlyPermissionIds(): array
+    {
+        return Permission::query()
+            ->where(function ($query): void {
+                $query->where('name', 'like', 'platform.%')
+                    ->orWhereIn('name', ['super_admin', 'platform.admin', 'platform.manage']);
+            })
+            ->pluck('id')
+            ->all();
     }
 
     /** Permission ids for every permission named anywhere in PERMISSION_TREE. */
@@ -469,6 +507,7 @@ class AdminRbacController extends Controller
                 return (int) $query();
             } catch (\Throwable $e) {
                 \Log::warning('rbac/stats count failed', ['error' => $e->getMessage()]);
+
                 return 0;
             }
         };
@@ -487,6 +526,7 @@ class AdminRbacController extends Controller
                         ->select('user_company.user_id')
                         ->distinct()
                         ->get();
+
                     return $rows->count();
                 }),
             ],

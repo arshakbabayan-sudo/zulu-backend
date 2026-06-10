@@ -5,11 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\CompanyResource;
 use App\Http\Resources\Api\CompanyUserResource;
+use App\Mail\EmployeeInvitationMail;
 use App\Models\Company;
 use App\Models\CompanyCountryPermission;
 use App\Models\CompanyModulePermission;
 use App\Models\CompanySellerPermission;
-use App\Mail\EmployeeInvitationMail;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserCompany;
@@ -22,7 +22,6 @@ use App\Services\Pdf\ContractPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
@@ -456,7 +455,7 @@ class CompanyController extends Controller
             ], 403);
         }
 
-        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+        if ($deny = $this->denyUnlessCanManageSellerStatus($request, $company)) {
             return $deny;
         }
 
@@ -487,7 +486,7 @@ class CompanyController extends Controller
             ], 403);
         }
 
-        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+        if ($deny = $this->denyUnlessCanManageSellerStatus($request, $company)) {
             return $deny;
         }
 
@@ -753,6 +752,23 @@ class CompanyController extends Controller
     }
 
     /**
+     * §7 fix — seller-status endpoints admit agent-role members of the company
+     * too (agency owners hold role `agent`, which canManageCompany rejects).
+     */
+    private function denyUnlessCanManageSellerStatus(Request $request, Company $company): ?JsonResponse
+    {
+        $user = $request->user();
+        if ($user === null || ! $this->companyAccessService->canManageSellerStatus($user, $company)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        return null;
+    }
+
+    /**
      * I1 audit F-7: privilege ceiling.
      *
      * Super admins can grant any role. Otherwise, the caller's own role in
@@ -798,7 +814,7 @@ class CompanyController extends Controller
      * scoped roles for non-super viewers (Phase 0 sidebar work,
      * zulu-admin-next /platform/rbac/page.tsx).
      *
-     * @return JsonResponse|null  null when allowed; 403 response when denied
+     * @return JsonResponse|null null when allowed; 403 response when denied
      */
     private function denyIfCannotGrantScope(?User $caller, Role $targetRole): ?JsonResponse
     {
