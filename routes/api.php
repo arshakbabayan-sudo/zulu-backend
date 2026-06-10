@@ -674,6 +674,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('payments/{payment}/capture', [PaymentController::class, 'capture']);
     Route::post('payments/{payment}/fail', [PaymentController::class, 'fail']);
     Route::post('payments/{payment}/refund', [PaymentController::class, 'refund']);
+    // Roadmap 10.06 §5 — re-initiate the gateway charge on a failed payment.
+    Route::post('payments/{payment}/retry', [PaymentController::class, 'retry']);
 
     // RBAC #2 — commission reads gated on commissions.view / commission_records.view
     // (operator+agent hold these); policy writes on commissions.update/.manage
@@ -825,6 +827,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('applications/{id}/approve', [PlatformAdminController::class, 'approveApplication'])->whereNumber('id');
         Route::post('applications/{id}/reject', [PlatformAdminController::class, 'rejectApplication'])->whereNumber('id');
         Route::get('stats', [PlatformAdminController::class, 'stats']);
+        // Roadmap 10.06 §5 — header "Search anything": one query across
+        // companies / users / bookings, grouped + capped per entity.
+        Route::get('search', [PlatformAdminController::class, 'globalSearch']);
         Route::get('companies', [PlatformAdminController::class, 'companies']);
         Route::get('companies/{company}', [PlatformAdminController::class, 'showCompany'])->whereNumber('company');
         Route::patch('companies/{company}/governance', [PlatformAdminController::class, 'changeGovernance'])->whereNumber('company');

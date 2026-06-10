@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Packages\PackageService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -31,9 +32,24 @@ class PlatformAdminService
      *
      * @param  ?list<int>  $scopeCompanyIds
      */
-    public function getPlatformStats(?array $scopeCompanyIds = null, string $cacheSuffix = 'all'): array
+    public function getPlatformStats(?array $scopeCompanyIds = null, string $cacheSuffix = 'all', ?string $range = null): array
     {
-        return Cache::remember('platform_stats_'.$cacheSuffix, 300, function () use ($scopeCompanyIds) {
+        // Roadmap 10.06 §5 — optional ?range= (7d/30d/90d/year) filters the
+        // FLOW aggregates (orders/bookings/package-orders) by created_at.
+        // STOCK totals (companies/offers/packages/users/commission records)
+        // deliberately stay unfiltered — "total operators" filtered to a date
+        // window would read as zero and lie.
+        $rangeStart = match ($range) {
+            '7d' => now()->subDays(7),
+            '30d' => now()->subDays(30),
+            '90d' => now()->subDays(90),
+            'year' => now()->startOfYear(),
+            default => null,
+        };
+
+        $cacheKey = 'platform_stats_'.$cacheSuffix.($rangeStart !== null ? '_'.$range : '');
+
+        return Cache::remember($cacheKey, 300, function () use ($scopeCompanyIds, $rangeStart) {
             // Apply a company-id filter to a builder when scoped; [] → 1=0.
             $scoped = function ($query, string $column) use ($scopeCompanyIds) {
                 if ($scopeCompanyIds === null) {
@@ -63,7 +79,11 @@ class PlatformAdminService
             $companies = fn () => $scoped(DB::table('companies'), 'id');
             $offers = fn () => $scoped(DB::table('offers'), 'company_id');
             $packages = fn () => $scoped(DB::table('packages'), 'company_id');
-            $orders = fn () => $scopedOrders(DB::table('orders'));
+            $orders = function () use ($scopedOrders, $rangeStart) {
+                $q = $scopedOrders(DB::table('orders'));
+
+                return $rangeStart !== null ? $q->where('orders.created_at', '>=', $rangeStart) : $q;
+            };
 
             // "users_total": super → all users; scoped → distinct staff of the
             // caller's companies (a count of platform users is meaningless to
@@ -332,7 +352,7 @@ class PlatformAdminService
      * empty list means "owns no company" → zero rows, never a leak. Shared by
      * bookings + package orders so the rule stays identical.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Order>  $query
+     * @param  Builder<Order>  $query
      * @param  array<string,mixed>  $filters
      */
     private function applyOrderCompanyScope($query, array $filters): void
@@ -390,7 +410,7 @@ class PlatformAdminService
             $query->where('created_at', '>=', (string) $filters['from']);
         }
         if (! empty($filters['to'])) {
-            $query->where('created_at', '<=', (string) $filters['to'] . ' 23:59:59');
+            $query->where('created_at', '<=', (string) $filters['to'].' 23:59:59');
         }
         if (! empty($filters['company_id'])) {
             $query->where('company_id', (int) $filters['company_id']);
@@ -407,7 +427,7 @@ class PlatformAdminService
             $query->where('user_id', (int) $filters['user_id']);
         }
         if (! empty($filters['search'])) {
-            $needle = '%' . str_replace('%', '\\%', (string) $filters['search']) . '%';
+            $needle = '%'.str_replace('%', '\\%', (string) $filters['search']).'%';
             $query->where(function ($q) use ($needle) {
                 $q->where('order_number', 'ILIKE', $needle)
                     ->orWhereHas('user', fn ($qq) => $qq->where('name', 'ILIKE', $needle)->orWhere('email', 'ILIKE', $needle))

@@ -12,8 +12,10 @@ use App\Models\Payment;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Payments\PaymentGatewayService;
 use App\Services\Payments\PaymentService;
+use App\Services\Pdf\PaymentReceiptPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 class PaymentController extends Controller
 {
@@ -167,6 +169,64 @@ class PaymentController extends Controller
         ]);
     }
 
+    /**
+     * POST /payments/{payment}/retry — roadmap 10.06 §5.
+     *
+     * Re-initiates the gateway charge for a FAILED payment: a fresh payment
+     * intent is created (the old reference_code stays in PaymentLog as audit
+     * trail) and the new client_secret is returned so the front can reopen
+     * the payment flow. Cash/bank-transfer payments are not retryable — the
+     * money is collected outside any gateway.
+     */
+    public function retry(Request $request, Payment $payment): JsonResponse
+    {
+        $payment->loadMissing('invoice.order');
+        $companyId = $payment->invoice?->order?->company_id;
+        if ($companyId === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        if ($response = $this->ensureCommerceAccess($request, (int) $companyId, 'payments.capture')) {
+            return $response;
+        }
+
+        if ($payment->status !== Payment::STATUS_FAILED) {
+            return response()->json([
+                'success' => false,
+                'message' => "Only failed payments can be retried (this one is {$payment->status}).",
+            ], 422);
+        }
+
+        if (! in_array($payment->payment_method, ['card', 'stripe', 'arca', 'idram'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This payment method does not support automatic retry — collect it manually.',
+            ], 422);
+        }
+
+        $result = $this->paymentGatewayService->createPaymentIntent($payment);
+        if (! ($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['error'] ?? 'Retry failed at the payment gateway',
+            ], 422);
+        }
+
+        // Back to pending — the customer can now complete the new intent.
+        $payment->status = Payment::STATUS_PENDING;
+        $payment->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => PaymentResource::make($payment->fresh())->toArray($request),
+            'client_secret' => $result['client_secret'] ?? null,
+            'gateway_reference' => $result['gateway_reference'] ?? null,
+        ]);
+    }
+
     public function fail(Request $request, PaymentService $paymentService, Payment $payment): JsonResponse
     {
         $payment->loadMissing('invoice.order');
@@ -198,8 +258,8 @@ class PaymentController extends Controller
     public function receiptPdf(
         Request $request,
         Payment $payment,
-        \App\Services\Pdf\PaymentReceiptPdfService $pdfService
-    ): \Illuminate\Http\Response {
+        PaymentReceiptPdfService $pdfService
+    ): Response {
         $payment->loadMissing('invoice.order');
         $user = $request->user();
         $orderCompanyId = $payment->invoice?->order?->company_id;

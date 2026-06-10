@@ -13,6 +13,9 @@ use App\Models\Company;
 use App\Models\CompanyApplication;
 use App\Models\CompanySellerApplication;
 use App\Models\CompanySellerPermission;
+use App\Models\LoyaltyAccount;
+use App\Models\LoyaltyTransaction;
+use App\Models\Order;
 use App\Models\Package;
 use App\Models\PackageHomepageFeature;
 use App\Models\Payment;
@@ -21,8 +24,6 @@ use App\Models\Review;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserNote;
-use App\Models\LoyaltyAccount;
-use App\Models\LoyaltyTransaction;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Admin\PlatformAdminService;
 use App\Services\Approvals\ApprovalService;
@@ -30,12 +31,13 @@ use App\Services\Approvals\CompanyApplicationApprovalService;
 use App\Services\Companies\CompanyService;
 use App\Services\Companies\SellerApplicationService;
 use App\Services\Infrastructure\PlatformSettingsService;
-use Illuminate\Support\Facades\Cache;
 use App\Services\Reviews\ReviewService;
 use App\Services\UserAccount\AccountDeletionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -58,9 +60,112 @@ class PlatformAdminController extends Controller
         // = platform-wide). Operator dashboard shows THEIR numbers.
         [$scopeIds, $scopeSuffix] = $this->adminAccessService->statsScope($request->user());
 
+        // Roadmap 10.06 §5 — optional range for the dashboard date picker;
+        // whitelisted so a bad value silently falls back to all-time.
+        $range = (string) $request->query('range', '');
+        if (! in_array($range, ['7d', '30d', '90d', 'year'], true)) {
+            $range = null;
+        }
+
         return response()->json([
             'success' => true,
-            'data' => $service->getPlatformStats($scopeIds, $scopeSuffix),
+            'data' => $service->getPlatformStats($scopeIds, $scopeSuffix, $range),
+        ]);
+    }
+
+    /**
+     * GET /platform-admin/search?q= — roadmap 10.06 §5 ("Search anything").
+     *
+     * One query, three entity groups (companies / users / bookings), max 5
+     * hits each, every hit shaped {id, label, href} so the header dropdown
+     * can render + deep-link without entity-specific logic. Tenant-scoped:
+     * a non-super caller only sees rows of their own companies.
+     */
+    public function globalSearch(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $q = trim((string) $request->query('q', ''));
+        if (mb_strlen($q) < 2) {
+            return response()->json([
+                'success' => true,
+                'data' => ['companies' => [], 'users' => [], 'bookings' => []],
+            ]);
+        }
+
+        [$scopeIds] = $this->adminAccessService->statsScope($request->user());
+        // LOWER() LIKE instead of ILIKE so the query runs on both Postgres
+        // (prod) and SQLite (test suite).
+        $like = '%'.mb_strtolower(str_replace(['%', '_'], ['\\%', '\\_'], $q)).'%';
+
+        $companies = DB::table('companies')
+            ->when($scopeIds !== null, fn ($qq) => $qq->whereIn('id', $scopeIds ?: [-1]))
+            ->where(function ($qq) use ($like) {
+                $qq->whereRaw('LOWER(name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(legal_name) LIKE ?', [$like]);
+            })
+            ->orderBy('name')
+            ->limit(5)
+            ->get(['id', 'name'])
+            ->map(fn ($c) => [
+                'id' => (int) $c->id,
+                'label' => (string) $c->name,
+                'href' => "/platform/companies/{$c->id}",
+            ])
+            ->values();
+
+        $users = DB::table('users')
+            ->when($scopeIds !== null, function ($qq) use ($scopeIds) {
+                $qq->whereIn('id', DB::table('user_company')
+                    ->whereIn('company_id', $scopeIds ?: [-1])
+                    ->pluck('user_id'));
+            })
+            ->where(function ($qq) use ($like) {
+                $qq->whereRaw('LOWER(name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(email) LIKE ?', [$like]);
+            })
+            ->orderBy('name')
+            ->limit(5)
+            ->get(['id', 'name', 'email'])
+            ->map(fn ($u) => [
+                'id' => (int) $u->id,
+                'label' => trim(($u->name ?? '').' · '.($u->email ?? ''), ' ·'),
+                'href' => "/platform/users/{$u->id}",
+            ])
+            ->values();
+
+        $bookings = DB::table('orders')
+            ->leftJoin('users', 'users.id', '=', 'orders.user_id')
+            ->when($scopeIds !== null, function ($qq) use ($scopeIds) {
+                $qq->where(function ($w) use ($scopeIds) {
+                    $w->whereIn('orders.company_id', $scopeIds ?: [-1])
+                        ->orWhereIn('orders.agent_company_id', $scopeIds ?: [-1]);
+                });
+            })
+            ->where(function ($qq) use ($like) {
+                $qq->whereRaw('LOWER(orders.order_number) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(users.name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(users.email) LIKE ?', [$like]);
+            })
+            ->orderByDesc('orders.created_at')
+            ->limit(5)
+            ->get(['orders.id', 'orders.order_number', 'users.name AS user_name'])
+            ->map(fn ($o) => [
+                'id' => (string) $o->id,
+                'label' => trim(($o->order_number ?? $o->id).' · '.($o->user_name ?? ''), ' ·'),
+                'href' => '/platform/bookings?q='.urlencode((string) ($o->order_number ?? '')),
+            ])
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'companies' => $companies,
+                'users' => $users,
+                'bookings' => $bookings,
+            ],
         ]);
     }
 
@@ -483,7 +588,7 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
-        $order = \App\Models\Order::query()->whereKey($id)->first();
+        $order = Order::query()->whereKey($id)->first();
         if ($order === null) {
             return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
         }
@@ -515,13 +620,13 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
-        $order = \App\Models\Order::query()->whereKey($id)->first();
+        $order = Order::query()->whereKey($id)->first();
         if ($order === null) {
             return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
         }
 
         if (! in_array($order->status, ['cart', 'pending_payment', 'paid', 'confirmed'], true)) {
-            return response()->json(['success' => false, 'message' => 'Booking cannot be confirmed from status ' . $order->status], 422);
+            return response()->json(['success' => false, 'message' => 'Booking cannot be confirmed from status '.$order->status], 422);
         }
 
         $order->status = 'confirmed';
@@ -546,7 +651,7 @@ class PlatformAdminController extends Controller
             return $deny;
         }
 
-        $order = \App\Models\Order::query()->whereKey($id)->first();
+        $order = Order::query()->whereKey($id)->first();
         if ($order === null) {
             return response()->json(['success' => false, 'message' => 'Booking not found'], 404);
         }
@@ -1057,6 +1162,7 @@ class PlatformAdminController extends Controller
             'created_at' => $n->created_at?->toIso8601String(),
             'author' => $n->author ? ['id' => $n->author->id, 'name' => $n->author->name] : null,
         ])->values()->all();
+
         return response()->json([
             'success' => true,
             'data' => $data,
@@ -1092,6 +1198,7 @@ class PlatformAdminController extends Controller
             'body' => $validated['body'],
         ]);
         $note->load('author:id,name');
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -1329,6 +1436,7 @@ class PlatformAdminController extends Controller
         foreach ($users as $user) {
             if ($user->hasVerifiedEmail()) {
                 $skipped++;
+
                 continue;
             }
             try {
@@ -1373,6 +1481,7 @@ class PlatformAdminController extends Controller
         foreach ($users as $user) {
             if ((int) $actor->id === (int) $user->id) {
                 $skipped++;
+
                 continue;
             }
             $deletionService->adminAnonymize(
