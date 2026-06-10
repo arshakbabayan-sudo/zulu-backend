@@ -14,6 +14,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Models\UserCompany;
 use App\Models\UserInvitation;
+use App\Models\UserPermissionOverride;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Admin\CompanyAccessService;
 use App\Services\Companies\CompanyService;
@@ -344,6 +345,14 @@ class CompanyController extends Controller
             ], 404);
         }
 
+        if ($deny = $this->denyUnlessOutranksTarget($actor, $company, $user)) {
+            return $deny;
+        }
+
+        if ($deny = $this->denyIfLastOwner($actor, $company, $user, 'deactivate')) {
+            return $deny;
+        }
+
         $user->status = 'inactive';
         $user->save();
 
@@ -351,6 +360,109 @@ class CompanyController extends Controller
             'success' => true,
             'data' => [
                 'message' => 'User deactivated.',
+            ],
+        ]);
+    }
+
+    /**
+     * §7 — counterpart of deactivateUser so a manager can restore a suspended
+     * employee without a super-admin round-trip.
+     */
+    public function reactivateUser(
+        Request $request,
+        Company $company,
+        User $user
+    ): JsonResponse {
+        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+            return $deny;
+        }
+        $actor = $request->user();
+
+        $belongs = UserCompany::query()
+            ->where('company_id', (int) $company->id)
+            ->where('user_id', (int) $user->id)
+            ->exists();
+
+        if (! $belongs) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found in company',
+            ], 404);
+        }
+
+        if ($deny = $this->denyUnlessOutranksTarget($actor, $company, $user)) {
+            return $deny;
+        }
+
+        $user->status = 'active';
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'message' => 'User reactivated.',
+            ],
+        ]);
+    }
+
+    /**
+     * §7 — remove an employee from the company. Detaches the membership (and
+     * the per-company permission overrides that hang off it); the user ACCOUNT
+     * is kept — archive over erase. Payroll/compensation history is kept too.
+     */
+    public function removeUser(
+        Request $request,
+        Company $company,
+        User $user
+    ): JsonResponse {
+        if ($deny = $this->denyUnlessCanManageCompany($request, $company)) {
+            return $deny;
+        }
+        $actor = $request->user();
+
+        if ((int) $actor->id === (int) $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot remove self',
+            ], 422);
+        }
+
+        $belongs = UserCompany::query()
+            ->where('company_id', (int) $company->id)
+            ->where('user_id', (int) $user->id)
+            ->exists();
+
+        if (! $belongs) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found in company',
+            ], 404);
+        }
+
+        if ($deny = $this->denyUnlessOutranksTarget($actor, $company, $user)) {
+            return $deny;
+        }
+
+        if ($deny = $this->denyIfLastOwner($actor, $company, $user, 'remove')) {
+            return $deny;
+        }
+
+        DB::transaction(function () use ($company, $user): void {
+            UserPermissionOverride::query()
+                ->where('company_id', (int) $company->id)
+                ->where('user_id', (int) $user->id)
+                ->delete();
+
+            UserCompany::query()
+                ->where('company_id', (int) $company->id)
+                ->where('user_id', (int) $user->id)
+                ->delete();
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'message' => 'User removed from company.',
             ],
         ]);
     }
@@ -766,6 +878,78 @@ class CompanyController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * §7 — privilege ceiling for ACTING ON a member (deactivate / reactivate /
+     * remove): the caller's rank in this company must be ≥ the target's rank,
+     * so e.g. a company_operator can't suspend the owner. Super admins bypass.
+     *
+     * @return JsonResponse|null null when allowed; 403 response when denied
+     */
+    private function denyUnlessOutranksTarget(?User $actor, Company $company, User $target): ?JsonResponse
+    {
+        $targetRoleName = UserCompany::query()
+            ->where('user_id', (int) $target->id)
+            ->where('company_id', (int) $company->id)
+            ->join('roles', 'user_company.role_id', '=', 'roles.id')
+            ->orderByDesc('roles.id')
+            ->value('roles.name');
+
+        if ($targetRoleName === null || $this->callerCanGrantRole($actor, $company, $targetRoleName)) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'You cannot manage a member ranked above you.',
+        ], 403);
+    }
+
+    /**
+     * §7 — lockout protection: a non-super caller may not deactivate/remove the
+     * company's LAST active owner-tier member (ROLE_RANK 4 — company_admin /
+     * agent / admin), or the tenant would be left with nobody able to manage it.
+     * Super admins bypass (suspending a rogue owner is a legitimate platform op).
+     *
+     * @return JsonResponse|null null when allowed; 422 response when blocked
+     */
+    private function denyIfLastOwner(?User $actor, Company $company, User $target, string $action): ?JsonResponse
+    {
+        if ($actor !== null && $this->adminAccessService->isSuperAdmin($actor)) {
+            return null;
+        }
+
+        $ownerRoleNames = array_keys(array_filter(self::ROLE_RANK, fn (int $rank) => $rank === 4));
+
+        $targetIsOwner = UserCompany::query()
+            ->where('user_id', (int) $target->id)
+            ->where('company_id', (int) $company->id)
+            ->join('roles', 'user_company.role_id', '=', 'roles.id')
+            ->whereIn('roles.name', $ownerRoleNames)
+            ->exists();
+
+        if (! $targetIsOwner) {
+            return null;
+        }
+
+        $otherActiveOwners = UserCompany::query()
+            ->where('user_company.company_id', (int) $company->id)
+            ->where('user_company.user_id', '!=', (int) $target->id)
+            ->join('roles', 'user_company.role_id', '=', 'roles.id')
+            ->join('users', 'user_company.user_id', '=', 'users.id')
+            ->whereIn('roles.name', $ownerRoleNames)
+            ->where('users.status', 'active')
+            ->exists();
+
+        if ($otherActiveOwners) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => sprintf('Cannot %s the last active owner of the company.', $action),
+        ], 422);
     }
 
     /**

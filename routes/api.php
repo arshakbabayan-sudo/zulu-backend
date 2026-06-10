@@ -616,6 +616,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('companies/{company}/users', [CompanyController::class, 'addUser'])->whereNumber('company');
     Route::patch('companies/{company}/users/{user}/role', [CompanyController::class, 'updateUserRole'])->whereNumber('company')->whereNumber('user');
     Route::patch('companies/{company}/users/{user}/deactivate', [CompanyController::class, 'deactivateUser'])->whereNumber('company')->whereNumber('user');
+    // §7 (2026-06-10) — employee lifecycle: restore a suspended member / detach from company.
+    Route::patch('companies/{company}/users/{user}/reactivate', [CompanyController::class, 'reactivateUser'])->whereNumber('company')->whereNumber('user');
+    Route::delete('companies/{company}/users/{user}', [CompanyController::class, 'removeUser'])->whereNumber('company')->whereNumber('user');
     // Phase Գ.6 / Bucket D.4 — per-employee permission overrides (tenant-scoped).
     Route::get('companies/{company}/users/{user}/permissions', [CompanyRbacController::class, 'show'])->whereNumber('company')->whereNumber('user');
     Route::put('companies/{company}/users/{user}/permissions', [CompanyRbacController::class, 'sync'])->whereNumber('company')->whereNumber('user');

@@ -10,6 +10,7 @@ use App\Models\CrmDeal;
 use App\Models\CrmEmployeeCompensation;
 use App\Models\Order;
 use App\Models\User;
+use App\Models\UserCompany;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Admin\CompanyAccessService;
 use Illuminate\Http\JsonResponse;
@@ -483,10 +484,16 @@ class CrmController extends Controller
         }
         $end = (clone $start)->endOfMonth();
 
-        $company = Company::query()->with(['users:id,name,email'])->find($companyId);
+        $company = Company::query()->with(['users:id,name,email,status'])->find($companyId);
         if ($company === null) {
             return response()->json(['success' => false, 'message' => 'Company not found'], 404);
         }
+
+        // §7 — role per member (drives the Team pane's action-button gating).
+        $roleNames = UserCompany::query()
+            ->where('company_id', $companyId)
+            ->join('roles', 'user_company.role_id', '=', 'roles.id')
+            ->pluck('roles.name', 'user_company.user_id');
 
         $comp = CrmEmployeeCompensation::query()
             ->where('company_id', $companyId)
@@ -529,7 +536,13 @@ class CrmController extends Controller
             $computedPay = $cfg ? $cfg->computePay($revenueInPayCurrency) : null;
 
             $rows[] = [
-                'user' => ['id' => $emp->id, 'name' => $emp->name, 'email' => $emp->email],
+                'user' => [
+                    'id' => $emp->id,
+                    'name' => $emp->name,
+                    'email' => $emp->email,
+                    'status' => $emp->status,
+                    'role_name' => $roleNames[$emp->id] ?? null,
+                ],
                 'orders_count' => $ordersCount,
                 'won_deals' => $wonDeals,
                 'direct_orders' => $directOrders,
