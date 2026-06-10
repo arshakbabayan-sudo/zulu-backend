@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Mail\EmployeeWelcomeMail;
 use App\Models\Company;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserCompany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -100,6 +102,45 @@ class CompanyTeamRolesTest extends TestCase
         // ...but not on the rank-4 owner.
         $this->patchJson("/api/companies/{$co->id}/users/{$owner->id}/deactivate")->assertForbidden();
         $this->assertSame('active', $owner->fresh()->status);
+    }
+
+    public function test_direct_mode_rejects_weak_password(): void
+    {
+        $co = $this->company();
+        $owner = User::factory()->create(['status' => 'active']);
+        $this->attach($owner, $co, 'company_admin');
+
+        Sanctum::actingAs($owner->fresh());
+
+        // Letters only — fails the §7 letters+numbers strength floor.
+        $this->postJson("/api/companies/{$co->id}/users", [
+            'mode' => 'direct',
+            'name' => 'Weak Pass',
+            'email' => 'weak-'.uniqid().'@test.local',
+            'role_name' => 'company_viewer',
+            'password' => 'aaaaaaaa',
+        ])->assertStatus(422)->assertJsonValidationErrors(['password']);
+    }
+
+    public function test_direct_mode_sends_welcome_email(): void
+    {
+        Mail::fake();
+
+        $co = $this->company();
+        $owner = User::factory()->create(['status' => 'active']);
+        $this->attach($owner, $co, 'company_admin');
+
+        Sanctum::actingAs($owner->fresh());
+
+        $this->postJson("/api/companies/{$co->id}/users", [
+            'mode' => 'direct',
+            'name' => 'Welcomed Employee',
+            'email' => 'welcome-'.uniqid().'@test.local',
+            'role_name' => 'company_viewer',
+            'password' => 'secret-123',
+        ])->assertSuccessful();
+
+        Mail::assertSent(EmployeeWelcomeMail::class);
     }
 
     public function test_manager_cannot_grant_owner_role(): void

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\CompanyResource;
 use App\Http\Resources\Api\CompanyUserResource;
 use App\Mail\EmployeeInvitationMail;
+use App\Mail\EmployeeWelcomeMail;
 use App\Models\Company;
 use App\Models\CompanyCountryPermission;
 use App\Models\CompanyModulePermission;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Symfony\Component\HttpFoundation\Response;
 
 class CompanyController extends Controller
@@ -152,7 +154,9 @@ class CompanyController extends Controller
             'phone' => ['nullable', 'string', 'max:32'],
         ];
         if ($mode === 'direct') {
-            $rules['password'] = ['required', 'string', 'min:8'];
+            // §7 — strength floor: 8+ chars with letters AND numbers (matches
+            // the modal's client-side hint).
+            $rules['password'] = ['required', 'string', PasswordRule::min(8)->letters()->numbers()];
         }
         $validated = $request->validate($rules);
 
@@ -242,6 +246,27 @@ class CompanyController extends Controller
                 ]);
                 // Don't fail the request — invitation row is created; resend
                 // action can re-trigger send later.
+            }
+        }
+
+        // §7 — direct mode previously sent NOTHING. Tell the employee their
+        // account exists and where to sign in (the password itself travels
+        // person-to-person, never by email). Best-effort.
+        if ($mode === 'direct') {
+            try {
+                Mail::to($result['user']->email)->send(
+                    new EmployeeWelcomeMail(
+                        user: $result['user'],
+                        company: $company,
+                        role: $role,
+                        createdBy: $caller,
+                    )
+                );
+            } catch (\Throwable $e) {
+                Log::error('EmployeeWelcomeMail send failed', [
+                    'user_id' => $result['user']->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
