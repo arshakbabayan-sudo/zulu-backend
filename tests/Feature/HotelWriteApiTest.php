@@ -159,13 +159,13 @@ class HotelWriteApiTest extends TestCase
 
         $this->patchJson('/api/hotels/'.$hotel, ['city' => 'Gyumri'], $agentHeaders)
             ->assertStatus(403)
-            ->assertJsonPath('message', 'Forbidden');
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
 
         $this->resetAuthGuards();
 
         $this->deleteJson('/api/hotels/'.$hotel, [], $agentHeaders)
             ->assertStatus(403)
-            ->assertJsonPath('message', 'Forbidden');
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
     }
 
     public function test_agent_user_cannot_create_hotel(): void
@@ -177,7 +177,7 @@ class HotelWriteApiTest extends TestCase
 
         $this->postJson('/api/hotels', $this->validCreatePayload($offer->id), $this->authHeaders($agentUser))
             ->assertStatus(403)
-            ->assertJsonPath('message', 'Forbidden');
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
     }
 
     public function test_store_creates_hotel_and_returns_detail(): void

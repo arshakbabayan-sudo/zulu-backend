@@ -181,13 +181,13 @@ class TransferWriteApiTest extends TestCase
 
         $this->patchJson('/api/transfers/'.$transferId, ['transfer_title' => 'Renamed'], $agentHeaders)
             ->assertStatus(403)
-            ->assertJsonPath('message', 'Forbidden');
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
 
         $this->resetAuthGuards();
 
         $this->deleteJson('/api/transfers/'.$transferId, [], $agentHeaders)
             ->assertStatus(403)
-            ->assertJsonPath('message', 'Forbidden');
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
     }
 
     public function test_agent_user_cannot_create_transfer(): void
@@ -201,7 +201,7 @@ class TransferWriteApiTest extends TestCase
             '/api/transfers',
             $this->validCreatePayload($offer->id),
             $this->authHeaders($agentUser)
-        )->assertStatus(403)->assertJsonPath('message', 'Forbidden');
+        )->assertStatus(403)->assertJsonPath('message', 'You do not have permission to perform this action.');
     }
 
     public function test_store_creates_transfer_and_returns_detail(): void
@@ -400,13 +400,13 @@ class TransferWriteApiTest extends TestCase
 
         $this->patchJson('/api/transfers/'.$transferId, ['transfer_title' => 'Nope'], $headers)
             ->assertStatus(403)
-            ->assertJsonPath('message', 'Forbidden');
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
 
         $this->resetAuthGuards();
 
         $this->deleteJson('/api/transfers/'.$transferId, [], $headers)
             ->assertStatus(403)
-            ->assertJsonPath('message', 'Forbidden');
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
 
         $this->assertDatabaseHas('transfers', ['id' => $transferId]);
     }

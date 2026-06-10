@@ -641,13 +641,17 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::patch('companies/{company}/airline-flag', [CompanyController::class, 'setAirlineFlag'])->whereNumber('company');
     Route::get('companies/{company}', [CompanyController::class, 'show'])->whereNumber('company');
 
-    Route::get('offers', [OfferController::class, 'index']);
-    Route::get('offers/{offer}', [OfferController::class, 'show']);
-    Route::post('offers', [OfferController::class, 'store'])->middleware('throttle:inventory-write');
-    Route::post('offers/{offer}/publish', [OfferController::class, 'publish'])->middleware('throttle:inventory-write');
-    Route::post('offers/{offer}/archive', [OfferController::class, 'archive'])->middleware('throttle:inventory-write');
+    // §7 server-gate sweep (2026-06-11) — offers are tenant inventory; every
+    // operator-tier role (company_admin/manager/operator/viewer) holds the
+    // offers.* perms below. B2C never calls these paths (customer reads go via
+    // catalog/* + offers/{offer}/seller-options, which stay ungated).
+    Route::get('offers', [OfferController::class, 'index'])->middleware('permission:offers.view');
+    Route::get('offers/{offer}', [OfferController::class, 'show'])->middleware('permission:offers.view');
+    Route::post('offers', [OfferController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:offers.create']);
+    Route::post('offers/{offer}/publish', [OfferController::class, 'publish'])->middleware(['throttle:inventory-write', 'permission:offers.publish']);
+    Route::post('offers/{offer}/archive', [OfferController::class, 'archive'])->middleware(['throttle:inventory-write', 'permission:offers.archive']);
     // Review-gate workflow (Option 2 — quality control before customer-side visibility)
-    Route::post('offers/{offer}/submit-for-review', [OfferController::class, 'submitForReview'])->middleware('throttle:inventory-write');
+    Route::post('offers/{offer}/submit-for-review', [OfferController::class, 'submitForReview'])->middleware(['throttle:inventory-write', 'permission:offers.publish']);
     Route::get('admin/offers/pending-review', [OfferController::class, 'pendingReviewQueue']);
     Route::post('admin/offers/{offer}/approve', [OfferController::class, 'approve'])->middleware('throttle:inventory-write');
     Route::post('admin/offers/{offer}/reject', [OfferController::class, 'reject'])->middleware('throttle:inventory-write');
@@ -706,61 +710,68 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('export-csv', [FinanceController::class, 'exportCsv'])->middleware('permission:finance.settlements.view');
     });
 
-    Route::get('visas', [VisaController::class, 'index']);
-    Route::get('visas/{visa}', [VisaController::class, 'show']);
-    Route::post('visas', [VisaController::class, 'store'])->middleware('throttle:inventory-write');
+    // §7 server-gate sweep (2026-06-11) — visa CATALOG admin (tenant inventory).
+    // Customer visa APPLICATIONS below stay ungated (B2C).
+    Route::get('visas', [VisaController::class, 'index'])->middleware('permission:visas.view');
+    Route::get('visas/{visa}', [VisaController::class, 'show'])->middleware('permission:visas.view');
+    Route::post('visas', [VisaController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:visas.create']);
 
     // Customer visa applications (PART 16, Sprint 63)
     Route::get('visa-applications', [UserVisaApiController::class, 'index']);
     Route::post('visa-applications', [UserVisaApiController::class, 'apply'])->middleware('throttle:file-upload');
     Route::get('visa-applications/{id}', [UserVisaApiController::class, 'show'])->whereNumber('id');
-    Route::patch('visas/{visa}', [VisaController::class, 'update'])->whereNumber('visa')->middleware('throttle:inventory-write');
-    Route::delete('visas/{visa}', [VisaController::class, 'destroy'])->whereNumber('visa')->middleware('throttle:inventory-write');
+    Route::patch('visas/{visa}', [VisaController::class, 'update'])->whereNumber('visa')->middleware(['throttle:inventory-write', 'permission:visas.update']);
+    Route::delete('visas/{visa}', [VisaController::class, 'destroy'])->whereNumber('visa')->middleware(['throttle:inventory-write', 'permission:visas.delete']);
 
-    Route::get('cars', [CarController::class, 'index']);
-    Route::get('cars/{car}', [CarController::class, 'show'])->whereNumber('car');
-    Route::post('cars', [CarController::class, 'store'])->middleware('throttle:inventory-write');
-    Route::patch('cars/{car}', [CarController::class, 'update'])->whereNumber('car')->middleware('throttle:inventory-write');
-    Route::delete('cars/{car}', [CarController::class, 'destroy'])->whereNumber('car')->middleware('throttle:inventory-write');
+    // §7 server-gate sweep (2026-06-11) — tenant inventory modules. Every
+    // operator-tier role holds the matching <module>.view/create/update/delete
+    // perms (company_viewer holds .view only). Agents have no inventory pages.
+    // B2C reads live under catalog/* + storefront routes — untouched.
+    Route::get('cars', [CarController::class, 'index'])->middleware('permission:cars.view');
+    Route::get('cars/{car}', [CarController::class, 'show'])->whereNumber('car')->middleware('permission:cars.view');
+    Route::post('cars', [CarController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:cars.create']);
+    Route::patch('cars/{car}', [CarController::class, 'update'])->whereNumber('car')->middleware(['throttle:inventory-write', 'permission:cars.update']);
+    Route::delete('cars/{car}', [CarController::class, 'destroy'])->whereNumber('car')->middleware(['throttle:inventory-write', 'permission:cars.delete']);
 
-    Route::get('excursions', [ExcursionController::class, 'index']);
-    Route::get('excursions/{excursion}', [ExcursionController::class, 'show'])->whereNumber('excursion');
-    Route::post('excursions', [ExcursionController::class, 'store'])->middleware('throttle:inventory-write');
-    Route::patch('excursions/{excursion}', [ExcursionController::class, 'update'])->whereNumber('excursion')->middleware('throttle:inventory-write');
-    Route::delete('excursions/{excursion}', [ExcursionController::class, 'destroy'])->whereNumber('excursion')->middleware('throttle:inventory-write');
+    Route::get('excursions', [ExcursionController::class, 'index'])->middleware('permission:excursions.view');
+    Route::get('excursions/{excursion}', [ExcursionController::class, 'show'])->whereNumber('excursion')->middleware('permission:excursions.view');
+    Route::post('excursions', [ExcursionController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:excursions.create']);
+    Route::patch('excursions/{excursion}', [ExcursionController::class, 'update'])->whereNumber('excursion')->middleware(['throttle:inventory-write', 'permission:excursions.update']);
+    Route::delete('excursions/{excursion}', [ExcursionController::class, 'destroy'])->whereNumber('excursion')->middleware(['throttle:inventory-write', 'permission:excursions.delete']);
 
-    Route::get('hotels', [HotelController::class, 'index']);
-    Route::post('hotels', [HotelController::class, 'store'])->middleware('throttle:inventory-write');
-    Route::get('hotels/{hotel}', [HotelController::class, 'show'])->whereNumber('hotel');
-    Route::patch('hotels/{hotel}', [HotelController::class, 'update'])->whereNumber('hotel')->middleware('throttle:inventory-write');
-    Route::delete('hotels/{hotel}', [HotelController::class, 'destroy'])->whereNumber('hotel')->middleware('throttle:inventory-write');
+    Route::get('hotels', [HotelController::class, 'index'])->middleware('permission:hotels.view');
+    Route::post('hotels', [HotelController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:hotels.create']);
+    Route::get('hotels/{hotel}', [HotelController::class, 'show'])->whereNumber('hotel')->middleware('permission:hotels.view');
+    Route::patch('hotels/{hotel}', [HotelController::class, 'update'])->whereNumber('hotel')->middleware(['throttle:inventory-write', 'permission:hotels.update']);
+    Route::delete('hotels/{hotel}', [HotelController::class, 'destroy'])->whereNumber('hotel')->middleware(['throttle:inventory-write', 'permission:hotels.delete']);
 
-    Route::get('transfers', [TransferController::class, 'index']);
-    Route::post('transfers', [TransferController::class, 'store'])->middleware('throttle:inventory-write');
-    Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereNumber('transfer');
-    Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereNumber('transfer')->middleware('throttle:inventory-write');
-    Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereNumber('transfer')->middleware('throttle:inventory-write');
+    Route::get('transfers', [TransferController::class, 'index'])->middleware('permission:transfers.view');
+    Route::post('transfers', [TransferController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:transfers.create']);
+    Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereNumber('transfer')->middleware('permission:transfers.view');
+    Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereNumber('transfer')->middleware(['throttle:inventory-write', 'permission:transfers.update']);
+    Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereNumber('transfer')->middleware(['throttle:inventory-write', 'permission:transfers.delete']);
 
-    Route::get('flights', [FlightController::class, 'index']);
-    Route::get('flights/{flight}', [FlightController::class, 'show'])->whereNumber('flight');
-    Route::post('flights', [FlightController::class, 'store'])->middleware('throttle:inventory-write');
-    Route::patch('flights/{flight}', [FlightController::class, 'update'])->whereNumber('flight')->middleware('throttle:inventory-write');
-    Route::delete('flights/{flight}', [FlightController::class, 'destroy'])->whereNumber('flight')->middleware('throttle:inventory-write');
+    Route::get('flights', [FlightController::class, 'index'])->middleware('permission:flights.view');
+    Route::get('flights/{flight}', [FlightController::class, 'show'])->whereNumber('flight')->middleware('permission:flights.view');
+    Route::post('flights', [FlightController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:flights.create']);
+    Route::patch('flights/{flight}', [FlightController::class, 'update'])->whereNumber('flight')->middleware(['throttle:inventory-write', 'permission:flights.update']);
+    Route::delete('flights/{flight}', [FlightController::class, 'destroy'])->whereNumber('flight')->middleware(['throttle:inventory-write', 'permission:flights.delete']);
 
-    Route::get('flights/{flight}/cabins', [FlightController::class, 'listCabins'])->whereNumber('flight');
-    Route::post('flights/{flight}/cabins', [FlightController::class, 'addCabin'])->whereNumber('flight')->middleware('throttle:inventory-write');
-    Route::patch('flights/{flight}/cabins/{cabin}', [FlightController::class, 'updateCabin'])->whereNumber('flight')->whereNumber('cabin')->middleware('throttle:inventory-write');
-    Route::delete('flights/{flight}/cabins/{cabin}', [FlightController::class, 'deleteCabin'])->whereNumber('flight')->whereNumber('cabin')->middleware('throttle:inventory-write');
+    Route::get('flights/{flight}/cabins', [FlightController::class, 'listCabins'])->whereNumber('flight')->middleware('permission:flights.view');
+    Route::post('flights/{flight}/cabins', [FlightController::class, 'addCabin'])->whereNumber('flight')->middleware(['throttle:inventory-write', 'permission:flights.update']);
+    Route::patch('flights/{flight}/cabins/{cabin}', [FlightController::class, 'updateCabin'])->whereNumber('flight')->whereNumber('cabin')->middleware(['throttle:inventory-write', 'permission:flights.update']);
+    Route::delete('flights/{flight}/cabins/{cabin}', [FlightController::class, 'deleteCabin'])->whereNumber('flight')->whereNumber('cabin')->middleware(['throttle:inventory-write', 'permission:flights.update']);
 
-    Route::get('packages', [PackageController::class, 'index']);
-    Route::post('packages', [PackageController::class, 'store'])->middleware('throttle:inventory-write');
-    Route::patch('packages/{package}', [PackageController::class, 'update'])->whereNumber('package')->middleware('throttle:inventory-write');
-    Route::delete('packages/{package}', [PackageController::class, 'destroy'])->whereNumber('package')->middleware('throttle:inventory-write');
-    Route::post('packages/{package}/components', [PackageController::class, 'addComponent'])->whereNumber('package')->middleware('throttle:inventory-write');
-    Route::post('packages/{package}/components/reorder', [PackageController::class, 'reorderComponents'])->whereNumber('package')->middleware('throttle:inventory-write');
-    Route::delete('packages/{package}/components/{component}', [PackageController::class, 'removeComponent'])->whereNumber('package')->whereNumber('component')->middleware('throttle:inventory-write');
-    Route::post('packages/{package}/activate', [PackageController::class, 'activate'])->whereNumber('package')->middleware('throttle:inventory-write');
-    Route::post('packages/{package}/deactivate', [PackageController::class, 'deactivate'])->whereNumber('package')->middleware('throttle:inventory-write');
+    // NOTE: GET packages/{package} + /pricing are STOREFRONT (B2C) routes — not gated.
+    Route::get('packages', [PackageController::class, 'index'])->middleware('permission:packages.view');
+    Route::post('packages', [PackageController::class, 'store'])->middleware(['throttle:inventory-write', 'permission:packages.create']);
+    Route::patch('packages/{package}', [PackageController::class, 'update'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.edit']);
+    Route::delete('packages/{package}', [PackageController::class, 'destroy'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.delete']);
+    Route::post('packages/{package}/components', [PackageController::class, 'addComponent'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.manage_components']);
+    Route::post('packages/{package}/components/reorder', [PackageController::class, 'reorderComponents'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.manage_components']);
+    Route::delete('packages/{package}/components/{component}', [PackageController::class, 'removeComponent'])->whereNumber('package')->whereNumber('component')->middleware(['throttle:inventory-write', 'permission:packages.manage_components']);
+    Route::post('packages/{package}/activate', [PackageController::class, 'activate'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.edit']);
+    Route::post('packages/{package}/deactivate', [PackageController::class, 'deactivate'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.edit']);
 
     Route::post('package-orders', [PackageOrderController::class, 'store']);
     Route::get('package-orders', [PackageOrderController::class, 'index']);

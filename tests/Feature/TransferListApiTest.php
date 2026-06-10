@@ -149,12 +149,16 @@ class TransferListApiTest extends TestCase
         $restricted = $this->createUserWithoutTransfersView($company);
         $headers = $this->authHeaders($restricted);
 
-        $this->getJson('/api/transfers', $headers)->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonCount(0, 'data');
+        // §7 server-gate sweep (2026-06-11): the route is now gated by
+        // permission:transfers.view, so a member WITHOUT the permission is
+        // denied outright (403) instead of receiving an empty scoped list /
+        // 404 — "no checkmark ⇒ no access by menu, direct URL, or API".
+        $this->getJson('/api/transfers', $headers)
+            ->assertStatus(403)
+            ->assertJsonPath('message', 'You do not have permission to perform this action.');
 
         $this->getJson('/api/transfers/'.$transfer->id, $headers)
-            ->assertStatus(404)
+            ->assertStatus(403)
             ->assertJsonPath('success', false);
     }
 
