@@ -42,12 +42,9 @@ class ScopeWhitelistTest extends TestCase
         ];
         $ids = [];
         foreach ($roles as $name => $scope) {
-            $ids[$name] = DB::table('roles')->insertGetId([
-                'name' => $name,
-                'scope' => $scope,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            // upsert — migration 2026_06_10_000300 already seeds the company
+            // team roles, so a blind insert hits the unique(name) constraint.
+            $ids[$name] = (int) Role::updateOrCreate(['name' => $name], ['scope' => $scope])->id;
         }
 
         return $ids;

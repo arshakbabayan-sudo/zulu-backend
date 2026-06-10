@@ -23,7 +23,9 @@ class AdminAccessService
     private const ROLE_ALIASES = [
         self::ROLE_SUPER_ADMIN => ['zulu_super_admin'],
         self::ROLE_PLATFORM_ADMIN => ['zulu_platform_admin'],
-        self::ROLE_OPERATOR_ADMIN => ['company_admin', 'company_operator', 'admin'],
+        // company_manager = §7 "Manager" role — operator-admin tier (manages the
+        // company day-to-day); the rank ceiling keeps it below the owner.
+        self::ROLE_OPERATOR_ADMIN => ['company_admin', 'company_manager', 'company_operator', 'admin'],
     ];
 
     /** @var list<string> */

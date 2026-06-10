@@ -35,6 +35,7 @@ class CompanyRbacController extends Controller
         'company_admin' => 4,
         'agent' => 4,
         'admin' => 4,
+        'company_manager' => 3,
         'operator_admin' => 3,
         'company_operator' => 2,
         'company_viewer' => 1,

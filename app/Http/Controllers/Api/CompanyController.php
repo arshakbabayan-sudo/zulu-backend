@@ -32,7 +32,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class CompanyController extends Controller
 {
-    private const COMPANY_ROLE_NAMES = ['company_admin', 'operator_admin', 'company_operator', 'company_viewer'];
+    private const COMPANY_ROLE_NAMES = ['company_admin', 'operator_admin', 'company_manager', 'company_operator', 'company_viewer'];
 
     /**
      * Role privilege rank for ceiling check (I1 audit F-7).
@@ -42,9 +42,12 @@ class CompanyController extends Controller
         // company_admin = operator-company owner (top); agent = agency-company
         // owner (also top of its own company — RBAC #2 Part Բ). operator_admin
         // (legacy "director") is retired but kept here harmlessly for any old row.
+        // company_manager = §7 "Manager" (ղեկավար) — full operational access,
+        // outranked only by the owner.
         'company_admin' => 4,
         'agent' => 4,
         'admin' => 4,
+        'company_manager' => 3,
         'operator_admin' => 3,
         'company_operator' => 2,
         'company_viewer' => 1,
