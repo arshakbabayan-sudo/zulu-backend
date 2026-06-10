@@ -896,7 +896,26 @@ class CompanyController extends Controller
             ->orderByDesc('roles.id')
             ->value('roles.name');
 
-        if ($targetRoleName === null || $this->callerCanGrantRole($actor, $company, $targetRoleName)) {
+        if ($targetRoleName === null) {
+            return null;
+        }
+
+        // A role OUTSIDE the company rank table (super_admin / platform_admin /
+        // any future platform role) must be untouchable for tenant managers —
+        // ROLE_RANK[?] ?? 0 would otherwise rank it BELOW everyone and let a
+        // company owner suspend a super-admin's account. Super admins bypass.
+        if (! array_key_exists($targetRoleName, self::ROLE_RANK)) {
+            if ($actor !== null && $this->adminAccessService->isSuperAdmin($actor)) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot manage a platform-level member.',
+            ], 403);
+        }
+
+        if ($this->callerCanGrantRole($actor, $company, $targetRoleName)) {
             return null;
         }
 

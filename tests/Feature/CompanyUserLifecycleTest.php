@@ -154,6 +154,21 @@ class CompanyUserLifecycleTest extends TestCase
         ]);
     }
 
+    public function test_company_owner_cannot_touch_platform_level_member(): void
+    {
+        $co = $this->company();
+        $owner = $this->member($co, 'company_admin');
+        // e.g. the platform super-admin also appears in the tenant's member
+        // list — a role outside ROLE_RANK must be untouchable for tenants.
+        $superMember = $this->member($co, 'super_admin');
+
+        Sanctum::actingAs($owner->fresh());
+
+        $this->patchJson("/api/companies/{$co->id}/users/{$superMember->id}/deactivate")->assertForbidden();
+        $this->deleteJson("/api/companies/{$co->id}/users/{$superMember->id}")->assertForbidden();
+        $this->assertSame('active', $superMember->fresh()->status);
+    }
+
     public function test_manager_of_another_company_is_forbidden(): void
     {
         $mine = $this->company('Mine');
