@@ -6,7 +6,9 @@ use App\Events\PaymentReceived;
 use App\Exceptions\PaymentRefundFailedException;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Loyalty\LoyaltyService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -120,6 +122,26 @@ class PaymentService
             }
         } catch (\Throwable $e) {
             Log::warning('Failed to dispatch payment received event', ['error' => $e->getMessage()]);
+        }
+
+        // Roadmap 10.06 §6 — loyalty: every PAID payment awards points to the
+        // ordering customer; the account is auto-created on first earn
+        // (previously only the package-order path earned, so booking/
+        // marketplace customers never got a loyalty account). earnFromOrder
+        // is idempotent per order, so the package path's own call is harmless.
+        try {
+            $order = $fresh?->invoice?->order;
+            if ($order !== null && $order->user_id !== null) {
+                $customer = User::query()->find($order->user_id);
+                if ($customer !== null) {
+                    app(LoyaltyService::class)->earnFromOrder($customer, $order);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Loyalty earn on payment failed', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         return $fresh;
