@@ -336,20 +336,27 @@ class FinanceStatsController extends Controller
             }
 
             // ── Commission transactions ────────────────────────────────────
+            // §8 — commission_transactions is keyed by seller_id (the operator/
+            // agent the commission is accrued against); the old code looked for a
+            // non-existent agent_id column and always showed company=null.
             if (Schema::hasTable('commission_transactions')) {
-                $companyCol = Schema::hasColumn('commission_transactions', 'agent_id') ? 'agent_id' : null;
+                $hasSeller = Schema::hasColumn('commission_transactions', 'seller_id');
                 $commissions = DB::table('commission_transactions')
-                    ->orderByDesc('created_at')
+                    ->when($hasSeller, fn ($q) => $q->leftJoin('companies', 'companies.id', '=', 'commission_transactions.seller_id'))
+                    ->orderByDesc('commission_transactions.created_at')
                     ->limit($limit)
-                    ->get();
+                    ->get($hasSeller
+                        ? ['commission_transactions.*', 'companies.id AS seller_company_id', 'companies.name AS seller_company_name']
+                        : ['commission_transactions.*']);
                 foreach ($commissions as $c) {
+                    $sellerId = $c->seller_company_id ?? null;
                     $rows->push([
                         'id' => 'TX-CMS-'.$c->id,
                         'type' => 'commission',
                         'amount' => (float) ($c->commission_amount ?? 0),
                         'currency' => (string) ($c->currency ?? 'USD'),
-                        'company' => $companyCol && $c->{$companyCol}
-                            ? ['id' => (int) $c->{$companyCol}, 'name' => '—']
+                        'company' => $sellerId
+                            ? ['id' => (int) $sellerId, 'name' => (string) ($c->seller_company_name ?? '—')]
                             : null,
                         'when' => $c->created_at,
                         'status' => $c->status ?? 'pending',
@@ -609,23 +616,20 @@ class FinanceStatsController extends Controller
 
             $commissionAccrued = 0.0;
             $commissionRecordsCount = 0;
-            $platformSplit = 0.0;
-            $agentSplit = 0.0;
             if (Schema::hasTable('commission_transactions')) {
                 $commissionAccrued = (float) DB::table('commission_transactions')->sum('commission_amount');
                 $commissionRecordsCount = (int) DB::table('commission_transactions')->count();
-                // Platform / agent split — agent rows have agent_id set, platform rows don't.
-                if (Schema::hasColumn('commission_transactions', 'agent_id')) {
-                    $platformSplit = (float) DB::table('commission_transactions')
-                        ->whereNull('agent_id')
-                        ->sum('commission_amount');
-                    $agentSplit = (float) DB::table('commission_transactions')
-                        ->whereNotNull('agent_id')
-                        ->sum('commission_amount');
-                } else {
-                    $platformSplit = $commissionAccrued;
-                }
             }
+
+            // §8 — REAL operator-vs-agent commission split (the old agent_id
+            // branch was dead: commission_transactions has no agent_id column,
+            // so the split always read platform=ALL / agent=0). The agent's cut
+            // lives in supplier_entitlements as dedicated "agent_share" rows
+            // (FinanceService::createEntitlementsForOrder); the operator row's
+            // commission_amount INCLUDES that agent share. So:
+            //   agent    = Σ net of agent_share rows
+            //   platform = Σ commission of all rows − agent share
+            [$platformSplit, $agentSplit, $pendingPayouts] = $this->entitlementSplitAndPending();
 
             $currencyBreakdown = (array) DB::table('payments')
                 ->where('status', Payment::STATUS_PAID)
@@ -655,7 +659,10 @@ class FinanceStatsController extends Controller
                 // Preserved keys from PlatformAdminService::getFinanceSummary()
                 'total_payments_paid' => $paidSum,
                 'total_commission_accrued' => $commissionAccrued,
-                'total_commission_pending' => 0.0,
+                // §8 — real pending-payout figure (was hardcoded 0.0): net still
+                // owed to sellers across the entitlement + settlement ledger.
+                'total_commission_pending' => $pendingPayouts,
+                'pending_payouts' => $pendingPayouts,
                 'payments_count_paid' => $paidCount,
                 'commission_records_count' => $commissionRecordsCount,
                 // New v2 fields
@@ -671,5 +678,40 @@ class FinanceStatsController extends Controller
                 ],
             ];
         });
+    }
+
+    /**
+     * §8 — platform-vs-agent commission split + pending payouts, computed from
+     * the supplier_entitlements ledger (the real source of the operator→agent
+     * split). Agent rows are tagged with a notes prefix; the operator row's
+     * commission_amount already includes the agent share.
+     *
+     * @return array{0: float, 1: float, 2: float} [platform, agent, pendingPayouts]
+     */
+    private function entitlementSplitAndPending(): array
+    {
+        if (! Schema::hasTable('supplier_entitlements')) {
+            return [0.0, 0.0, 0.0];
+        }
+
+        $totalCommission = (float) DB::table('supplier_entitlements')->sum('commission_amount');
+        $agentShare = (float) DB::table('supplier_entitlements')
+            ->where('notes', 'like', 'agent_share_of_order_id:%')
+            ->sum('net_amount');
+
+        $platform = max(0.0, round($totalCommission - $agentShare, 2));
+        $agent = round($agentShare, 2);
+
+        // Pending payouts = net still owed to sellers (not yet settled/cancelled).
+        $pending = (float) DB::table('supplier_entitlements')
+            ->whereIn('status', ['pending', 'accrued', 'payable'])
+            ->sum('net_amount');
+        if (Schema::hasTable('settlements')) {
+            $pending += (float) DB::table('settlements')
+                ->whereNotIn('status', ['settled', 'cancelled', 'completed'])
+                ->sum('total_net_amount');
+        }
+
+        return [$platform, $agent, round($pending, 2)];
     }
 }

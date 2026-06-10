@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class PlatformAdminService
@@ -554,10 +555,23 @@ class PlatformAdminService
             $commissionTotalSum = $applyCommScope(DB::table('commission_transactions'))->sum('commission_amount');
             $commissionCount = $applyCommScope(DB::table('commission_transactions'))->count();
 
+            // §8 — real pending-payout figure (was hardcoded 0.0): net still owed
+            // to the in-scope sellers via the supplier_entitlements ledger.
+            $pendingPayouts = 0.0;
+            if (Schema::hasTable('supplier_entitlements')) {
+                $pendingQuery = DB::table('supplier_entitlements')
+                    ->whereIn('status', ['pending', 'accrued', 'payable']);
+                if ($scopeCompanyIds !== null) {
+                    $pendingQuery->whereIn('company_id', count($scopeCompanyIds) > 0 ? $scopeCompanyIds : [-1]);
+                }
+                $pendingPayouts = (float) $pendingQuery->sum('net_amount');
+            }
+
             return [
                 'total_payments_paid' => (float) ($paidSum ?? 0),
                 'total_commission_accrued' => (float) ($commissionTotalSum ?? 0),
-                'total_commission_pending' => 0.0,
+                'total_commission_pending' => $pendingPayouts,
+                'pending_payouts' => $pendingPayouts,
                 'payments_count_paid' => (int) $paidCount,
                 'commission_records_count' => (int) $commissionCount,
             ];
