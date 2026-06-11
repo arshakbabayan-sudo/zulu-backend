@@ -2,11 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Audit\AuditService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
 /**
@@ -237,25 +237,17 @@ class DatabaseRestoreDrill extends Command
 
     private function logAudit(string $outcome, ?string $backupPath, array $extra): void
     {
+        // Roadmap 10.06 §2 — write through AuditService so the row carries a
+        // REAL chain hash (the old raw insert broke the integrity check).
         try {
-            DB::table('audit_logs')->insert([
-                'id' => (string) Str::uuid(),
+            app(AuditService::class)->log([
                 'category' => 'system',
                 'actor_type' => 'system',
-                'actor_id' => null,
                 'actor_name_snapshot' => 'db:restore-drill',
                 'subject_type' => 'database',
                 'subject_id' => $backupPath ?? 'unknown',
                 'action' => 'database.restore_drill.'.$outcome,
-                'changes' => json_encode($extra),
-                'context' => null,
-                'ip_address' => null,
-                'user_agent' => null,
-                'session_id' => null,
-                'request_id' => null,
-                'hash' => hash('sha256', $outcome.'|'.($backupPath ?? '').'|'.now()),
-                'previous_log_hash' => null,
-                'created_at' => now(),
+                'changes' => $extra,
             ]);
         } catch (\Throwable $e) {
             $this->warn('Could not write audit_log row: '.$e->getMessage());

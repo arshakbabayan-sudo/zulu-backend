@@ -2,12 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Audit\AuditService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Filesystem\Filesystem;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
 /**
@@ -230,25 +229,18 @@ class DatabaseBackup extends Command
 
     private function logBackupRecord(string $disk, string $database, string $path, int $size): void
     {
+        // Roadmap 10.06 §2 — write through AuditService so the row carries a
+        // REAL chain hash. The old raw insert (bogus hash, null previous)
+        // made every backup row fail the integrity check ("✗ N tampered").
         try {
-            DB::table('audit_logs')->insert([
-                'id' => (string) Str::uuid(),
+            app(AuditService::class)->log([
                 'category' => 'system',
                 'actor_type' => 'system',
-                'actor_id' => null,
                 'actor_name_snapshot' => 'db:backup',
                 'subject_type' => 'database',
                 'subject_id' => $database,
                 'action' => 'database.backup.completed',
-                'changes' => json_encode(['disk' => $disk, 'path' => $path, 'size_bytes' => $size]),
-                'context' => null,
-                'ip_address' => null,
-                'user_agent' => null,
-                'session_id' => null,
-                'request_id' => null,
-                'hash' => hash('sha256', $disk.'|'.$path.'|'.$size.'|'.now()),
-                'previous_log_hash' => null,
-                'created_at' => now(),
+                'changes' => ['disk' => $disk, 'path' => $path, 'size_bytes' => $size],
             ]);
         } catch (\Throwable $e) {
             $this->warn('Could not write audit_log row: '.$e->getMessage());

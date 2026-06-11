@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AuditService
@@ -88,9 +89,11 @@ class AuditService
             'category' => (string) ($payload['category'] ?? 'data_change'),
             'actor_type' => $payload['actor_type'] ?? ($actor instanceof User ? 'user' : 'system'),
             'actor_id' => $actor instanceof User ? (int) $actor->id : null,
+            // Snapshot is display-only (NOT part of the canonical hash content),
+            // so callers may label system actors (e.g. 'db:backup').
             'actor_name_snapshot' => $actor instanceof User
                 ? (string) ($actor->name ?? $actor->email ?? 'unknown')
-                : 'system',
+                : (string) ($payload['actor_name_snapshot'] ?? 'system'),
             'subject_type' => (string) ($payload['subject_type'] ?? ''),
             'subject_id' => (string) ($payload['subject_id'] ?? ''),
             'action' => (string) ($payload['action'] ?? ''),
@@ -141,6 +144,41 @@ class AuditService
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         return hash('sha256', (string) $canonical);
+    }
+
+    /**
+     * Re-anchor the whole hash chain: walk oldest→newest and rewrite
+     * previous_log_hash + hash for every row that does not verify, so the
+     * chain holds end-to-end again. Needed once after rows were written
+     * OUTSIDE this service (the db:backup cron raw-inserted rows with a
+     * bogus hash and a null previous pointer — roadmap 10.06 §2). Changing
+     * a row's hash invalidates the NEXT row's previous pointer, so the
+     * rewrite cascades from the first broken row to the end — repairing
+     * only the broken rows would leave the chain broken. Idempotent: a
+     * second run finds nothing to rewrite. Returns the rewritten count.
+     */
+    public function reanchorChain(): int
+    {
+        $rewritten = 0;
+        $previousHash = null;
+
+        AuditLog::query()
+            ->orderBy('created_at')
+            ->get()
+            ->each(function (AuditLog $log) use (&$rewritten, &$previousHash): void {
+                $expected = $this->computeHash($log->toArray(), $previousHash);
+                if ($expected !== $log->hash || $log->previous_log_hash !== $previousHash) {
+                    // DB::table — no model events, no timestamp side-effects.
+                    DB::table('audit_logs')
+                        ->where('id', $log->id)
+                        ->update(['previous_log_hash' => $previousHash, 'hash' => $expected]);
+                    $log->hash = $expected;
+                    $rewritten++;
+                }
+                $previousHash = $log->hash;
+            });
+
+        return $rewritten;
     }
 
     /**
