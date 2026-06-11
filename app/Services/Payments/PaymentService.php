@@ -4,6 +4,7 @@ namespace App\Services\Payments;
 
 use App\Events\PaymentReceived;
 use App\Exceptions\PaymentRefundFailedException;
+use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
@@ -131,10 +132,24 @@ class PaymentService
         // is idempotent per order, so the package path's own call is harmless.
         try {
             $order = $fresh?->invoice?->order;
-            if ($order !== null && $order->user_id !== null) {
-                $customer = User::query()->find($order->user_id);
-                if ($customer !== null) {
-                    app(LoyaltyService::class)->earnFromOrder($customer, $order);
+            if ($order !== null) {
+                $loyalty = app(LoyaltyService::class);
+                if ($order->user_id !== null) {
+                    $customer = User::query()->find($order->user_id);
+                    if ($customer !== null) {
+                        $loyalty->earnFromOrder($customer, $order);
+                    }
+                }
+
+                // §8c — also award SELLER points to the attributed company: the
+                // referring agent if there is one, else the supplying operator.
+                // Idempotent per (account, order), best-effort.
+                $sellerCompanyId = $order->agent_company_id ?? $order->company_id;
+                if ($sellerCompanyId !== null) {
+                    $sellerCompany = Company::query()->find($sellerCompanyId);
+                    if ($sellerCompany !== null) {
+                        $loyalty->earnForSeller($sellerCompany, $order);
+                    }
                 }
             }
         } catch (\Throwable $e) {

@@ -20,6 +20,9 @@ Schedule::command('cart:release-expired-holds')->everyFiveMinutes()->withoutOver
 // Sprint 5 — Audit log integrity verification (PART 26)
 Schedule::command('audit:verify-integrity')->dailyAt('03:00')->withoutOverlapping();
 
+// Roadmap 10.06 §8c — expire loyalty points whose earned lot is past its window.
+Schedule::command('loyalty:expire-points')->dailyAt('04:15')->withoutOverlapping()->onOneServer();
+
 // Sprint 17 — Weekly i18n coverage report (Mondays at 04:30)
 Schedule::command('i18n:audit')->weeklyOn(1, '04:30');
 

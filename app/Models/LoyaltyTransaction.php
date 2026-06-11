@@ -20,12 +20,16 @@ class LoyaltyTransaction extends Model
         'reason',
         'metadata',
         'happened_at',
+        'expires_at',
+        'expired_at',
     ];
 
     protected $casts = [
         'points' => 'integer',
         'metadata' => 'array',
         'happened_at' => 'datetime',
+        'expires_at' => 'datetime',
+        'expired_at' => 'datetime',
     ];
 
     public function account(): BelongsTo

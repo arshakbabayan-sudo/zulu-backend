@@ -26,8 +26,14 @@ class LoyaltyAccount extends Model
         'platinum' => 2.0,
     ];
 
+    public const TYPE_CUSTOMER = 'customer';
+
+    public const TYPE_SELLER = 'seller';
+
     protected $fillable = [
+        'account_type',
         'user_id',
+        'company_id',
         'points_balance',
         'lifetime_points',
         'tier',
@@ -43,6 +49,11 @@ class LoyaltyAccount extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
     }
 
     public function transactions(): HasMany
