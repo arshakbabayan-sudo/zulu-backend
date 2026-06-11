@@ -43,4 +43,32 @@ class RefundRequest extends Model
     {
         return $this->belongsTo(Order::class);
     }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /**
+     * §8 — resolve the paid Payment to refund for this request: the order's
+     * direct payment if paid, else the newest paid payment across its invoices.
+     * Returns null when nothing refundable is found.
+     */
+    public function refundablePayment(): ?Payment
+    {
+        $order = $this->order()->with(['payment', 'invoices.payments'])->first();
+        if ($order === null) {
+            return null;
+        }
+
+        if ($order->payment !== null && $order->payment->status === Payment::STATUS_PAID) {
+            return $order->payment;
+        }
+
+        return $order->invoices
+            ->flatMap(fn ($invoice) => $invoice->payments)
+            ->filter(fn (Payment $p) => $p->status === Payment::STATUS_PAID)
+            ->sortByDesc('id')
+            ->first();
+    }
 }

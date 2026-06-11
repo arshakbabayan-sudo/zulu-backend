@@ -39,6 +39,9 @@ class Notification extends Model
         'account.password_reset',
         'offer.approved',
         'offer.rejected',
+        // §8 — admin reviewed the customer's refund request.
+        'refund.approved',
+        'refund.rejected',
     ];
 
     /** @var list<string> */

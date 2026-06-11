@@ -195,9 +195,17 @@ class PaymentService
     }
 
     /**
+     * Refund a paid payment, fully (default) or partially.
+     *
+     * §8 — a nullable $amountCents enables partial refunds from the admin
+     * refund-request queue. A full refund (null, or an amount >= the payment
+     * total) flips the payment to REFUNDED; a strictly partial refund leaves it
+     * PAID (there is no partially_refunded state) — the partial amount is tracked
+     * on the RefundRequest instead.
+     *
      * @throws PaymentRefundFailedException
      */
-    public function refund(Payment $payment): Payment
+    public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
         if ($payment->status === Payment::STATUS_REFUNDED) {
             return $payment->fresh();
@@ -210,15 +218,20 @@ class PaymentService
             );
         }
 
-        $result = $this->paymentGatewayService->refundPaymentIntent($payment);
+        $paymentCents = (int) round(((float) $payment->amount) * 100);
+        $isFull = $amountCents === null || $amountCents >= $paymentCents;
+
+        $result = $this->paymentGatewayService->refundPaymentIntent($payment, $isFull ? null : $amountCents);
         if (($result['success'] ?? false) !== true) {
             throw new PaymentRefundFailedException($result['error'] ?? 'Gateway refund failed', $payment->id);
         }
 
-        DB::transaction(function () use ($payment): void {
-            $payment->status = Payment::STATUS_REFUNDED;
-            $payment->save();
-        });
+        if ($isFull) {
+            DB::transaction(function () use ($payment): void {
+                $payment->status = Payment::STATUS_REFUNDED;
+                $payment->save();
+            });
+        }
 
         return $payment->fresh();
     }

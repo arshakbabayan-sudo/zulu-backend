@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\AdminNotificationController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\AdminPlatformStatisticsController;
 use App\Http\Controllers\Api\AdminRbacController;
+use App\Http\Controllers\Api\AdminRefundRequestController;
 use App\Http\Controllers\Api\AdminRolloutTelemetryController;
 use App\Http\Controllers\Api\AdminSecurityController;
 use App\Http\Controllers\Api\AdminVisaApplicationController;
@@ -867,6 +868,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Phase 7.7 — CSV export for /platform/payments
         Route::get('payments/export', [PlatformAdminController::class, 'exportPaymentsCsv']);
         Route::get('finance-summary', [PlatformAdminController::class, 'financeSummary']);
+        // §8 — admin refund-request queue (customer requests at account → Support;
+        // approve issues the real gateway refund). Platform-admin gated by the group.
+        Route::get('refund-requests', [AdminRefundRequestController::class, 'index']);
+        Route::post('refund-requests/{refundRequest}/approve', [AdminRefundRequestController::class, 'approve'])->whereNumber('refundRequest');
+        Route::post('refund-requests/{refundRequest}/reject', [AdminRefundRequestController::class, 'reject'])->whereNumber('refundRequest');
         // Platform-wide commission % bounds per service type (roadmap P0-2 / 1.2.3).
         Route::get('commission-limits', [CommissionLimitController::class, 'index']);
         Route::put('commission-limits', [CommissionLimitController::class, 'update']);
