@@ -2,11 +2,11 @@
 
 namespace App\Services\Bookings;
 
-use App\Models\BlockedDate;
 use App\Models\Flight;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Services\Availability\BlockedDateChecker;
 use App\Services\Finance\FinanceService;
 use App\Services\Notifications\NotificationService;
 use App\Services\Orders\OrderService;
@@ -21,11 +21,17 @@ class BookingService
     public function __construct(
         private OrderService $orderService,
         private ?NotificationService $notificationService = null,
+        private ?BlockedDateChecker $blockedDateChecker = null,
     ) {}
 
     private function notifications(): NotificationService
     {
         return $this->notificationService ?? app(NotificationService::class);
+    }
+
+    private function blockedDates(): BlockedDateChecker
+    {
+        return $this->blockedDateChecker ?? app(BlockedDateChecker::class);
     }
 
     /**
@@ -52,60 +58,13 @@ class BookingService
                 }
             }
 
-            // Phase Զ.16 / Item 11 — block-dates enforcement.
-            // Reject if the requested booking window overlaps any
-            // blocked date range for this offer's item OR the offer itself.
+            // Phase Զ.16 / Item 11 + roadmap §4 — block-dates enforcement.
+            // Reject if the requested booking window overlaps any blocked
+            // date range for this offer's item OR the offer itself (a NULL
+            // item_id row blocks the whole item type). No dates = no-op.
             $startDate = isset($itemData['start_date']) ? (string) $itemData['start_date'] : null;
             $endDate = isset($itemData['end_date']) ? (string) $itemData['end_date'] : ($startDate ?: null);
-            if ($startDate !== null) {
-                $itemType = $offer->type;
-                $companyId = $offer->company_id ?? null;
-                $blocked = BlockedDate::query()
-                    ->when($companyId, fn ($q) => $q->where('company_id', $companyId))
-                    ->where(function ($q) use ($itemType, $offer) {
-                        // Either an offer-level block (item_type=offer, item_id=offer.id)
-                        // OR an item-level block (item_type=offer.type, item_id matches offer's owned item id).
-                        $q->where(function ($q2) use ($offer) {
-                            $q2->where('item_type', 'offer')->where('item_id', $offer->id);
-                        });
-                        if (in_array($itemType, BlockedDate::ITEM_TYPES, true)) {
-                            $q->orWhere(function ($q2) use ($itemType, $offer) {
-                                // For per-vertical items (hotel/flight/etc.), the item_id is the
-                                // typed-row id stored on the offer (e.g. offer->hotel_id).
-                                $verticalId = match ($itemType) {
-                                    'hotel' => $offer->hotel_id,
-                                    'flight' => $offer->flight_id,
-                                    'car' => $offer->car_id,
-                                    'transfer' => $offer->transfer_id,
-                                    'excursion' => $offer->excursion_id,
-                                    'visa' => $offer->visa_id,
-                                    'package' => $offer->package_id,
-                                    default => null,
-                                };
-                                if ($verticalId !== null) {
-                                    $q2->where('item_type', $itemType)->where('item_id', $verticalId);
-                                } else {
-                                    $q2->whereRaw('1 = 0');
-                                }
-                            });
-                        }
-                    })
-                    ->where('blocked_from', '<=', $endDate ?? $startDate)
-                    ->where('blocked_to', '>=', $startDate)
-                    ->first();
-                if ($blocked !== null) {
-                    throw ValidationException::withMessages([
-                        'items' => [
-                            sprintf(
-                                'Item is blocked from %s to %s%s',
-                                $blocked->blocked_from->format('Y-m-d'),
-                                $blocked->blocked_to->format('Y-m-d'),
-                                $blocked->reason ? ' ('.$blocked->reason.')' : ''
-                            ),
-                        ],
-                    ]);
-                }
-            }
+            $this->blockedDates()->assertOfferNotBlocked($offer, $startDate, $endDate);
         }
     }
 

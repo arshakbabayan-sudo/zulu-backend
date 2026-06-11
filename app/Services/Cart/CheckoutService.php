@@ -5,6 +5,7 @@ namespace App\Services\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Services\Availability\BlockedDateChecker;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -22,7 +23,13 @@ class CheckoutService
 
     public function __construct(
         private CartService $cartService,
+        private ?BlockedDateChecker $blockedDateChecker = null,
     ) {}
+
+    private function blockedDates(): BlockedDateChecker
+    {
+        return $this->blockedDateChecker ?? app(BlockedDateChecker::class);
+    }
 
     /**
      * @param  array<string, mixed>  $payload
@@ -57,6 +64,16 @@ class CheckoutService
             $sharedPassengerData = is_array($payload['passenger_data'] ?? null) ? $payload['passenger_data'] : null;
 
             foreach ($items as $item) {
+                // Roadmap §4 — refuse checkout when an item's travel window
+                // falls on operator-blocked dates (covers blocks added after
+                // the item was carted). Items without dates are skipped.
+                $this->blockedDates()->assertOrderItemNotBlocked(
+                    (string) $item->item_type,
+                    $item->item_id,
+                    $item->date_from?->toDateString(),
+                    $item->date_to?->toDateString(),
+                );
+
                 if ($item->service_snapshot === null) {
                     $item->service_snapshot = $this->buildSnapshot($item);
                 }

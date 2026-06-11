@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Package;
 use App\Models\User;
+use App\Services\Availability\BlockedDateChecker;
 use App\Services\Commissions\CommissionService;
 use App\Services\Finance\FinanceService;
 use App\Services\Invoices\InvoiceService;
@@ -114,6 +115,24 @@ class PackageOrderService
                         ],
                     ]);
                 }
+            }
+
+            // Roadmap §4 — block-dates enforcement for package components.
+            // Flight components carry a concrete travel date (departure_at);
+            // components without a known date are skipped so date-less
+            // flows are never broken.
+            $blockedDateChecker = app(BlockedDateChecker::class);
+            foreach ($components as $component) {
+                $offer = $component->offer;
+                if ($offer === null || $offer->type !== 'flight') {
+                    continue;
+                }
+                $offer->loadMissing('flight');
+                $departureDate = $offer->flight?->departure_at?->toDateString();
+                if ($departureDate === null) {
+                    continue;
+                }
+                $blockedDateChecker->assertOfferNotBlocked($offer, $departureDate, $departureDate);
             }
 
             $baseComponentTotal = '0';

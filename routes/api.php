@@ -784,6 +784,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // seller-attribution-architecture-2026-06-04.md.
     Route::get('customer/partners', [CustomerPartnerController::class, 'index']);
     Route::post('customer/partners', [CustomerPartnerController::class, 'store']);
+    // Add-partner picker (roadmap §9) — search active sellers by country/name.
+    Route::get('customer/partner-search', [CustomerPartnerController::class, 'search']);
     Route::put('customer/partners/reorder', [CustomerPartnerController::class, 'reorder']);
     Route::delete('customer/partners/{partner}', [CustomerPartnerController::class, 'destroy'])->whereNumber('partner');
     // Sellers (+ prices) a customer can buy a given offer through (market + partner-agents).

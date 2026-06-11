@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\CustomerPartner;
 use App\Models\Offer;
 use App\Services\Selling\CustomerSellerOptionsService;
@@ -45,6 +46,60 @@ class CustomerPartnerController extends Controller
             ]);
 
         return response()->json(['success' => true, 'data' => $partners]);
+    }
+
+    /**
+     * GET /api/customer/partner-search?country=Armenia[&q=ara] — the Add-partner
+     * picker: active seller companies (agencies/operators) in a country the
+     * customer can add to their list. `already_added` flags companies that are
+     * already in the caller's list for that country so the UI can render Added✓.
+     */
+    public function search(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string'],
+            'country' => ['required', 'string', 'max:120'],
+        ]);
+
+        $q = trim((string) ($validated['q'] ?? ''));
+        $country = $validated['country'];
+
+        // A single character matches too broadly — wait until 2+ chars are typed.
+        if ($q !== '' && mb_strlen($q) < 2) {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+
+        $alreadyAddedIds = CustomerPartner::query()
+            ->where('customer_user_id', $request->user()->id)
+            ->where('country', $country)
+            ->pluck('partner_company_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        // LOWER() LIKE instead of ILIKE so the query runs on both Postgres
+        // (prod) and SQLite (test suite).
+        $like = '%'.mb_strtolower(str_replace(['%', '_'], ['\\%', '\\_'], $q)).'%';
+
+        $companies = Company::query()
+            ->where('is_seller', true)
+            ->where('governance_status', 'active')
+            ->whereNull('archived_at')
+            ->where('country', $country)
+            ->whereIn('type', ['agency', 'operator'])
+            ->when($q !== '', fn ($qq) => $qq->whereRaw('LOWER(name) LIKE ?', [$like]))
+            ->orderBy('name')
+            ->limit(20)
+            ->get(['id', 'name', 'type', 'country', 'logo'])
+            ->map(fn (Company $c): array => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'type' => $c->type,
+                'country' => $c->country,
+                'logo' => $c->logo,
+                'already_added' => in_array($c->id, $alreadyAddedIds, true),
+            ]);
+
+        return response()->json(['success' => true, 'data' => $companies]);
     }
 
     /** POST /api/customer/partners {partner_company_id, country} — appends at the end. */

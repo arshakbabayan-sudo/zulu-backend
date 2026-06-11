@@ -5,6 +5,7 @@ namespace App\Services\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Services\Availability\BlockedDateChecker;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
@@ -57,6 +58,15 @@ class CartService
         if (! isset($item['currency']) || ! is_string($item['currency']) || $item['currency'] === '') {
             throw new InvalidArgumentException('item.currency is required.');
         }
+
+        // Roadmap §4 — refuse adding an item whose travel dates fall on
+        // operator-blocked dates. Items without dates/item_id are skipped.
+        app(BlockedDateChecker::class)->assertOrderItemNotBlocked(
+            (string) $item['item_type'],
+            $item['item_id'] ?? null,
+            isset($item['date_from']) ? (string) $item['date_from'] : null,
+            isset($item['date_to']) ? (string) $item['date_to'] : null,
+        );
 
         return DB::transaction(function () use ($user, $item): Order {
             $cart = $this->getOrCreateCart($user, $item['currency']);
