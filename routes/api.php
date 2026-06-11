@@ -951,6 +951,20 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // CRM Options — per-company settings (which booking statuses count as a sale)
         Route::get('crm/settings', [CrmController::class, 'getSettings']);
         Route::put('crm/settings', [CrmController::class, 'updateSettings']);
+        // ── CRM Leads + Segments (2026-06-12, roadmap §4) ────────────────
+        Route::get('crm/leads', [CrmController::class, 'listLeads']);
+        Route::get('crm/leads/stats', [CrmController::class, 'leadsStats']);
+        Route::post('crm/leads', [CrmController::class, 'storeLead']);
+        Route::patch('crm/leads/{lead}', [CrmController::class, 'updateLead'])->whereNumber('lead');
+        Route::delete('crm/leads/{lead}', [CrmController::class, 'destroyLead'])->whereNumber('lead');
+        Route::post('crm/leads/{lead}/convert', [CrmController::class, 'convertLead'])->whereNumber('lead');
+        Route::get('crm/segments', [CrmController::class, 'listSegments']);
+        Route::post('crm/segments', [CrmController::class, 'storeSegment']);
+        Route::patch('crm/segments/{segment}', [CrmController::class, 'updateSegment'])->whereNumber('segment');
+        Route::delete('crm/segments/{segment}', [CrmController::class, 'destroySegment'])->whereNumber('segment');
+        Route::get('crm/segments/{segment}/contacts', [CrmController::class, 'segmentContacts'])->whereNumber('segment');
+        Route::post('crm/segments/{segment}/members', [CrmController::class, 'addSegmentMember'])->whereNumber('segment');
+        Route::delete('crm/segments/{segment}/members/{user}', [CrmController::class, 'removeSegmentMember'])->whereNumber('segment')->whereNumber('user');
 
         Route::get('unverified-accounts', [PlatformAdminController::class, 'listUnverifiedAccounts']);
         Route::get('users/{id}', [PlatformAdminController::class, 'showUser'])->whereNumber('id');

@@ -67,6 +67,9 @@ class EnsurePlatformAdmin
         'crm/settings',
         'crm/customers',
         'crm/customers/stats',
+        'crm/leads',
+        'crm/leads/stats',
+        'crm/segments',
         'stats',
         'finance-summary',
     ];
@@ -83,6 +86,9 @@ class EnsurePlatformAdmin
         '#^bookings/[^/]+$#',
         '#^companies/\d+$#',
         '#^users/\d+$#',
+        // Segment contacts — CrmController::segmentContacts re-checks the
+        // segment belongs to the caller's company scope.
+        '#^crm/segments/\d+/contacts$#',
     ];
 
     /**
@@ -101,6 +107,26 @@ class EnsurePlatformAdmin
             // Company owner sets one of their OWN employees' pay.
             // CrmController::setCompensation enforces canManageCompany + member.
             '#^crm/team/\d+/compensation$#',
+        ],
+        // CRM Leads + Segments (2026-06-12, roadmap §4). Leads: any company
+        // member may work leads — CrmController enforces company scope +
+        // Layer-B ownership (canWriteCompanyRows/denyUnlessLeadWritable).
+        // Segments: CrmController::canManageSegmentsOf additionally requires
+        // canManageCompany (owner/manager), so plain employees stay read-only.
+        'POST' => [
+            '#^crm/leads$#',
+            '#^crm/leads/\d+/convert$#',
+            '#^crm/segments$#',
+            '#^crm/segments/\d+/members$#',
+        ],
+        'PATCH' => [
+            '#^crm/leads/\d+$#',
+            '#^crm/segments/\d+$#',
+        ],
+        'DELETE' => [
+            '#^crm/leads/\d+$#',
+            '#^crm/segments/\d+$#',
+            '#^crm/segments/\d+/members/\d+$#',
         ],
     ];
 

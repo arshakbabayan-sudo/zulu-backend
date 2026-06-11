@@ -8,6 +8,8 @@ use App\Models\CrmActivity;
 use App\Models\CrmCompanySetting;
 use App\Models\CrmDeal;
 use App\Models\CrmEmployeeCompensation;
+use App\Models\CrmLead;
+use App\Models\CrmSegment;
 use App\Models\Order;
 use App\Models\User;
 use App\Models\UserCompany;
@@ -16,6 +18,7 @@ use App\Services\Admin\CompanyAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * CRM — deals (sales pipeline) + activities (interaction log).
@@ -279,6 +282,663 @@ class CrmController extends Controller
         $activity->update($data);
 
         return response()->json(['success' => true, 'data' => $this->activityArray($activity->fresh(['owner:id,name']))]);
+    }
+
+    // ─── Leads (inbound enquiries, pre-deal) ────────────────────────────────
+
+    public function listLeads(Request $request): JsonResponse
+    {
+        $companyIds = $this->scopeCompanyIds($request);
+        $perPage = max(1, min((int) $request->query('per_page', 50), 200));
+
+        $query = CrmLead::query()->with(['owner:id,name']);
+        if ($companyIds !== null) {
+            $query->whereIn('company_id', $companyIds);
+        }
+        // Phase 3 Layer-B: plain employee → own leads only.
+        $rowScopeUserId = $this->rowScopeUserId($request);
+        if ($rowScopeUserId !== null) {
+            $query->where('owner_user_id', $rowScopeUserId);
+        }
+        if ($status = $request->query('status')) {
+            $query->where('status', $status);
+        }
+        if ($source = $request->query('source')) {
+            $query->where('source', $source);
+        }
+        if ($interest = $request->query('interest')) {
+            $query->where('interest', $interest);
+        }
+        if ($ownerId = $request->query('owner_user_id')) {
+            $query->where('owner_user_id', (int) $ownerId);
+        }
+        if (is_string($search = $request->query('search')) && trim($search) !== '') {
+            $term = trim($search);
+            $query->where(function ($q) use ($term): void {
+                $q->where('name', 'like', "%{$term}%")
+                    ->orWhere('email', 'like', "%{$term}%")
+                    ->orWhere('phone', 'like', "%{$term}%");
+            });
+        }
+
+        $rows = $query->orderByDesc('created_at')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => array_map([$this, 'leadArray'], $rows->items()),
+            'meta' => [
+                'current_page' => $rows->currentPage(),
+                'last_page' => $rows->lastPage(),
+                'total' => $rows->total(),
+                'per_page' => $rows->perPage(),
+            ],
+        ]);
+    }
+
+    /**
+     * KPI tiles for CRM → Leads, over the WHOLE scoped set (not one page):
+     * new leads last 7 days, qualified, unassigned, and the conversion rate
+     * (% of all leads that have been converted into deals).
+     */
+    public function leadsStats(Request $request): JsonResponse
+    {
+        $companyIds = $this->scopeCompanyIds($request);
+        $rowScopeUserId = $this->rowScopeUserId($request);
+
+        $base = function () use ($companyIds, $rowScopeUserId) {
+            $q = CrmLead::query();
+            if ($companyIds !== null) {
+                $q->whereIn('company_id', $companyIds);
+            }
+            if ($rowScopeUserId !== null) {
+                $q->where('owner_user_id', $rowScopeUserId);
+            }
+
+            return $q;
+        };
+
+        $total = $base()->count();
+        $converted = $base()->where('status', 'converted')->count();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'new_7d' => $base()->where('created_at', '>=', Carbon::now()->subDays(7))->count(),
+                'qualified' => $base()->where('status', 'qualified')->count(),
+                'unassigned' => $base()->whereNull('owner_user_id')->count(),
+                'conversion_rate' => $total > 0 ? (int) round($converted * 100 / $total) : 0,
+            ],
+        ]);
+    }
+
+    public function storeLead(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'b2b_company' => ['nullable', 'string', 'max:255'],
+            'source' => ['nullable', 'string', 'in:'.implode(',', CrmLead::SOURCES)],
+            'interest' => ['nullable', 'string', 'in:'.implode(',', CrmLead::INTERESTS)],
+            'status' => ['nullable', 'string', 'in:'.implode(',', CrmLead::SETTABLE_STATUSES)],
+            'owner_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'notes' => ['nullable', 'string'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+        ]);
+
+        $companyId = $request->input('company_id', $this->ownerCompanyId($request));
+        $companyId = $companyId !== null ? (int) $companyId : null;
+        if (! $this->canWriteCompanyRows($request, $companyId)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $data['company_id'] = $companyId;
+        $data['status'] = $data['status'] ?? 'new';
+        // A row-scoped employee's new leads are their own — no assigning to
+        // colleagues. Owners/managers (and staff) may assign anyone ON the team.
+        if ($this->rowScopeUserId($request) !== null) {
+            $data['owner_user_id'] = optional($request->user())->id;
+        } else {
+            $data['owner_user_id'] = $data['owner_user_id'] ?? optional($request->user())->id;
+            if ($data['owner_user_id'] !== null
+                && (int) $data['owner_user_id'] !== (int) optional($request->user())->id
+                && $this->ownerNotInCompany((int) $data['owner_user_id'], $companyId)) {
+                return response()->json(['success' => false, 'message' => 'Owner is not a member of this company'], 422);
+            }
+        }
+
+        $lead = CrmLead::create($data);
+
+        return response()->json(['success' => true, 'data' => $this->leadArray($lead->fresh(['owner:id,name']))], 201);
+    }
+
+    public function updateLead(Request $request, CrmLead $lead): JsonResponse
+    {
+        if ($deny = $this->denyUnlessLeadWritable($request, $lead)) {
+            return $deny;
+        }
+
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'b2b_company' => ['nullable', 'string', 'max:255'],
+            'source' => ['nullable', 'string', 'in:'.implode(',', CrmLead::SOURCES)],
+            'interest' => ['nullable', 'string', 'in:'.implode(',', CrmLead::INTERESTS)],
+            'status' => ['nullable', 'string', 'in:'.implode(',', CrmLead::SETTABLE_STATUSES)],
+            'owner_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'notes' => ['nullable', 'string'],
+        ]);
+
+        // Reassigning the owner needs whole-company visibility (owner/manager/
+        // crm.view_all); a row-scoped employee keeps their own leads.
+        if ($this->rowScopeUserId($request) !== null) {
+            unset($data['owner_user_id']);
+        }
+        // An explicit JSON null would hit the NOT NULL status column — treat
+        // it as "no change" (the column has no null meaning to express).
+        if (array_key_exists('status', $data) && $data['status'] === null) {
+            unset($data['status']);
+        }
+        // The assignee must actually work at the lead's company — otherwise
+        // the lead vanishes from every row-scoped view (Layer-B semantics).
+        if (($data['owner_user_id'] ?? null) !== null
+            && (int) $data['owner_user_id'] !== (int) optional($request->user())->id
+            && $this->ownerNotInCompany((int) $data['owner_user_id'], $lead->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Owner is not a member of this company'], 422);
+        }
+        // A converted lead is frozen except its notes — its history must keep
+        // matching the deal it became.
+        if ($lead->status === 'converted') {
+            $data = array_intersect_key($data, ['notes' => true]);
+        }
+
+        $lead->update($data);
+
+        return response()->json(['success' => true, 'data' => $this->leadArray($lead->fresh(['owner:id,name']))]);
+    }
+
+    public function destroyLead(Request $request, CrmLead $lead): JsonResponse
+    {
+        if ($deny = $this->denyUnlessLeadWritable($request, $lead)) {
+            return $deny;
+        }
+
+        $lead->delete();
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Convert a lead into a deal (design contract: POST crm/leads/{id}/convert).
+     * Creates a crm_deals row carrying over interest→service_type, source and
+     * notes, then freezes the lead as status=converted with a link to the deal.
+     */
+    public function convertLead(Request $request, CrmLead $lead): JsonResponse
+    {
+        if ($deny = $this->denyUnlessLeadWritable($request, $lead)) {
+            return $deny;
+        }
+        if ($lead->status === 'converted' || $lead->converted_deal_id !== null) {
+            return response()->json(['success' => false, 'message' => 'Lead is already converted'], 422);
+        }
+
+        $data = $request->validate([
+            'value_amount' => ['nullable', 'numeric', 'min:0'],
+            'currency' => ['nullable', 'string', 'max:3'],
+        ]);
+
+        try {
+            $deal = DB::transaction(function () use ($lead, $data, $request): CrmDeal {
+                // Re-read under a row lock — the early guard above runs on a
+                // stale model, so two simultaneous converts could both pass it
+                // and each create a deal (review finding 2026-06-12).
+                $fresh = CrmLead::query()->whereKey($lead->id)->lockForUpdate()->firstOrFail();
+                if ($fresh->status === 'converted' || $fresh->converted_deal_id !== null) {
+                    throw new \DomainException('already-converted');
+                }
+
+                $deal = CrmDeal::create([
+                    'company_id' => $fresh->company_id,
+                    'owner_user_id' => $fresh->owner_user_id ?? optional($request->user())->id,
+                    'title' => $fresh->name.($fresh->b2b_company ? ' · '.$fresh->b2b_company : ''),
+                    'value_amount' => $data['value_amount'] ?? 0,
+                    'currency' => $data['currency'] ?? 'USD',
+                    'service_type' => $fresh->interest,
+                    'stage' => 'new',
+                    'source' => $fresh->source,
+                    'notes' => $fresh->notes,
+                ]);
+                $fresh->update([
+                    'status' => 'converted',
+                    'converted_deal_id' => $deal->id,
+                    'converted_at' => now(),
+                ]);
+
+                return $deal;
+            });
+        } catch (\DomainException) {
+            return response()->json(['success' => false, 'message' => 'Lead is already converted'], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'lead' => $this->leadArray($lead->fresh(['owner:id,name'])),
+                'deal_id' => $deal->id,
+            ],
+        ], 201);
+    }
+
+    /**
+     * Phase-7 doctrine: the platform-admin middleware only ADMITS tenant
+     * members to the CRM lead/segment writes — the controller is the real
+     * gate. True when the caller is platform staff, or the target company is
+     * one of their own.
+     */
+    private function canWriteCompanyRows(Request $request, ?int $companyId): bool
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return false;
+        }
+        try {
+            if ($this->adminAccessService->isPlatformAdmin($user)) {
+                return true;
+            }
+        } catch (\Throwable $e) {
+            // fall through to the membership check
+        }
+        if ($companyId === null) {
+            return false; // tenant-created rows must carry a company
+        }
+        $ids = $this->scopeCompanyIds($request);
+
+        return $ids === null || in_array($companyId, $ids, true);
+    }
+
+    /** Row-level write gate for one lead: company scope + Layer-B ownership. */
+    private function denyUnlessLeadWritable(Request $request, CrmLead $lead): ?JsonResponse
+    {
+        if (! $this->canWriteCompanyRows($request, $lead->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+        $rowScopeUserId = $this->rowScopeUserId($request);
+        if ($rowScopeUserId !== null && $lead->owner_user_id !== $rowScopeUserId) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        return null;
+    }
+
+    /** True when the proposed assignee has NO membership in the company. */
+    private function ownerNotInCompany(int $ownerUserId, ?int $companyId): bool
+    {
+        if ($companyId === null) {
+            return false; // platform-level rows have no team to validate against
+        }
+
+        return ! UserCompany::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $ownerUserId)
+            ->exists();
+    }
+
+    private function leadArray(CrmLead $l): array
+    {
+        return [
+            'id' => $l->id,
+            'name' => $l->name,
+            'email' => $l->email,
+            'phone' => $l->phone,
+            'b2b_company' => $l->b2b_company,
+            'source' => $l->source,
+            'interest' => $l->interest,
+            'status' => $l->status,
+            'notes' => $l->notes,
+            'company_id' => $l->company_id,
+            'owner' => $l->owner ? ['id' => $l->owner->id, 'name' => $l->owner->name] : null,
+            'converted_deal_id' => $l->converted_deal_id,
+            'converted_at' => optional($l->converted_at)->toIso8601String(),
+            'created_at' => optional($l->created_at)->toIso8601String(),
+            'updated_at' => optional($l->updated_at)->toIso8601String(),
+        ];
+    }
+
+    // ─── Segments (saved customer groups) ───────────────────────────────────
+
+    public function listSegments(Request $request): JsonResponse
+    {
+        $companyIds = $this->scopeCompanyIds($request);
+
+        $query = CrmSegment::query()->withCount('members');
+        if ($companyIds !== null) {
+            $query->whereIn('company_id', $companyIds);
+        }
+        if (is_string($search = $request->query('search')) && trim($search) !== '') {
+            $term = trim($search);
+            $query->where('name', 'like', "%{$term}%");
+        }
+
+        // Segment lists are small (a handful of cards per company) — no
+        // pagination, but hard-capped: every dynamic card costs a live
+        // aggregate count, so an unbounded list would be a self-inflicted
+        // performance cliff (review finding 2026-06-12).
+        $segments = $query->orderBy('name')->limit(100)->get();
+
+        $data = $segments->map(function (CrmSegment $s): array {
+            $count = $s->type === 'static'
+                ? (int) ($s->members_count ?? 0)
+                : $this->segmentContactsQuery($s)->count();
+
+            return $this->segmentArray($s, $count);
+        })->values();
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    public function storeSegment(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'type' => ['required', 'string', 'in:'.implode(',', CrmSegment::TYPES)],
+            'icon' => ['nullable', 'string', 'max:50'],
+            'rules' => ['nullable', 'array'],
+            'rules.min_bookings' => ['nullable', 'integer', 'min:1', 'max:100000'],
+            // max also rejects non-finite numerics like 1e309 → INF, which
+            // would otherwise blow up json_encode on save with a 500.
+            'rules.min_total_spent' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'rules.inactive_months' => ['nullable', 'integer', 'min:1', 'max:120'],
+            'rules.active_months' => ['nullable', 'integer', 'min:1', 'max:120'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+        ]);
+
+        $companyId = $request->input('company_id', $this->ownerCompanyId($request));
+        $companyId = $companyId !== null ? (int) $companyId : null;
+        if (! $this->canManageSegmentsOf($request, $companyId)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $segment = CrmSegment::create([
+            'company_id' => $companyId,
+            'created_by_user_id' => optional($request->user())->id,
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+            'type' => $data['type'],
+            'icon' => $data['icon'] ?? null,
+            'rules' => $this->cleanSegmentRules($data['rules'] ?? null),
+        ]);
+
+        $count = $segment->type === 'static' ? 0 : $this->segmentContactsQuery($segment)->count();
+
+        return response()->json(['success' => true, 'data' => $this->segmentArray($segment, $count)], 201);
+    }
+
+    public function updateSegment(Request $request, CrmSegment $segment): JsonResponse
+    {
+        if (! $this->canManageSegmentsOf($request, $segment->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'type' => ['sometimes', 'string', 'in:'.implode(',', CrmSegment::TYPES)],
+            'icon' => ['nullable', 'string', 'max:50'],
+            'rules' => ['nullable', 'array'],
+            'rules.min_bookings' => ['nullable', 'integer', 'min:1', 'max:100000'],
+            // max also rejects non-finite numerics like 1e309 → INF, which
+            // would otherwise blow up json_encode on save with a 500.
+            'rules.min_total_spent' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'rules.inactive_months' => ['nullable', 'integer', 'min:1', 'max:120'],
+            'rules.active_months' => ['nullable', 'integer', 'min:1', 'max:120'],
+        ]);
+
+        if (array_key_exists('rules', $data)) {
+            $data['rules'] = $this->cleanSegmentRules($data['rules']);
+        }
+
+        $segment->update($data);
+        $segment = $segment->fresh();
+
+        $count = $segment->type === 'static'
+            ? $segment->members()->count()
+            : $this->segmentContactsQuery($segment)->count();
+
+        return response()->json(['success' => true, 'data' => $this->segmentArray($segment, $count)]);
+    }
+
+    public function destroySegment(Request $request, CrmSegment $segment): JsonResponse
+    {
+        if (! $this->canManageSegmentsOf($request, $segment->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $segment->delete();
+
+        return response()->json(['success' => true]);
+    }
+
+    /** The segment's current contacts (paginated) — works for both types. */
+    public function segmentContacts(Request $request, CrmSegment $segment): JsonResponse
+    {
+        // Read access: the segment must be in the caller's company scope.
+        $companyIds = $this->scopeCompanyIds($request);
+        if ($companyIds !== null && ! in_array($segment->company_id, $companyIds, true)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $perPage = max(1, min((int) $request->query('per_page', 25), 200));
+
+        $page = $this->segmentContactsQuery($segment)
+            ->withCount(['bookings as bookings_count' => $this->segmentBuyerScope($segment->company_id)])
+            ->orderByDesc('id')
+            ->paginate($perPage);
+
+        $data = collect($page->items())->map(fn (User $u): array => [
+            'id' => $u->id,
+            'name' => $u->name,
+            'email' => $u->email,
+            'status' => $u->status,
+            'bookings_count' => (int) ($u->bookings_count ?? 0),
+        ])->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'total' => $page->total(),
+                'per_page' => $page->perPage(),
+            ],
+        ]);
+    }
+
+    public function addSegmentMember(Request $request, CrmSegment $segment): JsonResponse
+    {
+        if (! $this->canManageSegmentsOf($request, $segment->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+        if ($segment->type !== 'static') {
+            return response()->json(['success' => false, 'message' => 'Members can be added only to a static segment'], 422);
+        }
+
+        $data = $request->validate(['user_id' => ['required', 'integer', 'exists:users,id']]);
+
+        // Tenant safety: only the segment company's OWN buyers may enter a
+        // static list. Without this, user_id + the contacts read become a
+        // platform-wide name/email oracle for any tenant owner (critical
+        // review finding 2026-06-12). Same population as CRM → Customers.
+        $isCompanyBuyer = User::query()
+            ->whereKey((int) $data['user_id'])
+            ->whereHas('bookings', $this->segmentBuyerScope($segment->company_id))
+            ->exists();
+        if (! $isCompanyBuyer) {
+            return response()->json(['success' => false, 'message' => 'User is not a customer of this company'], 422);
+        }
+
+        $segment->members()->syncWithoutDetaching([(int) $data['user_id']]);
+
+        return response()->json(['success' => true, 'data' => ['contacts_count' => $segment->members()->count()]]);
+    }
+
+    public function removeSegmentMember(Request $request, CrmSegment $segment, int $userId): JsonResponse
+    {
+        if (! $this->canManageSegmentsOf($request, $segment->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $segment->members()->detach($userId);
+
+        return response()->json(['success' => true, 'data' => ['contacts_count' => $segment->members()->count()]]);
+    }
+
+    /**
+     * Segment writes are for company OWNERS/managers (and platform staff) —
+     * per the design contract agents/employees get a view-only Segments page.
+     */
+    private function canManageSegmentsOf(Request $request, ?int $companyId): bool
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return false;
+        }
+        try {
+            if ($this->adminAccessService->isPlatformAdmin($user)) {
+                return true;
+            }
+        } catch (\Throwable $e) {
+            return false;
+        }
+        if ($companyId === null) {
+            return false;
+        }
+        $company = Company::query()->find($companyId);
+
+        return $company !== null && $this->companyAccessService->canManageCompany($user, $company);
+    }
+
+    /** Keep only recognised rule keys with non-empty values. */
+    private function cleanSegmentRules(?array $rules): ?array
+    {
+        if ($rules === null) {
+            return null;
+        }
+        $clean = [];
+        foreach (CrmSegment::RULE_KEYS as $key) {
+            if (isset($rules[$key]) && $rules[$key] !== '') {
+                $clean[$key] = is_numeric($rules[$key]) ? $rules[$key] + 0 : $rules[$key];
+            }
+        }
+
+        return $clean ?: null;
+    }
+
+    /**
+     * Buyer scope: ANY order with this company (as seller or referring
+     * agent), no status filter — the SAME population as CRM → Customers, so
+     * segment counts and the Customers tab never disagree about who "is" a
+     * customer (review finding 2026-06-12).
+     */
+    private function segmentBuyerScope(?int $companyId): \Closure
+    {
+        return function ($q) use ($companyId): void {
+            if ($companyId !== null) {
+                $q->where(function ($w) use ($companyId): void {
+                    $w->where('company_id', $companyId)
+                        ->orWhere('agent_company_id', $companyId);
+                });
+            }
+        };
+    }
+
+    /**
+     * Counted-purchase scope: buyer scope + the statuses this company counts
+     * as a real sale (the CRM → Options sales_count_statuses setting, same
+     * source the Team leaderboard uses). Purchase-quality rules (min
+     * bookings/spend/recency) evaluate against THIS scope.
+     */
+    private function segmentCountedScope(?int $companyId): \Closure
+    {
+        $statuses = $companyId !== null
+            ? $this->salesCountStatusesFor($companyId)
+            : CrmCompanySetting::DEFAULT_SALES_STATUSES;
+        $buyerScope = $this->segmentBuyerScope($companyId);
+
+        return function ($q) use ($statuses, $buyerScope): void {
+            $q->whereIn('status', $statuses);
+            $buyerScope($q);
+        };
+    }
+
+    /**
+     * Resolve a segment to a User query of its current contacts.
+     * static → the explicit member list; dynamic → the rules json evaluated
+     * live against the segment company's buyers. Rules are AND-combined; an
+     * empty rule set = every buyer of the company (= CRM → Customers).
+     */
+    private function segmentContactsQuery(CrmSegment $segment)
+    {
+        if ($segment->type === 'static') {
+            return User::query()->whereIn(
+                'id',
+                DB::table('crm_segment_members')->where('segment_id', $segment->id)->select('user_id'),
+            );
+        }
+
+        $buyerScope = $this->segmentBuyerScope($segment->company_id);
+        $countedScope = $this->segmentCountedScope($segment->company_id);
+        $rules = is_array($segment->rules) ? $segment->rules : [];
+
+        $query = User::query()->whereHas('bookings', $buyerScope);
+
+        if (($min = (int) ($rules['min_bookings'] ?? 0)) > 0) {
+            $query->whereHas('bookings', $countedScope, '>=', $min);
+        }
+        if (isset($rules['min_total_spent']) && is_numeric($rules['min_total_spent'])) {
+            // Inline the threshold instead of binding it: PDO binds floats as
+            // TEXT, and sqlite's affinity rules make numeric >= 'text' false
+            // for every row (PG auto-casts, sqlite does not). The value is
+            // validated numeric + bounded + (float)-cast, so inlining is safe.
+            $sub = Order::query()->select('user_id')->groupBy('user_id')
+                ->havingRaw('coalesce(sum(total),0) >= '.((float) $rules['min_total_spent']));
+            $countedScope($sub);
+            $query->whereIn('id', $sub);
+        }
+        if (($months = (int) ($rules['inactive_months'] ?? 0)) > 0) {
+            $cutoff = Carbon::now()->subMonthsNoOverflow($months)->startOfDay();
+            $query->whereDoesntHave('bookings', function ($q) use ($countedScope, $cutoff): void {
+                $countedScope($q);
+                $q->where('created_at', '>=', $cutoff);
+            });
+        }
+        if (($months = (int) ($rules['active_months'] ?? 0)) > 0) {
+            $cutoff = Carbon::now()->subMonthsNoOverflow($months)->startOfDay();
+            $query->whereHas('bookings', function ($q) use ($countedScope, $cutoff): void {
+                $countedScope($q);
+                $q->where('created_at', '>=', $cutoff);
+            });
+        }
+
+        return $query;
+    }
+
+    private function segmentArray(CrmSegment $s, int $contactsCount): array
+    {
+        return [
+            'id' => $s->id,
+            'name' => $s->name,
+            'description' => $s->description,
+            'type' => $s->type,
+            'icon' => $s->icon,
+            'rules' => $s->rules,
+            'company_id' => $s->company_id,
+            'contacts_count' => $contactsCount,
+            'created_at' => optional($s->created_at)->toIso8601String(),
+            'updated_at' => optional($s->updated_at)->toIso8601String(),
+        ];
     }
 
     // ─── Customers (the company's own buyers) ───────────────────────────────
