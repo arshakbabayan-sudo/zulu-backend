@@ -117,20 +117,26 @@ class EnsurePlatformAdmin
         // Layer-B ownership (canWriteCompanyRows/denyUnlessLeadWritable).
         // Segments: CrmController::canManageSegmentsOf additionally requires
         // canManageCompany (owner/manager), so plain employees stay read-only.
+        // CRM Deals (2026-06-12, roadmap §4 Pipeline drag-drop): any company
+        // member works deals — CrmController enforces company scope + Layer-B
+        // ownership (canWriteCompanyRows/denyUnlessDealWritable).
         'POST' => [
             '#^crm/leads$#',
             '#^crm/leads/\d+/convert$#',
             '#^crm/segments$#',
             '#^crm/segments/\d+/members$#',
+            '#^crm/deals$#',
         ],
         'PATCH' => [
             '#^crm/leads/\d+$#',
             '#^crm/segments/\d+$#',
+            '#^crm/deals/\d+$#',
         ],
         'DELETE' => [
             '#^crm/leads/\d+$#',
             '#^crm/segments/\d+$#',
             '#^crm/segments/\d+/members/\d+$#',
+            '#^crm/deals/\d+$#',
         ],
     ];
 

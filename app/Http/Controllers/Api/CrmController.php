@@ -165,9 +165,26 @@ class CrmController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $data['company_id'] = $request->input('company_id', $this->ownerCompanyId($request));
+        $rawCompanyId = $request->input('company_id', $this->ownerCompanyId($request));
+        $companyId = is_numeric($rawCompanyId) ? (int) $rawCompanyId : null;
+        if (! $this->canWriteCompanyRows($request, $companyId)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $data['company_id'] = $companyId;
         $data['stage'] = $data['stage'] ?? 'new';
-        $data['owner_user_id'] = $data['owner_user_id'] ?? optional($request->user())->id;
+        // A row-scoped employee's new deals are their own; owners/managers
+        // (and staff) may assign anyone ON the team (same rules as leads).
+        if ($this->rowScopeUserId($request) !== null) {
+            $data['owner_user_id'] = optional($request->user())->id;
+        } else {
+            $data['owner_user_id'] = $data['owner_user_id'] ?? optional($request->user())->id;
+            if ($data['owner_user_id'] !== null
+                && (int) $data['owner_user_id'] !== (int) optional($request->user())->id
+                && $this->ownerNotInCompany((int) $data['owner_user_id'], $companyId)) {
+                return response()->json(['success' => false, 'message' => 'Owner is not a member of this company'], 422);
+            }
+        }
 
         $deal = CrmDeal::create($data);
 
@@ -176,6 +193,10 @@ class CrmController extends Controller
 
     public function updateDeal(Request $request, CrmDeal $deal): JsonResponse
     {
+        if ($deny = $this->denyUnlessDealWritable($request, $deal)) {
+            return $deny;
+        }
+
         $data = $request->validate([
             'title' => ['sometimes', 'string', 'max:255'],
             'customer_user_id' => ['nullable', 'integer', 'exists:users,id'],
@@ -190,13 +211,28 @@ class CrmController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
+        // Reassigning the owner needs whole-company visibility; a row-scoped
+        // employee keeps their own deals. The assignee must be on the team.
+        if ($this->rowScopeUserId($request) !== null) {
+            unset($data['owner_user_id']);
+        }
+        if (($data['owner_user_id'] ?? null) !== null
+            && (int) $data['owner_user_id'] !== (int) optional($request->user())->id
+            && $this->ownerNotInCompany((int) $data['owner_user_id'], $deal->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Owner is not a member of this company'], 422);
+        }
+
         $deal->update($data);
 
         return response()->json(['success' => true, 'data' => $this->dealArray($deal->fresh(['customer:id,name,email', 'owner:id,name']))]);
     }
 
-    public function destroyDeal(CrmDeal $deal): JsonResponse
+    public function destroyDeal(Request $request, CrmDeal $deal): JsonResponse
     {
+        if ($deny = $this->denyUnlessDealWritable($request, $deal)) {
+            return $deny;
+        }
+
         $deal->delete();
 
         return response()->json(['success' => true]);
@@ -565,6 +601,20 @@ class CrmController extends Controller
         }
         $rowScopeUserId = $this->rowScopeUserId($request);
         if ($rowScopeUserId !== null && $lead->owner_user_id !== $rowScopeUserId) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        return null;
+    }
+
+    /** Row-level write gate for one deal — same semantics as leads. */
+    private function denyUnlessDealWritable(Request $request, CrmDeal $deal): ?JsonResponse
+    {
+        if (! $this->canWriteCompanyRows($request, $deal->company_id)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+        $rowScopeUserId = $this->rowScopeUserId($request);
+        if ($rowScopeUserId !== null && $deal->owner_user_id !== $rowScopeUserId) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
