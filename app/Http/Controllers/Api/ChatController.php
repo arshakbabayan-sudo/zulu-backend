@@ -7,6 +7,7 @@ use App\Models\ChatConversation;
 use App\Models\ChatMessage;
 use App\Models\ChatParticipant;
 use App\Models\User;
+use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,9 +20,33 @@ use Illuminate\Support\Facades\DB;
  * conversations of a company they belong to and only conversations they
  * participate in. Super-admins are NOT auto-added to company chats — they
  * chat within their own company memberships like everyone else.
+ *
+ * Roadmap §4: type='customer' threads (B2C customer ↔ platform support) are
+ * a PLATFORM queue — visible to super admins / platform staff regardless of
+ * participation; the first staff reply joins them as a participant so
+ * read-tracking works.
  */
 class ChatController extends Controller
 {
+    public function __construct(
+        private AdminAccessService $adminAccessService,
+    ) {}
+
+    /** Customer-support threads are a platform queue — who may handle them. */
+    private function canHandleCustomerThreads(?User $user): bool
+    {
+        return $user !== null
+            && ($this->adminAccessService->isSuperAdmin($user) || $this->adminAccessService->isPlatformStaff($user));
+    }
+
+    private function canAccessConversation(ChatConversation $conversation, User $me): bool
+    {
+        if ($this->isParticipant($conversation->id, $me->id)) {
+            return true;
+        }
+
+        return $conversation->type === ChatConversation::TYPE_CUSTOMER && $this->canHandleCustomerThreads($me);
+    }
     /** Company ids the caller belongs to (empty => no access). */
     private function myCompanyIds(Request $request): array
     {
@@ -74,9 +99,15 @@ class ChatController extends Controller
         }
 
         $convIds = ChatParticipant::query()->where('user_id', $me->id)->pluck('conversation_id');
+        $handlesCustomers = $this->canHandleCustomerThreads($me);
         $convs = ChatConversation::query()
-            ->whereIn('id', $convIds)
-            ->with(['participants.user:id,name,email'])
+            ->where(function ($q) use ($convIds, $handlesCustomers) {
+                $q->whereIn('id', $convIds);
+                if ($handlesCustomers) {
+                    $q->orWhere('type', ChatConversation::TYPE_CUSTOMER);
+                }
+            })
+            ->with(['participants.user:id,name,email', 'customer:id,name,email'])
             ->orderByDesc('last_message_at')
             ->orderByDesc('id')
             ->get();
@@ -96,12 +127,19 @@ class ChatController extends Controller
                 ->count();
             $last = ChatMessage::query()->where('conversation_id', $c->id)->orderByDesc('id')->first();
 
+            $isCustomer = $c->type === ChatConversation::TYPE_CUSTOMER;
+
             return [
                 'id' => $c->id,
                 'type' => $c->type,
-                'title' => $c->title ?: $others->pluck('name')->implode(', '),
+                'title' => $c->title
+                    ?: ($isCustomer ? ($c->customer?->name ?? 'Customer') : $others->pluck('name')->implode(', ')),
                 'company_id' => $c->company_id,
                 'participants' => $others,
+                'is_customer' => $isCustomer,
+                'customer' => $isCustomer && $c->customer
+                    ? ['id' => $c->customer->id, 'name' => $c->customer->name, 'email' => $c->customer->email]
+                    : null,
                 'unread' => $unread,
                 'last_message' => $last ? ['body' => mb_substr($last->body, 0, 120), 'created_at' => optional($last->created_at)->toIso8601String()] : null,
                 'last_message_at' => optional($c->last_message_at)->toIso8601String(),
@@ -181,7 +219,8 @@ class ChatController extends Controller
     public function messages(Request $request, int $conversation): JsonResponse
     {
         $me = $request->user();
-        if ($me === null || ! $this->isParticipant($conversation, $me->id)) {
+        $conv = ChatConversation::query()->find($conversation);
+        if ($me === null || $conv === null || ! $this->canAccessConversation($conv, $me)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
@@ -201,10 +240,11 @@ class ChatController extends Controller
                 'created_at' => optional($m->created_at)->toIso8601String(),
             ]);
 
-        // Opening/polling marks the thread read up to now.
+        // Opening/polling marks the thread read up to now. firstOrCreate:
+        // platform staff opening a customer thread join it silently so the
+        // unread counter has a row to track.
         ChatParticipant::query()
-            ->where('conversation_id', $conversation)
-            ->where('user_id', $me->id)
+            ->firstOrCreate(['conversation_id' => $conversation, 'user_id' => $me->id])
             ->update(['last_read_at' => now()]);
 
         return response()->json(['success' => true, 'data' => $msgs]);
@@ -214,7 +254,8 @@ class ChatController extends Controller
     public function sendMessage(Request $request, int $conversation): JsonResponse
     {
         $me = $request->user();
-        if ($me === null || ! $this->isParticipant($conversation, $me->id)) {
+        $conv = ChatConversation::query()->find($conversation);
+        if ($me === null || $conv === null || ! $this->canAccessConversation($conv, $me)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
@@ -227,8 +268,7 @@ class ChatController extends Controller
         ]);
         ChatConversation::query()->where('id', $conversation)->update(['last_message_at' => now()]);
         ChatParticipant::query()
-            ->where('conversation_id', $conversation)
-            ->where('user_id', $me->id)
+            ->firstOrCreate(['conversation_id' => $conversation, 'user_id' => $me->id])
             ->update(['last_read_at' => now()]);
 
         return response()->json([

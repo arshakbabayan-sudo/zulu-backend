@@ -62,6 +62,7 @@ use App\Http\Controllers\Api\CustomerInsuranceController;
 use App\Http\Controllers\Api\CustomerLoyaltyController;
 use App\Http\Controllers\Api\CustomerPartnerController;
 use App\Http\Controllers\Api\CustomerStatsController;
+use App\Http\Controllers\Api\CustomerChatController;
 use App\Http\Controllers\Api\CustomerSupportController;
 use App\Http\Controllers\Api\CustomerVoucherController;
 use App\Http\Controllers\Api\ConnectorDemoController;
@@ -1260,4 +1261,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('customer/support/tickets', [CustomerSupportController::class, 'store']);
     Route::get('customer/support/tickets/{id}', [CustomerSupportController::class, 'show'])->whereNumber('id');
     Route::post('customer/support/tickets/{id}/messages', [CustomerSupportController::class, 'addMessage'])->whereNumber('id');
+
+    // Customer ↔ platform support chat (roadmap §4) — zulu.am floating widget
+    Route::get('customer/chat', [CustomerChatController::class, 'show']);
+    Route::get('customer/chat/messages', [CustomerChatController::class, 'messages']);
+    Route::post('customer/chat/messages', [CustomerChatController::class, 'send'])->middleware('throttle:30,1');
 });

@@ -311,6 +311,25 @@ class AdminAccessService
     }
 
     /**
+     * User ids of everyone who handles the PLATFORM support queue —
+     * super admins + platform-admin-role staff (customer chat, roadmap §4).
+     *
+     * @return list<int>
+     */
+    public function platformSupportUserIds(): array
+    {
+        return User::query()
+            ->whereHas('memberships.role', function (Builder $query): void {
+                $query->whereIn('name', array_merge(
+                    [self::ROLE_SUPER_ADMIN, ...self::ROLE_ALIASES[self::ROLE_SUPER_ADMIN]],
+                    self::PLATFORM_ADMIN_ROLE_NAMES,
+                ));
+            })
+            ->pluck('id')
+            ->all();
+    }
+
+    /**
      * Unified tenant-scope resolver — single source of truth for "which
      * companies' rows may this NON-SUPER caller see across the admin panel"
      * (Layer A of the RBAC blueprint scope model). Call sites must still gate
