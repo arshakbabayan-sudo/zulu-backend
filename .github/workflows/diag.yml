@@ -63,4 +63,10 @@ jobs:
             echo
             echo "=== scheduler: last run marker ==="
             tail -5 /var/log/syslog 2>/dev/null | head -5 || true
+            echo
+            echo "=== php-fpm pool config (www) ==="
+            grep -E "^pm[. ]|^pm =" /etc/php/8.3/fpm/pool.d/www.conf 2>/dev/null || grep -rE "^pm" /etc/php/*/fpm/pool.d/www.conf 2>/dev/null | head -10
+            echo
+            echo "=== nginx error log tail (timeouts/upstream) ==="
+            grep -E "upstream|timed out|timeout" /var/log/nginx/error.log 2>/dev/null | tail -15 || echo "(none)"
           REMOTE_EOF
