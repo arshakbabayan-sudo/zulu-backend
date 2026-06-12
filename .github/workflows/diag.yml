@@ -1,0 +1,66 @@
+name: Server diagnostics (temporary)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Read-only diagnostics
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" 'bash -se' <<'REMOTE_EOF'
+            set -uo pipefail
+            echo "=== uptime / load ==="
+            uptime
+            echo
+            echo "=== memory ==="
+            free -m
+            echo
+            echo "=== disk ==="
+            df -h / /var 2>/dev/null | head -5
+            echo
+            echo "=== top CPU processes ==="
+            ps aux --sort=-%cpu | head -12
+            echo
+            echo "=== top MEM processes ==="
+            ps aux --sort=-%mem | head -8
+            echo
+            echo "=== php-fpm pool ==="
+            ps aux | grep -c "php-fpm: pool" || true
+            echo
+            echo "=== postgres activity (active queries) ==="
+            sudo -u postgres psql -c "select pid, state, now()-query_start as age, left(query,160) as query from pg_stat_activity where state <> 'idle' order by query_start;" 2>/dev/null || echo "(psql failed)"
+            echo
+            echo "=== postgres: longest-running idle-in-transaction ==="
+            sudo -u postgres psql -c "select count(*) filter (where state='idle') as idle, count(*) filter (where state='active') as active, count(*) as total from pg_stat_activity;" 2>/dev/null || true
+            echo
+            echo "=== queue jobs backlog (if database queue) ==="
+            sudo -u postgres psql -d zulu -c "select count(*) from jobs;" 2>/dev/null || echo "(no jobs table / not database queue)"
+            sudo -u postgres psql -d zulu -c "select count(*) from failed_jobs;" 2>/dev/null || true
+            echo
+            echo "=== laravel.log tail (errors only, last 40) ==="
+            grep -E "ERROR|CRITICAL|Exception" /var/www/zulu-backend/storage/logs/laravel.log 2>/dev/null | tail -40 || echo "(no log/errors)"
+            echo
+            echo "=== systemd: zulu-related units ==="
+            systemctl list-units --type=service --no-pager | grep -iE "zulu|php|nginx|postgres|queue|horizon" || true
+            echo
+            echo "=== scheduler: last run marker ==="
+            tail -5 /var/log/syslog 2>/dev/null | head -5 || true
+REMOTE_EOF
