@@ -63,4 +63,4 @@ jobs:
             echo
             echo "=== scheduler: last run marker ==="
             tail -5 /var/log/syslog 2>/dev/null | head -5 || true
-REMOTE_EOF
+          REMOTE_EOF
