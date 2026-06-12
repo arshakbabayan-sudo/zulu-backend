@@ -70,6 +70,7 @@ class EnsurePlatformAdmin
         'crm/leads',
         'crm/leads/stats',
         'crm/segments',
+        'crm/my-agents/stats',
         'stats',
         'finance-summary',
     ];
@@ -89,6 +90,9 @@ class EnsurePlatformAdmin
         // Segment contacts — CrmController::segmentContacts re-checks the
         // segment belongs to the caller's company scope.
         '#^crm/segments/\d+/contacts$#',
+        // Per-agent stats — CrmController::myAgentStatsDetail aggregates ONLY
+        // over the caller's own orders, so a foreign id yields zeros.
+        '#^crm/my-agents/\d+/stats$#',
     ];
 
     /**

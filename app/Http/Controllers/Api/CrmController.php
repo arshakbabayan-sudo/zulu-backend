@@ -1042,6 +1042,281 @@ class CrmController extends Controller
         ]);
     }
 
+    // ─── My agents (per-agent sales aggregation, roadmap §4) ────────────────
+
+    /**
+     * Where each order item's destination lives, per service type. item_id
+     * references the concrete service row (flights.id, hotels.id, …) and the
+     * canonical location field is a locations-table FK (ADR004 — the legacy
+     * string city columns were dropped 2026-04-16); rows whose FK is null
+     * simply don't contribute.
+     *
+     * @var array<string, array{0: string, 1: string}> item_type => [table, locations FK column]
+     */
+    private const AGENT_DESTINATION_SOURCES = [
+        'hotel' => ['hotels', 'location_id'],
+        'flight' => ['flights', 'arrival_location_id'],
+        'transfer' => ['transfers', 'destination_location_id'],
+        'car' => ['cars', 'location_id'],
+        'excursion' => ['excursions', 'location_id'],
+        'package' => ['packages', 'destination_location_id'],
+        'visa' => ['visas', 'location_id'],
+    ];
+
+    /**
+     * Operator-side scope for the My-agents aggregation:
+     * [operator company ids (null = every operator, super only), counted-sale
+     * statuses]. Non-super callers are ALWAYS pinned to their own companies —
+     * an explicit ?company_id is honoured only for super-admins, so the
+     * endpoint can never be used to read another operator's sales.
+     */
+    private function myAgentsScope(Request $request): array
+    {
+        $operatorIds = $this->scopeCompanyIds($request);
+        if ($operatorIds === null) {
+            $explicit = $request->query('company_id');
+            if (is_numeric($explicit) && (int) $explicit > 0) {
+                $operatorIds = [(int) $explicit];
+            }
+        }
+
+        // "What counts as a sale" follows the company's CRM → Options setting
+        // (same source as the Team leaderboard); multi-company scope falls
+        // back to the platform default.
+        $statuses = ($operatorIds !== null && count($operatorIds) === 1)
+            ? $this->salesCountStatusesFor((int) $operatorIds[0])
+            : CrmCompanySetting::DEFAULT_SALES_STATUSES;
+
+        return [$operatorIds, $statuses];
+    }
+
+    /** Counted-sale orders sold by the scoped operator(s) THROUGH an agent. */
+    private function agentOrdersQuery(?array $operatorIds, array $statuses)
+    {
+        return Order::query()
+            ->whereNotNull('agent_company_id')
+            ->whereIn('status', $statuses)
+            ->when($operatorIds !== null, fn ($q) => $q->whereIn('company_id', $operatorIds));
+    }
+
+    /** Same population at the order-item grain (joined for type/destination breakdowns). */
+    private function agentOrderItemsQuery(?array $operatorIds, array $statuses)
+    {
+        return DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->whereNull('order_items.deleted_at')
+            ->whereNull('orders.deleted_at')
+            ->whereNotNull('orders.agent_company_id')
+            ->whereIn('orders.status', $statuses)
+            ->when($operatorIds !== null, fn ($q) => $q->whereIn('orders.company_id', $operatorIds));
+    }
+
+    /**
+     * The agent's earned-share rows in the entitlements ledger. Tagged
+     * 'agent_share_of_order_id:<id>;order_item_id:<id>;operator_company_id:<id>'
+     * by FinanceService::createEntitlementsForOrder. operator_company_id is the
+     * LAST note segment, so an exact-suffix LIKE pins the operator without
+     * matching longer ids (':5' cannot suffix-match ':55').
+     */
+    private function agentCommissionQuery(?array $operatorIds)
+    {
+        return DB::table('supplier_entitlements')
+            ->where('notes', 'like', 'agent_share_of_order_id:%')
+            ->where('status', '!=', 'cancelled')
+            ->when($operatorIds !== null, function ($q) use ($operatorIds): void {
+                $q->where(function ($w) use ($operatorIds): void {
+                    foreach ($operatorIds as $opId) {
+                        $w->orWhere('notes', 'like', '%;operator_company_id:'.(int) $opId);
+                    }
+                });
+            });
+    }
+
+    /**
+     * GET crm/my-agents/stats — per-agent sales/revenue/commission aggregates
+     * over the caller's own orders (operator view of the agents who sell their
+     * inventory). Revenue/commission are grouped by currency — amounts in
+     * different currencies are never summed together.
+     */
+    public function myAgentsStats(Request $request): JsonResponse
+    {
+        [$operatorIds, $statuses] = $this->myAgentsScope($request);
+
+        $orderRows = $this->agentOrdersQuery($operatorIds, $statuses)
+            ->selectRaw('agent_company_id, currency, count(*) as sales, coalesce(sum(total),0) as revenue')
+            ->groupBy('agent_company_id', 'currency')
+            ->get();
+
+        $bookingCounts = $this->agentOrderItemsQuery($operatorIds, $statuses)
+            ->selectRaw('orders.agent_company_id as agent_company_id, count(*) as bookings')
+            ->groupBy('orders.agent_company_id')
+            ->pluck('bookings', 'agent_company_id');
+
+        $commissionRows = $this->agentCommissionQuery($operatorIds)
+            ->selectRaw('company_id as agent_company_id, currency, coalesce(sum(net_amount),0) as commission')
+            ->groupBy('company_id', 'currency')
+            ->get();
+
+        $blank = fn (int $id): array => [
+            'agent_company_id' => $id,
+            'agent_name' => null,
+            'sales' => 0,
+            'bookings' => (int) ($bookingCounts[$id] ?? 0),
+            'revenue' => [],
+            'commission' => [],
+        ];
+
+        $agents = [];
+        foreach ($orderRows as $r) {
+            $id = (int) $r->agent_company_id;
+            $agents[$id] ??= $blank($id);
+            $agents[$id]['sales'] += (int) $r->sales;
+            $agents[$id]['revenue'][] = ['currency' => $r->currency, 'total' => (float) $r->revenue];
+        }
+        foreach ($commissionRows as $r) {
+            $id = (int) $r->agent_company_id;
+            $agents[$id] ??= $blank($id);
+            $agents[$id]['commission'][] = ['currency' => $r->currency, 'total' => (float) $r->commission];
+        }
+
+        $names = Company::query()->whereIn('id', array_keys($agents))->pluck('name', 'id');
+        $summaryRevenue = [];
+        $salesTotal = 0;
+        $bookingsTotal = 0;
+        foreach ($agents as $id => &$a) {
+            $a['agent_name'] = $names[$id] ?? null;
+            $salesTotal += $a['sales'];
+            $bookingsTotal += $a['bookings'];
+            foreach ($a['revenue'] as $rv) {
+                $summaryRevenue[$rv['currency']] = ($summaryRevenue[$rv['currency']] ?? 0.0) + $rv['total'];
+            }
+        }
+        unset($a);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'agents' => array_values($agents),
+                'summary' => [
+                    'agents_with_sales' => count($agents),
+                    'sales' => $salesTotal,
+                    'bookings' => $bookingsTotal,
+                    'revenue' => collect($summaryRevenue)
+                        ->map(fn ($total, $currency) => ['currency' => $currency, 'total' => (float) $total])
+                        ->values(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * GET crm/my-agents/{company}/stats — one agent's full breakdown: stat
+     * cards, top destinations, by-service split and recent order history.
+     * Everything is computed ONLY over the caller's scoped orders, so passing
+     * an arbitrary company id yields zeros — never another tenant's data (the
+     * company is also never looked up, so the id can't be used as an
+     * existence/name oracle).
+     */
+    public function myAgentStatsDetail(Request $request, int $company): JsonResponse
+    {
+        [$operatorIds, $statuses] = $this->myAgentsScope($request);
+
+        $revenueRows = $this->agentOrdersQuery($operatorIds, $statuses)
+            ->where('agent_company_id', $company)
+            ->selectRaw('currency, count(*) as sales, coalesce(sum(total),0) as revenue')
+            ->groupBy('currency')
+            ->get();
+
+        $itemScope = fn () => $this->agentOrderItemsQuery($operatorIds, $statuses)
+            ->where('orders.agent_company_id', $company);
+
+        $services = $itemScope()
+            ->selectRaw('order_items.item_type, count(*) as bookings')
+            ->groupBy('order_items.item_type')
+            ->get()
+            ->map(fn ($r) => ['type' => $r->item_type, 'bookings' => (int) $r->bookings])
+            ->sortByDesc('bookings')
+            ->values();
+
+        $destinationCounts = [];
+        foreach (self::AGENT_DESTINATION_SOURCES as $type => [$table, $fkColumn]) {
+            $rows = $itemScope()
+                ->join($table, "{$table}.id", '=', 'order_items.item_id')
+                ->join('locations', 'locations.id', '=', "{$table}.{$fkColumn}")
+                ->where('order_items.item_type', $type)
+                ->selectRaw('locations.name as destination, count(*) as bookings')
+                ->groupBy('locations.name')
+                ->get();
+            foreach ($rows as $r) {
+                $name = trim((string) $r->destination);
+                if ($name === '') {
+                    continue;
+                }
+                $destinationCounts[$name] = ($destinationCounts[$name] ?? 0) + (int) $r->bookings;
+            }
+        }
+        arsort($destinationCounts);
+        $destinations = collect(array_slice($destinationCounts, 0, 6, true))
+            ->map(fn ($bookings, $name) => ['name' => $name, 'bookings' => $bookings])
+            ->values();
+
+        $commission = $this->agentCommissionQuery($operatorIds)
+            ->where('company_id', $company)
+            ->selectRaw('currency, coalesce(sum(net_amount),0) as commission')
+            ->groupBy('currency')
+            ->get()
+            ->map(fn ($r) => ['currency' => $r->currency, 'total' => (float) $r->commission])
+            ->values();
+
+        // Order history shows EVERY non-cart order via this agent (incl.
+        // pending/cancelled, each with its status badge); the stat cards above
+        // stay on the company's counted-sale statuses.
+        $recent = Order::query()
+            ->with('user:id,name,email')
+            ->where('agent_company_id', $company)
+            ->when($operatorIds !== null, fn ($q) => $q->whereIn('company_id', $operatorIds))
+            ->where('status', '!=', 'cart')
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get();
+
+        $itemTypesByOrder = DB::table('order_items')
+            ->whereIn('order_id', $recent->pluck('id'))
+            ->whereNull('deleted_at')
+            ->selectRaw('order_id, item_type, count(*) as cnt')
+            ->groupBy('order_id', 'item_type')
+            ->get()
+            ->groupBy('order_id');
+
+        $orders = $recent->map(fn (Order $o): array => [
+            'id' => $o->id,
+            'order_number' => $o->order_number,
+            'date' => optional($o->created_at)->toIso8601String(),
+            'customer' => $o->user ? ['id' => $o->user->id, 'name' => $o->user->name, 'email' => $o->user->email] : null,
+            'services' => collect($itemTypesByOrder->get($o->id) ?? [])
+                ->map(fn ($r) => ['type' => $r->item_type, 'count' => (int) $r->cnt])
+                ->values(),
+            'total' => (float) $o->total,
+            'currency' => $o->currency,
+            'status' => $o->status,
+        ])->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'sales' => (int) $revenueRows->sum('sales'),
+                'bookings' => (int) $services->sum('bookings'),
+                'revenue' => $revenueRows
+                    ->map(fn ($r) => ['currency' => $r->currency, 'total' => (float) $r->revenue])
+                    ->values(),
+                'commission' => $commission,
+                'destinations' => $destinations,
+                'services' => $services,
+                'orders' => $orders,
+            ],
+        ]);
+    }
+
     // ─── Stats (Pipeline + Team feed) ───────────────────────────────────────
 
     public function stats(Request $request): JsonResponse

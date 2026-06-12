@@ -948,6 +948,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // CRM Team — per-employee sales leaderboard + flexible payroll config
         Route::get('crm/team', [CrmController::class, 'team']);
         Route::put('crm/team/{user}/compensation', [CrmController::class, 'setCompensation'])->whereNumber('user');
+        // CRM My agents — per-agent sales aggregation (roadmap §4, 2026-06-12)
+        Route::get('crm/my-agents/stats', [CrmController::class, 'myAgentsStats']);
+        Route::get('crm/my-agents/{company}/stats', [CrmController::class, 'myAgentStatsDetail'])->whereNumber('company');
         // CRM Options — per-company settings (which booking statuses count as a sale)
         Route::get('crm/settings', [CrmController::class, 'getSettings']);
         Route::put('crm/settings', [CrmController::class, 'updateSettings']);
