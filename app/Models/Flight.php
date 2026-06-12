@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasCustomFieldValues;
 use App\Traits\HasTranslations;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -11,7 +12,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Flight extends Model
 {
-    use HasFactory, HasTranslations;
+    use HasCustomFieldValues, HasFactory, HasTranslations;
+
+    public function customFieldScope(): string
+    {
+        return 'flight';
+    }
 
     /** @var list<string> */
     public const SERVICE_TYPES = ['scheduled', 'charter', 'package_flight', 'private_special'];

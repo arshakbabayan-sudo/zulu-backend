@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
+use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\PackageResource;
 use App\Models\Offer;
@@ -16,6 +17,7 @@ use Illuminate\Http\Request;
 class PackageController extends Controller
 {
     use AuthorizesCommerceAccess;
+    use HandlesCustomFieldValues;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -54,7 +56,10 @@ class PackageController extends Controller
             return $response;
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'package', true);
+
         $package = $packageService->create($validated);
+        $this->syncCustomFields($customFields, 'package', (int) $package->id);
         $package->load(['offer', 'components.offer']);
 
         return response()->json([
@@ -86,7 +91,10 @@ class PackageController extends Controller
             return $response;
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $model->company_id, 'package', false);
+
         $model = $packageService->update($model, $request->all());
+        $this->syncCustomFields($customFields, 'package', (int) $model->id);
         $model->load(['offer', 'components.offer']);
 
         return response()->json([

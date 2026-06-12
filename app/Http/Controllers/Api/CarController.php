@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
+use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\CarResource;
 use App\Models\Offer;
@@ -15,6 +16,7 @@ use Illuminate\Http\Request;
 class CarController extends Controller
 {
     use AuthorizesCommerceAccess;
+    use HandlesCustomFieldValues;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -87,7 +89,10 @@ class CarController extends Controller
             return $response;
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'car', true);
+
         $car = $carService->create($request->all());
+        $this->syncCustomFields($customFields, 'car', (int) $car->id);
         $car->load(['offer']);
 
         return response()->json([
@@ -123,7 +128,13 @@ class CarController extends Controller
             return $response;
         }
 
-        $model = $carService->update($model, $request->all());
+        $customFields = $this->validateCustomFields($request, (int) $model->offer->company_id, 'car', false);
+
+        $updatePayload = $request->except('custom_fields');
+        if ($updatePayload !== [] || $customFields === null) {
+            $model = $carService->update($model, $updatePayload);
+        }
+        $this->syncCustomFields($customFields, 'car', (int) $model->id);
         $model->load(['offer']);
 
         return response()->json([

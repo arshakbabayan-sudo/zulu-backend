@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasCustomFieldValues;
 use App\Traits\HasTranslations;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -11,7 +12,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Package extends Model
 {
-    use HasFactory, HasTranslations;
+    use HasCustomFieldValues, HasFactory, HasTranslations;
+
+    public function customFieldScope(): string
+    {
+        return 'package';
+    }
 
     /**
      * Fields auto-translated by the Claude AI translator on save.

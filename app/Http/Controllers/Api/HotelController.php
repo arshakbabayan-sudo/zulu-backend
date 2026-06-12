@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
+use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\HotelDetailResource;
 use App\Http\Resources\Api\HotelListResource;
@@ -19,6 +20,7 @@ use Illuminate\Http\Request;
 class HotelController extends Controller
 {
     use AuthorizesCommerceAccess;
+    use HandlesCustomFieldValues;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -127,9 +129,12 @@ class HotelController extends Controller
             return response()->json(['success' => false, 'message' => $error], 422);
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'hotel', true);
+
         $hotel = $hotelService->create(
             array_merge($validated, ['rooms' => $request->input('rooms', [])])
         );
+        $this->syncCustomFields($customFields, 'hotel', (int) $hotel->id);
         $hotel->load(['offer', 'rooms.pricings']);
 
         return response()->json([
@@ -166,7 +171,13 @@ class HotelController extends Controller
             return $response;
         }
 
-        $model = $hotelService->update($model, $request->all());
+        $customFields = $this->validateCustomFields($request, (int) $model->company_id, 'hotel', false);
+
+        $updatePayload = $request->except('custom_fields');
+        if ($updatePayload !== [] || $customFields === null) {
+            $model = $hotelService->update($model, $updatePayload);
+        }
+        $this->syncCustomFields($customFields, 'hotel', (int) $model->id);
         $model->load(['offer', 'rooms.pricings']);
 
         return response()->json([

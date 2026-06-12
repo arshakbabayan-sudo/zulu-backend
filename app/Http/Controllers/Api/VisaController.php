@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
+use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\VisaResource;
 use App\Models\Offer;
@@ -19,6 +20,7 @@ use Illuminate\Validation\Rule;
 class VisaController extends Controller
 {
     use AuthorizesCommerceAccess;
+    use HandlesCustomFieldValues;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -106,7 +108,10 @@ class VisaController extends Controller
         ];
         $visaPayload = Arr::only($visaPayload, $this->existingVisaColumns(array_keys($visaPayload)));
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'visa', true);
+
         $visa = Visa::query()->create($visaPayload);
+        $this->syncCustomFields($customFields, 'visa', (int) $visa->id);
 
         $visa->load('offer');
 
@@ -123,7 +128,10 @@ class VisaController extends Controller
             return $response;
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'visa', false);
+
         $visa = $visaService->update($visa, $request->all());
+        $this->syncCustomFields($customFields, 'visa', (int) $visa->id);
         $visa->loadMissing('offer');
 
         return response()->json([

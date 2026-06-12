@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
+use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\TransferDetailResource;
 use App\Http\Resources\Api\TransferListResource;
@@ -16,6 +17,7 @@ use Illuminate\Http\Request;
 class TransferController extends Controller
 {
     use AuthorizesCommerceAccess;
+    use HandlesCustomFieldValues;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -97,7 +99,10 @@ class TransferController extends Controller
             return $response;
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'transfer', true);
+
         $transfer = $transferService->create($validated);
+        $this->syncCustomFields($customFields, 'transfer', (int) $transfer->id);
         $transfer->load(['offer']);
 
         return response()->json([
@@ -134,7 +139,13 @@ class TransferController extends Controller
             return $response;
         }
 
-        $model = $transferService->update($model, $request->all());
+        $customFields = $this->validateCustomFields($request, (int) $model->company_id, 'transfer', false);
+
+        $updatePayload = $request->except('custom_fields');
+        if ($updatePayload !== [] || $customFields === null) {
+            $model = $transferService->update($model, $updatePayload);
+        }
+        $this->syncCustomFields($customFields, 'transfer', (int) $model->id);
         $model->load(['offer']);
 
         return response()->json([

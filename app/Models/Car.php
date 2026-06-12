@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasCustomFieldValues;
 use App\Traits\HasTranslations;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,7 +11,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Car extends Model
 {
-    use HasFactory, HasTranslations;
+    use HasCustomFieldValues, HasFactory, HasTranslations;
+
+    public function customFieldScope(): string
+    {
+        return 'car';
+    }
 
     /** @var list<string> */
     public const PRICING_MODES = [

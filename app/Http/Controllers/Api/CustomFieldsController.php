@@ -2,21 +2,76 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Controller;
+use App\Models\Car;
 use App\Models\CustomFieldDefinition;
+use App\Models\Excursion;
+use App\Models\Flight;
+use App\Models\Hotel;
+use App\Models\Package;
+use App\Models\Transfer;
+use App\Models\Visa;
 use App\Services\Admin\AdminAccessService;
+use App\Services\CustomFields\CustomFieldValueService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
  * Phase 7.4 — custom field definition CRUD scoped per operator company.
+ * Roadmap §4 — plus stored VALUES lookup for one inventory entity.
  */
 class CustomFieldsController extends Controller
 {
+    use AuthorizesCommerceAccess;
+
+    /** entity_type => [model class, view permission] */
+    private const VALUE_ENTITY_MAP = [
+        'hotel' => [Hotel::class, 'hotels.view'],
+        'flight' => [Flight::class, 'flights.view'],
+        'car' => [Car::class, 'cars.view'],
+        'transfer' => [Transfer::class, 'transfers.view'],
+        'excursion' => [Excursion::class, 'excursions.view'],
+        'visa' => [Visa::class, 'visas.view'],
+        'package' => [Package::class, 'packages.view'],
+    ];
+
     public function __construct(
         private AdminAccessService $adminAccessService,
     ) {}
+
+    /**
+     * Stored custom field values of one inventory entity as {key: value},
+     * pinned to the entity company's definitions. Used by the admin forms
+     * to hydrate the custom-fields block when editing.
+     */
+    public function values(Request $request, CustomFieldValueService $valueService): JsonResponse
+    {
+        $validated = $request->validate([
+            'entity_type' => ['required', Rule::in(array_keys(self::VALUE_ENTITY_MAP))],
+            'entity_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        [$modelClass, $viewPermission] = self::VALUE_ENTITY_MAP[$validated['entity_type']];
+
+        $entity = $modelClass::query()->with('offer:id,company_id')->find((int) $validated['entity_id']);
+        if ($entity === null || $entity->offer === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $companyId = (int) $entity->offer->company_id;
+        if ($response = $this->ensureCommerceAccess($request, $companyId, $viewPermission)) {
+            return $response;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'values' => (object) $valueService->valuesFor($companyId, $validated['entity_type'], (int) $entity->id),
+            ],
+        ]);
+    }
 
     public function index(Request $request): JsonResponse
     {

@@ -432,7 +432,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('time-punches/clock-in', [TimePunchController::class, 'clockIn']);
     Route::post('time-punches/{id}/clock-out', [TimePunchController::class, 'clockOut'])->whereNumber('id');
 
-    // Custom field definitions (Phase 7.4)
+    // Custom field definitions (Phase 7.4) + per-entity stored values (roadmap §4)
+    Route::get('custom-field-values', [CustomFieldsController::class, 'values']);
     Route::get('custom-fields', [CustomFieldsController::class, 'index']);
     Route::post('custom-fields', [CustomFieldsController::class, 'store']);
     Route::patch('custom-fields/{id}', [CustomFieldsController::class, 'update'])->whereNumber('id');

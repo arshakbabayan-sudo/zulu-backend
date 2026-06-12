@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
+use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\ExcursionResource;
 use App\Models\Offer;
@@ -15,6 +16,7 @@ use Illuminate\Http\Request;
 class ExcursionController extends Controller
 {
     use AuthorizesCommerceAccess;
+    use HandlesCustomFieldValues;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -87,7 +89,10 @@ class ExcursionController extends Controller
             return $response;
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'excursion', true);
+
         $excursion = $excursionService->create($request->all());
+        $this->syncCustomFields($customFields, 'excursion', (int) $excursion->id);
         $excursion->load(['offer']);
 
         return response()->json([
@@ -123,7 +128,13 @@ class ExcursionController extends Controller
             return $response;
         }
 
-        $model = $excursionService->update($model, $request->all());
+        $customFields = $this->validateCustomFields($request, (int) $model->offer->company_id, 'excursion', false);
+
+        $updatePayload = $request->except('custom_fields');
+        if ($updatePayload !== [] || $customFields === null) {
+            $model = $excursionService->update($model, $updatePayload);
+        }
+        $this->syncCustomFields($customFields, 'excursion', (int) $model->id);
         $model->load(['offer']);
 
         return response()->json([

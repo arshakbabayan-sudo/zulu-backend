@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\PaginatesCommerceResources;
 use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
+use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\FlightResource;
 use App\Models\Company;
@@ -19,6 +20,7 @@ use Illuminate\Http\Request;
 class FlightController extends Controller
 {
     use AuthorizesCommerceAccess;
+    use HandlesCustomFieldValues;
     use PaginatesCommerceResources;
 
     public function __construct(
@@ -109,7 +111,10 @@ class FlightController extends Controller
             }
         }
 
+        $customFields = $this->validateCustomFields($request, (int) $offer->company_id, 'flight', true);
+
         $flight = $flightService->create($validated);
+        $this->syncCustomFields($customFields, 'flight', (int) $flight->id);
         $flight->loadMissing(['offer', 'company', 'cabins']);
 
         return response()->json([
@@ -129,7 +134,13 @@ class FlightController extends Controller
             return $response;
         }
 
-        $flight = $flightService->update($flight, $request->all());
+        $customFields = $this->validateCustomFields($request, (int) $flight->company_id, 'flight', false);
+
+        $updatePayload = $request->except('custom_fields');
+        if ($updatePayload !== [] || $customFields === null) {
+            $flight = $flightService->update($flight, $updatePayload);
+        }
+        $this->syncCustomFields($customFields, 'flight', (int) $flight->id);
         $flight->loadMissing(['offer', 'company', 'cabins']);
 
         return response()->json([
