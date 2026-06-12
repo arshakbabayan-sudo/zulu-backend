@@ -116,6 +116,13 @@ Schedule::command('accounts:purge-expired')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Roadmap §4 (2026-06-12) — scheduled admin notices (Settings → System
+// notifications). Cheap when nothing's due.
+Schedule::command('notices:send-due')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // GDPR — daily sweep of stale data-export ZIPs (7-day download window).
 Schedule::command('accounts:purge-expired-data-exports')
     ->dailyAt('01:30')

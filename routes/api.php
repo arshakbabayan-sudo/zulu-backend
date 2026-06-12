@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AdminLocationController;
 use App\Http\Controllers\Api\AdminLoyaltyController;
 use App\Http\Controllers\Api\AdminNewsletterController;
+use App\Http\Controllers\Api\AdminNoticeController;
 use App\Http\Controllers\Api\AdminNotificationController;
 use App\Http\Controllers\Api\AdminPackageSagaController;
 use App\Http\Controllers\Api\AdminPlatformStatisticsController;
@@ -1024,6 +1025,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
         Route::post('notifications/bulk-send', [AdminNotificationController::class, 'bulkSend']);
+
+        // Admin notices — authored announcements w/ audience + scheduling
+        // (roadmap §4, 2026-06-12). Super-admin only (controller gate).
+        Route::get('notices', [AdminNoticeController::class, 'index']);
+        Route::post('notices', [AdminNoticeController::class, 'store']);
+        Route::patch('notices/{notice}', [AdminNoticeController::class, 'update'])->whereNumber('notice');
+        Route::post('notices/{notice}/send', [AdminNoticeController::class, 'sendNow'])->whereNumber('notice');
+        Route::delete('notices/{notice}', [AdminNoticeController::class, 'destroy'])->whereNumber('notice');
 
         // Hero search-tab catalog write (home-page CMS Phase 2 Step 2.4)
         Route::patch('site-settings/hero-tabs', [HeroTabsController::class, 'update']);

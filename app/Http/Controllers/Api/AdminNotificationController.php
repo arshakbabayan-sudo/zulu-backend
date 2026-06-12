@@ -3,10 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SendBulkNotificationJob;
 use App\Models\Notification;
-use App\Models\User;
-use App\Models\UserCompany;
 use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -161,7 +158,12 @@ class AdminNotificationController extends Controller
             'channels.*' => ['string', 'in:in_app,email,sms,push'],
         ]);
 
-        $userIds = $this->resolveBulkRecipients($validated);
+        $broadcast = app(\App\Services\Notifications\AdminBroadcastService::class);
+        $userIds = $broadcast->resolveRecipients(
+            (string) $validated['target'],
+            isset($validated['company_id']) ? (int) $validated['company_id'] : null,
+            $validated['user_ids'] ?? null,
+        );
         if (count($userIds) === 0) {
             return response()->json([
                 'success' => false,
@@ -169,9 +171,9 @@ class AdminNotificationController extends Controller
             ], 422);
         }
 
-        $channels = $this->resolveChannels($validated['channels'] ?? null);
+        $channels = $broadcast->normaliseChannels($validated['channels'] ?? null);
 
-        SendBulkNotificationJob::dispatch(
+        $broadcast->dispatch(
             $userIds,
             $channels,
             (string) $validated['title'],
@@ -188,67 +190,4 @@ class AdminNotificationController extends Controller
         ]);
     }
 
-    /**
-     * Normalise the channels selector. Empty / missing collapses to
-     * ['in_app'] so older clients (and the API contract pre-channels)
-     * keep delivering an in-app row by default.
-     *
-     * @param  mixed  $input
-     * @return list<string>
-     */
-    private function resolveChannels($input): array
-    {
-        $allowed = ['in_app', 'email', 'sms', 'push'];
-        if (! is_array($input) || $input === []) {
-            return ['in_app'];
-        }
-        $picked = array_values(array_unique(array_filter(
-            $input,
-            static fn ($c) => in_array($c, $allowed, true),
-        )));
-        if ($picked === []) {
-            return ['in_app'];
-        }
-
-        return $picked;
-    }
-
-    /** @param array<string, mixed> $validated @return list<int> */
-    private function resolveBulkRecipients(array $validated): array
-    {
-        $target = $validated['target'];
-        if ($target === 'specific_users') {
-            return array_values(array_unique(array_map('intval', $validated['user_ids'] ?? [])));
-        }
-        if ($target === 'by_company') {
-            $companyId = (int) ($validated['company_id'] ?? 0);
-            if ($companyId <= 0) {
-                return [];
-            }
-
-            return UserCompany::query()
-                ->where('company_id', $companyId)
-                ->pluck('user_id')
-                ->map(fn ($v) => (int) $v)
-                ->unique()
-                ->values()
-                ->all();
-        }
-        if ($target === 'all_b2c') {
-            return User::query()
-                ->whereDoesntHave('memberships')
-                ->pluck('id')
-                ->map(fn ($v) => (int) $v)
-                ->all();
-        }
-        if ($target === 'all_staff') {
-            return User::query()
-                ->whereHas('memberships')
-                ->pluck('id')
-                ->map(fn ($v) => (int) $v)
-                ->all();
-        }
-
-        return [];
-    }
 }
