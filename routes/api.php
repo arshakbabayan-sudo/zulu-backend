@@ -1020,6 +1020,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('webhooks/deliveries/{id}/replay', [AdminWebhookController::class, 'replayDelivery'])
             ->whereNumber('id');
         Route::get('webhooks/stats', [AdminWebhookController::class, 'stats']);
+        // Webhook subscription management (roadmap §4, 2026-06-12)
+        Route::get('webhooks/events', [AdminWebhookController::class, 'events']);
+        Route::post('webhooks/subscriptions', [AdminWebhookController::class, 'storeSubscription']);
+        Route::patch('webhooks/subscriptions/{id}', [AdminWebhookController::class, 'updateSubscription'])->whereNumber('id');
+        Route::delete('webhooks/subscriptions/{id}', [AdminWebhookController::class, 'destroySubscription'])->whereNumber('id');
 
         // Notification oversight (PART 23, Sprint 59)
         Route::get('notifications', [AdminNotificationController::class, 'index']);

@@ -3,23 +3,160 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Webhooks\WebhookService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 /**
- * Platform-admin webhook oversight (Sprint 52, PART 30).
- *
- * Read-only endpoints for the admin webhook deliveries viewer.
- * Per-seller management is handled by SellerWebhookController.
+ * Platform-admin webhook oversight (Sprint 52, PART 30) + subscription
+ * management (roadmap §4, 2026-06-12): create/update/pause/delete from the
+ * Settings → Webhooks page. Per-seller self-service stays on
+ * SellerWebhookController; both write paths go through WebhookService so the
+ * validation can't drift.
  */
 class AdminWebhookController extends Controller
 {
     public function __construct(
         private AdminAccessService $adminAccessService,
+        private WebhookService $webhookService,
     ) {}
+
+    /** Non-super staff may only touch subscriptions of companies they can see. */
+    private function denyUnlessCompanyInScope(Request $request, int $companyId): ?JsonResponse
+    {
+        $user = $request->user();
+        if ($user !== null && $this->adminAccessService->isSuperAdmin($user)) {
+            return null;
+        }
+        $visible = $user !== null ? ($this->adminAccessService->visibleCompanyIds($user) ?: [0]) : [0];
+        if (! in_array($companyId, $visible, true)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        return null;
+    }
+
+    /** Stable wire shape for the admin UI (the model's raw attrs leak none of secret). */
+    private function subscriptionArray(WebhookSubscription $s): array
+    {
+        return [
+            'id' => $s->id,
+            'company_id' => $s->company_id,
+            'company' => $s->relationLoaded('company') && $s->company
+                ? ['id' => $s->company->id, 'name' => $s->company->name]
+                : null,
+            'target_url' => $s->target_url,
+            'events' => $s->events ?? [],
+            'description' => $s->description,
+            'active' => (bool) $s->active,
+            'failure_count' => (int) $s->failure_count,
+            'last_succeeded_at' => optional($s->last_succeeded_at)->toIso8601String(),
+            'last_failed_at' => optional($s->last_failed_at)->toIso8601String(),
+            'created_at' => optional($s->created_at)->toIso8601String(),
+        ];
+    }
+
+    /** GET webhooks/events — the catalog the subscription form offers. */
+    public function events(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        return response()->json(['success' => true, 'data' => WebhookSubscription::SUPPORTED_EVENTS]);
+    }
+
+    /** POST webhooks/subscriptions — create for any in-scope company. */
+    public function storeSubscription(Request $request): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'target_url' => ['required', 'url', 'max:500'],
+            'events' => ['required', 'array', 'min:1'],
+            'events.*' => ['string'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'active' => ['nullable', 'boolean'],
+        ]);
+
+        if ($deny = $this->denyUnlessCompanyInScope($request, (int) $validated['company_id'])) {
+            return $deny;
+        }
+
+        $company = Company::query()->findOrFail((int) $validated['company_id']);
+
+        try {
+            $sub = $this->webhookService->subscribe($company, $validated);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        // The signing secret is shown ONCE, on creation only.
+        $payload = $this->subscriptionArray($sub->load('company:id,name'));
+        $payload['secret'] = $sub->secret;
+
+        return response()->json(['success' => true, 'data' => $payload], 201);
+    }
+
+    /** PATCH webhooks/subscriptions/{id} — edit url/events/description or pause/resume. */
+    public function updateSubscription(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $sub = WebhookSubscription::query()->find($id);
+        if ($sub === null) {
+            return response()->json(['success' => false, 'message' => 'Webhook not found'], 404);
+        }
+        if ($deny = $this->denyUnlessCompanyInScope($request, (int) $sub->company_id)) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'target_url' => ['sometimes', 'url', 'max:500'],
+            'events' => ['sometimes', 'array', 'min:1'],
+            'events.*' => ['string'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'active' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $this->webhookService->update($sub, $validated);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true, 'data' => $this->subscriptionArray($sub->fresh('company:id,name'))]);
+    }
+
+    /** DELETE webhooks/subscriptions/{id} — soft delete. */
+    public function destroySubscription(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $sub = WebhookSubscription::query()->find($id);
+        if ($sub === null) {
+            return response()->json(['success' => false, 'message' => 'Webhook not found'], 404);
+        }
+        if ($deny = $this->denyUnlessCompanyInScope($request, (int) $sub->company_id)) {
+            return $deny;
+        }
+
+        $sub->delete();
+
+        return response()->json(['success' => true]);
+    }
 
     private function denyUnlessPlatformAdmin(Request $request): ?JsonResponse
     {
@@ -70,7 +207,8 @@ class AdminWebhookController extends Controller
             $query->where('active', $isActive);
         }
 
-        $rows = $query->limit(200)->get();
+        $rows = $query->limit(200)->get()
+            ->map(fn (WebhookSubscription $s): array => $this->subscriptionArray($s));
 
         return response()->json([
             'success' => true,

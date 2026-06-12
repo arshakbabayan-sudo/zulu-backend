@@ -52,6 +52,44 @@ class WebhookService
         ]);
     }
 
+    /**
+     * Update a subscription in place (admin/seller edit). Validates the same
+     * invariants subscribe() does; the secret is never touched.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function update(WebhookSubscription $subscription, array $payload): WebhookSubscription
+    {
+        if (array_key_exists('target_url', $payload)) {
+            $url = (string) $payload['target_url'];
+            if (! filter_var($url, FILTER_VALIDATE_URL)) {
+                throw new InvalidArgumentException('Invalid target_url.');
+            }
+            $subscription->target_url = $url;
+        }
+        if (array_key_exists('events', $payload)) {
+            $events = $payload['events'];
+            if (! is_array($events) || $events === []) {
+                throw new InvalidArgumentException('At least one event required.');
+            }
+            foreach ($events as $event) {
+                if (! in_array($event, WebhookSubscription::SUPPORTED_EVENTS, true)) {
+                    throw new InvalidArgumentException("Unsupported event: {$event}");
+                }
+            }
+            $subscription->events = $events;
+        }
+        if (array_key_exists('description', $payload)) {
+            $subscription->description = $payload['description'];
+        }
+        if (array_key_exists('active', $payload)) {
+            $subscription->active = (bool) $payload['active'];
+        }
+        $subscription->save();
+
+        return $subscription;
+    }
+
     public function unsubscribe(Company $company, int $id): bool
     {
         $sub = WebhookSubscription::query()
