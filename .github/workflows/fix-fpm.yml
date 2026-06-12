@@ -1,0 +1,52 @@
+name: Apply php-fpm pool resize (one-shot)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Resize php-fpm www pool 5 -> 16
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" 'bash -se' <<'REMOTE_EOF'
+            set -euo pipefail
+            CONF=/etc/php/8.3/fpm/pool.d/www.conf
+            echo "=== before ==="
+            grep -E "^pm" "$CONF"
+            sudo cp "$CONF" "${CONF}.bak-2026-06-12"
+            sudo sed -i \
+              -e 's/^pm\.max_children = .*/pm.max_children = 16/' \
+              -e 's/^pm\.start_servers = .*/pm.start_servers = 4/' \
+              -e 's/^pm\.min_spare_servers = .*/pm.min_spare_servers = 2/' \
+              -e 's/^pm\.max_spare_servers = .*/pm.max_spare_servers = 8/' \
+              "$CONF"
+            echo "=== after ==="
+            grep -E "^pm" "$CONF"
+            echo "=== config test ==="
+            sudo php-fpm8.3 -t
+            echo "=== graceful reload ==="
+            sudo systemctl reload php8.3-fpm
+            sleep 2
+            sudo systemctl is-active php8.3-fpm
+            echo "=== worker count now ==="
+            ps aux | grep -c "php-fpm: pool" || true
+            echo "=== local smoke ==="
+            curl -s -o /dev/null -w "api smoke -> %{http_code} %{time_total}s\n" http://127.0.0.1/api/up 2>/dev/null || curl -s -o /dev/null -w "api smoke -> %{http_code} %{time_total}s\n" https://api.zulu.am/api/up
+          REMOTE_EOF
