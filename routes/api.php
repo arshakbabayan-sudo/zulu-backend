@@ -947,6 +947,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::patch('crm/activities/{activity}', [CrmController::class, 'updateActivity'])->whereNumber('activity');
         // CRM Team — per-employee sales leaderboard + flexible payroll config
         Route::get('crm/team', [CrmController::class, 'team']);
+        Route::get('crm/team/{user}/stats', [CrmController::class, 'teamMemberStats'])->whereNumber('user');
         Route::put('crm/team/{user}/compensation', [CrmController::class, 'setCompensation'])->whereNumber('user');
         // CRM My agents — per-agent sales aggregation (roadmap §4, 2026-06-12)
         Route::get('crm/my-agents/stats', [CrmController::class, 'myAgentsStats']);

@@ -93,6 +93,9 @@ class EnsurePlatformAdmin
         // Per-agent stats — CrmController::myAgentStatsDetail aggregates ONLY
         // over the caller's own orders, so a foreign id yields zeros.
         '#^crm/my-agents/\d+/stats$#',
+        // Per-employee stats — CrmController::teamMemberStats resolves the
+        // company via teamCompanyId (tenant-validated) + member check.
+        '#^crm/team/\d+/stats$#',
     ];
 
     /**

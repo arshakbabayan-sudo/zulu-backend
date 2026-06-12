@@ -1162,6 +1162,48 @@ class CrmController extends Controller
     }
 
     /**
+     * By-service + top-destination breakdowns for ANY order_items scope
+     * (used by both the per-agent and per-employee stat endpoints).
+     *
+     * @param  callable(): \Illuminate\Database\Query\Builder  $itemScope
+     * @return array{0: \Illuminate\Support\Collection, 1: \Illuminate\Support\Collection}
+     */
+    private function itemBreakdowns(callable $itemScope): array
+    {
+        $services = $itemScope()
+            ->selectRaw('order_items.item_type, count(*) as bookings')
+            ->groupBy('order_items.item_type')
+            ->get()
+            ->map(fn ($r) => ['type' => $r->item_type, 'bookings' => (int) $r->bookings])
+            ->sortByDesc('bookings')
+            ->values();
+
+        $destinationCounts = [];
+        foreach (self::AGENT_DESTINATION_SOURCES as $type => [$table, $fkColumn]) {
+            $rows = $itemScope()
+                ->join($table, "{$table}.id", '=', 'order_items.item_id')
+                ->join('locations', 'locations.id', '=', "{$table}.{$fkColumn}")
+                ->where('order_items.item_type', $type)
+                ->selectRaw('locations.name as destination, count(*) as bookings')
+                ->groupBy('locations.name')
+                ->get();
+            foreach ($rows as $r) {
+                $name = trim((string) $r->destination);
+                if ($name === '') {
+                    continue;
+                }
+                $destinationCounts[$name] = ($destinationCounts[$name] ?? 0) + (int) $r->bookings;
+            }
+        }
+        arsort($destinationCounts);
+        $destinations = collect(array_slice($destinationCounts, 0, 6, true))
+            ->map(fn ($bookings, $name) => ['name' => $name, 'bookings' => $bookings])
+            ->values();
+
+        return [$services, $destinations];
+    }
+
+    /**
      * The agent's earned-share rows in the entitlements ledger. Tagged
      * 'agent_share_of_order_id:<id>;order_item_id:<id>;operator_company_id:<id>'
      * by FinanceService::createEntitlementsForOrder. operator_company_id is the
@@ -1280,35 +1322,7 @@ class CrmController extends Controller
         $itemScope = fn () => $this->agentOrderItemsQuery($operatorIds, $statuses)
             ->where('orders.agent_company_id', $company);
 
-        $services = $itemScope()
-            ->selectRaw('order_items.item_type, count(*) as bookings')
-            ->groupBy('order_items.item_type')
-            ->get()
-            ->map(fn ($r) => ['type' => $r->item_type, 'bookings' => (int) $r->bookings])
-            ->sortByDesc('bookings')
-            ->values();
-
-        $destinationCounts = [];
-        foreach (self::AGENT_DESTINATION_SOURCES as $type => [$table, $fkColumn]) {
-            $rows = $itemScope()
-                ->join($table, "{$table}.id", '=', 'order_items.item_id')
-                ->join('locations', 'locations.id', '=', "{$table}.{$fkColumn}")
-                ->where('order_items.item_type', $type)
-                ->selectRaw('locations.name as destination, count(*) as bookings')
-                ->groupBy('locations.name')
-                ->get();
-            foreach ($rows as $r) {
-                $name = trim((string) $r->destination);
-                if ($name === '') {
-                    continue;
-                }
-                $destinationCounts[$name] = ($destinationCounts[$name] ?? 0) + (int) $r->bookings;
-            }
-        }
-        arsort($destinationCounts);
-        $destinations = collect(array_slice($destinationCounts, 0, 6, true))
-            ->map(fn ($bookings, $name) => ['name' => $name, 'bookings' => $bookings])
-            ->values();
+        [$services, $destinations] = $this->itemBreakdowns($itemScope);
 
         $commission = $this->agentCommissionQuery($operatorIds)
             ->where('company_id', $company)
@@ -1440,8 +1454,28 @@ class CrmController extends Controller
     private function teamCompanyId(Request $request): ?int
     {
         $explicit = $request->query('company_id');
-        if ($explicit !== null && $explicit !== '') {
-            return (int) $explicit;
+        $explicitId = is_numeric($explicit) && (int) $explicit > 0 ? (int) $explicit : null;
+
+        // Platform staff may inspect any company's team.
+        $user = $request->user();
+        $isStaff = false;
+        try {
+            $isStaff = $user !== null && $this->adminAccessService->isPlatformAdmin($user);
+        } catch (\Throwable $e) {
+            $isStaff = false;
+        }
+        if ($isStaff) {
+            return $explicitId ?? $this->ownerCompanyId($request);
+        }
+
+        // Tenants: an explicit company_id is honoured ONLY for their own
+        // companies — without this check the read allowlist would let any
+        // operator pull another team's emails, roles and pay via ?company_id=.
+        if ($explicitId !== null) {
+            $ids = $this->scopeCompanyIds($request);
+            if ($ids === null || in_array($explicitId, $ids, true)) {
+                return $explicitId;
+            }
         }
 
         return $this->ownerCompanyId($request);
@@ -1469,7 +1503,9 @@ class CrmController extends Controller
         }
         $end = (clone $start)->endOfMonth();
 
-        $company = Company::query()->with(['users:id,name,email,status'])->find($companyId);
+        $company = Company::query()
+            ->with(['users:id,name,email,status,phone,created_at,last_login_at'])
+            ->find($companyId);
         if ($company === null) {
             return response()->json(['success' => false, 'message' => 'Company not found'], 404);
         }
@@ -1527,6 +1563,9 @@ class CrmController extends Controller
                     'email' => $emp->email,
                     'status' => $emp->status,
                     'role_name' => $roleNames[$emp->id] ?? null,
+                    'phone' => $emp->phone,
+                    'joined_at' => optional($emp->created_at)->toIso8601String(),
+                    'last_login_at' => optional($emp->last_login_at)->toIso8601String(),
                 ],
                 'orders_count' => $ordersCount,
                 'won_deals' => $wonDeals,
@@ -1553,6 +1592,82 @@ class CrmController extends Controller
                 'month' => $start->format('Y-m'),
                 'sales_count_statuses' => $countStatuses,
             ],
+        ]);
+    }
+
+    /**
+     * GET crm/team/{user}/stats — one employee's performance breakdowns for
+     * the team-detail Performance tab: last-6-months won-deal revenue series
+     * + by-service / top-destination splits of their direct bookings
+     * (orders.sold_by_user_id, counted statuses only). Company scope comes
+     * from teamCompanyId (tenant-validated), and the target must actually be
+     * a member of that company.
+     */
+    public function teamMemberStats(Request $request, int $user): JsonResponse
+    {
+        $companyId = $this->teamCompanyId($request);
+        if ($companyId === null) {
+            return response()->json(['success' => false, 'message' => 'Company not found'], 404);
+        }
+        $isMember = UserCompany::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $user)
+            ->exists();
+        if (! $isMember) {
+            return response()->json(['success' => false, 'message' => 'User not found in company'], 404);
+        }
+
+        // Last 6 calendar months of won-deal revenue, grouped in PHP — month
+        // extraction SQL differs between the sqlite test DB and PG prod.
+        $from = now()->startOfMonth()->subMonthsNoOverflow(5);
+        $deals = CrmDeal::query()
+            ->where('owner_user_id', $user)
+            ->where('company_id', $companyId)
+            ->where('stage', 'won')
+            ->where('updated_at', '>=', $from)
+            ->get(['currency', 'value_amount', 'updated_at']);
+
+        $monthly = [];
+        for ($i = 0; $i < 6; $i++) {
+            $m = (clone $from)->addMonthsNoOverflow($i)->format('Y-m');
+            $monthly[$m] = ['month' => $m, 'won' => 0, 'revenue' => []];
+        }
+        foreach ($deals as $d) {
+            $key = optional($d->updated_at)->format('Y-m');
+            if ($key === null || ! isset($monthly[$key])) {
+                continue;
+            }
+            $monthly[$key]['won']++;
+            $cur = $d->currency ?? 'USD';
+            $monthly[$key]['revenue'][$cur] = ($monthly[$key]['revenue'][$cur] ?? 0.0) + (float) $d->value_amount;
+        }
+        $monthlyOut = array_values(array_map(fn (array $m): array => [
+            'month' => $m['month'],
+            'won' => $m['won'],
+            'revenue' => collect($m['revenue'])
+                ->map(fn ($total, $currency) => ['currency' => $currency, 'total' => (float) $total])
+                ->values(),
+        ], $monthly));
+
+        $countStatuses = $this->salesCountStatusesFor($companyId);
+        $itemScope = fn () => DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->whereNull('order_items.deleted_at')
+            ->whereNull('orders.deleted_at')
+            ->where('orders.company_id', $companyId)
+            ->where('orders.sold_by_user_id', $user)
+            ->whereIn('orders.status', $countStatuses);
+
+        [$services, $destinations] = $this->itemBreakdowns($itemScope);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'monthly' => $monthlyOut,
+                'services' => $services,
+                'destinations' => $destinations,
+            ],
+            'meta' => ['company_id' => $companyId],
         ]);
     }
 
