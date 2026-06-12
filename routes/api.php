@@ -64,6 +64,7 @@ use App\Http\Controllers\Api\CustomerPartnerController;
 use App\Http\Controllers\Api\CustomerStatsController;
 use App\Http\Controllers\Api\CustomerSupportController;
 use App\Http\Controllers\Api\CustomerVoucherController;
+use App\Http\Controllers\Api\ConnectorDemoController;
 use App\Http\Controllers\Api\CustomFieldsController;
 use App\Http\Controllers\Api\DiscoveryController;
 use App\Http\Controllers\Api\EmailVerificationController;
@@ -118,6 +119,7 @@ use App\Http\Controllers\Api\ServiceCatalogController;
 use App\Http\Controllers\Api\StorefrontPackageController;
 use App\Http\Controllers\Api\StripeConnectController;
 use App\Http\Controllers\Api\SubscriptionsController;
+use App\Http\Controllers\Api\SupplierConnectionController;
 use App\Http\Controllers\Api\SupportAdminController;
 use App\Http\Controllers\Api\TimeOffController;
 use App\Http\Controllers\Api\TimePunchController;
@@ -295,6 +297,10 @@ Route::get('hero-tabs', [HeroTabsController::class, 'show'])->middleware('thrott
 // Public read so Header/Footer/Contact-page can fetch with no auth.
 Route::get('brand-settings', [BrandSettingsController::class, 'show'])->middleware('throttle:api_public');
 
+// Built-in DEMO supplier for the External API page (roadmap §4) — basic-auth zulu-demo creds
+Route::get('connector-demo/ping', [ConnectorDemoController::class, 'ping'])->middleware('throttle:api_public');
+Route::get('connector-demo/inventory', [ConnectorDemoController::class, 'inventory'])->middleware('throttle:api_public');
+
 // Header menu + Footer columns — public reads (Sprint 2)
 Route::get('header-menu', [HeaderMenuController::class, 'show'])->middleware('throttle:api_public');
 Route::get('footer', [FooterController::class, 'show'])->middleware('throttle:api_public');
@@ -431,6 +437,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('time-punches', [TimePunchController::class, 'store']);
     Route::post('time-punches/clock-in', [TimePunchController::class, 'clockIn']);
     Route::post('time-punches/{id}/clock-out', [TimePunchController::class, 'clockOut'])->whereNumber('id');
+
+    // External API supplier connections (roadmap §4) — operator ↔ external inventory base
+    Route::get('supplier-connections', [SupplierConnectionController::class, 'index']);
+    Route::post('supplier-connections', [SupplierConnectionController::class, 'store']);
+    Route::post('supplier-connections/{id}/test', [SupplierConnectionController::class, 'test'])->whereNumber('id');
+    Route::post('supplier-connections/{id}/import', [SupplierConnectionController::class, 'import'])->whereNumber('id');
+    Route::delete('supplier-connections/{id}', [SupplierConnectionController::class, 'destroy'])->whereNumber('id');
 
     // Custom field definitions (Phase 7.4) + per-entity stored values (roadmap §4)
     Route::get('custom-field-values', [CustomFieldsController::class, 'values']);
