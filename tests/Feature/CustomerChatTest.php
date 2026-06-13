@@ -211,4 +211,80 @@ class CustomerChatTest extends TestCase
         $this->getJson('/api/chat/conversations', $this->authHeaders($customer))
             ->assertStatus(403);
     }
+
+    public function test_staff_user_cannot_open_a_customer_thread(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $company = Company::query()->firstOrFail();
+        // A role-bound member (operator) can reach the admin panel → not a B2C
+        // customer → must be rejected from the customer support widget routes.
+        $operator = $this->makeOperatorWithChatView($company);
+
+        $this->getJson('/api/customer/chat', $this->authHeaders($operator))
+            ->assertStatus(403);
+
+        $this->resetAuthGuards();
+        $this->getJson('/api/customer/chat/messages', $this->authHeaders($operator))
+            ->assertStatus(403);
+
+        $this->resetAuthGuards();
+        $this->postJson('/api/customer/chat/messages', ['body' => 'I am staff'], $this->authHeaders($operator))
+            ->assertStatus(403);
+
+        // No customer thread was created for the staff user.
+        $this->assertSame(
+            0,
+            ChatConversation::query()->where('type', 'customer')->where('customer_user_id', $operator->id)->count()
+        );
+    }
+
+    public function test_staff_reply_notifies_the_customer(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+        $customer = $this->makeCustomer();
+
+        $this->postJson('/api/customer/chat/messages', ['body' => 'Հարց ունեմ'], $this->authHeaders($customer))
+            ->assertStatus(201);
+        $threadId = ChatConversation::query()->where('type', 'customer')->value('id');
+
+        // Customer has no notification yet (only staff were notified).
+        $this->assertSame(
+            0,
+            Notification::query()->where('user_id', $customer->id)->where('type', 'chat')->count()
+        );
+
+        $this->resetAuthGuards();
+        $this->postJson(
+            '/api/chat/conversations/'.$threadId.'/messages',
+            ['body' => 'Բարև, օգնում ենք'],
+            $this->authHeaders($admin)
+        )->assertStatus(201);
+
+        // The staff reply produced a bell notification for the customer.
+        $this->assertSame(
+            1,
+            Notification::query()->where('user_id', $customer->id)->where('type', 'chat')->count()
+        );
+    }
+
+    public function test_duplicate_customer_thread_is_rejected_by_unique_index(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $customer = $this->makeCustomer();
+
+        $this->postJson('/api/customer/chat/messages', ['body' => 'Առաջին'], $this->authHeaders($customer))
+            ->assertStatus(201);
+
+        // A second customer thread for the same user must be impossible.
+        $this->expectException(\Illuminate\Database\UniqueConstraintViolationException::class);
+        ChatConversation::query()->create([
+            'company_id' => null,
+            'type' => ChatConversation::TYPE_CUSTOMER,
+            'title' => null,
+            'created_by_user_id' => $customer->id,
+            'customer_user_id' => $customer->id,
+            'last_message_at' => now(),
+        ]);
+    }
 }

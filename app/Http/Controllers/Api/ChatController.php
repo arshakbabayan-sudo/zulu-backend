@@ -8,9 +8,11 @@ use App\Models\ChatMessage;
 use App\Models\ChatParticipant;
 use App\Models\User;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Internal chat (2026-06-01, Phase 1 — polling, no websockets).
@@ -30,6 +32,7 @@ class ChatController extends Controller
 {
     public function __construct(
         private AdminAccessService $adminAccessService,
+        private NotificationService $notificationService,
     ) {}
 
     /** Customer-support threads are a platform queue — who may handle them. */
@@ -132,8 +135,11 @@ class ChatController extends Controller
             return [
                 'id' => $c->id,
                 'type' => $c->type,
+                // For customer threads the title is the customer's name and may
+                // be null (e.g. a deleted account). Never emit a localized word
+                // like 'Customer' here — the admin renders a translated fallback.
                 'title' => $c->title
-                    ?: ($isCustomer ? ($c->customer?->name ?? 'Customer') : $others->pluck('name')->implode(', ')),
+                    ?: ($isCustomer ? $c->customer?->name : $others->pluck('name')->implode(', ')),
                 'company_id' => $c->company_id,
                 'participants' => $others,
                 'is_customer' => $isCustomer,
@@ -271,6 +277,14 @@ class ChatController extends Controller
             ->firstOrCreate(['conversation_id' => $conversation, 'user_id' => $me->id])
             ->update(['last_read_at' => now()]);
 
+        // A customer with the widget closed has no other signal that support
+        // replied — give them an in-app bell notification (best-effort).
+        if ($conv->type === ChatConversation::TYPE_CUSTOMER
+            && $conv->customer_user_id !== null
+            && $conv->customer_user_id !== $me->id) {
+            $this->notifyCustomerOfReply($conv, $data['body']);
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -281,5 +295,34 @@ class ChatController extends Controller
                 'created_at' => optional($msg->created_at)->toIso8601String(),
             ],
         ], 201);
+    }
+
+    /** In-app notification to the customer that platform support replied. */
+    private function notifyCustomerOfReply(ChatConversation $conv, string $body): void
+    {
+        $titles = [
+            'en' => 'New reply from ZULU support',
+            'hy' => 'Նոր պատասխան ZULU աջակցությունից',
+            'ru' => 'Новый ответ от поддержки ZULU',
+        ];
+
+        try {
+            $customer = User::query()->find($conv->customer_user_id);
+            if ($customer === null) {
+                return;
+            }
+            $lang = in_array($customer->preferred_language, ['en', 'hy', 'ru'], true)
+                ? $customer->preferred_language
+                : 'hy';
+            $this->notificationService->create([
+                'user_id' => $customer->id,
+                'type' => 'chat',
+                'title' => $titles[$lang],
+                'message' => mb_substr($body, 0, 200),
+            ]);
+        } catch (\Throwable $e) {
+            // Best-effort — never block the staff reply.
+            Log::warning('Customer chat reply notification failed', ['error' => $e->getMessage()]);
+        }
     }
 }

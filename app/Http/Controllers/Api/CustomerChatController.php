@@ -9,6 +9,7 @@ use App\Models\ChatParticipant;
 use App\Models\User;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Notifications\NotificationService;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,9 @@ class CustomerChatController extends Controller
         if ($me === null) {
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
         }
+        if ($deny = $this->denyIfStaff($me)) {
+            return $deny;
+        }
 
         $thread = $this->myThread($me);
         if ($thread === null) {
@@ -51,6 +55,9 @@ class CustomerChatController extends Controller
         $me = $request->user();
         if ($me === null) {
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+        if ($deny = $this->denyIfStaff($me)) {
+            return $deny;
         }
 
         $thread = $this->myThread($me);
@@ -82,28 +89,19 @@ class CustomerChatController extends Controller
         if ($me === null) {
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
         }
+        if ($deny = $this->denyIfStaff($me)) {
+            return $deny;
+        }
 
         $data = $request->validate(['body' => ['required', 'string', 'max:5000']]);
 
-        $thread = $this->myThread($me);
-        $isNew = $thread === null;
+        // Resolve (or lazily create) the one support thread BEFORE the message
+        // transaction. The create is race-safe against the partial unique index
+        // on (customer_user_id) WHERE type='customer' — a concurrent first
+        // message that lost the race re-fetches the winner's thread.
+        [$thread, $isNew] = $this->resolveThread($me);
 
-        $msg = DB::transaction(function () use ($me, $data, &$thread) {
-            if ($thread === null) {
-                $thread = ChatConversation::query()->create([
-                    'company_id' => null,
-                    'type' => ChatConversation::TYPE_CUSTOMER,
-                    'title' => null,
-                    'created_by_user_id' => $me->id,
-                    'customer_user_id' => $me->id,
-                    'last_message_at' => now(),
-                ]);
-                ChatParticipant::query()->create([
-                    'conversation_id' => $thread->id,
-                    'user_id' => $me->id,
-                ]);
-            }
-
+        $msg = DB::transaction(function () use ($me, $data, $thread) {
             $msg = ChatMessage::query()->create([
                 'conversation_id' => $thread->id,
                 'sender_id' => $me->id,
@@ -111,8 +109,7 @@ class CustomerChatController extends Controller
             ]);
             ChatConversation::query()->where('id', $thread->id)->update(['last_message_at' => now()]);
             ChatParticipant::query()
-                ->where('conversation_id', $thread->id)
-                ->where('user_id', $me->id)
+                ->firstOrCreate(['conversation_id' => $thread->id, 'user_id' => $me->id])
                 ->update(['last_read_at' => now()]);
 
             return $msg;
@@ -126,6 +123,57 @@ class CustomerChatController extends Controller
             'success' => true,
             'data' => $this->serializeMessage($msg, $me),
         ], 201);
+    }
+
+    /**
+     * The support widget is for B2C customers only. Anyone who can reach the
+     * admin panel — platform staff or a member with a role-bound company
+     * membership (operator/agent) — must NOT open a customer thread, or their
+     * self-thread would pollute the platform support queue. This is the
+     * authoritative gate; the widget also hides itself for staff client-side.
+     */
+    private function denyIfStaff(User $me): ?JsonResponse
+    {
+        if ($this->adminAccessService->canAccessAdminPanel($me)) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        return null;
+    }
+
+    /**
+     * Find the customer's single support thread, creating it on first use.
+     * Race-safe: if two concurrent first messages both try to create, the
+     * partial unique index makes the loser throw and we re-fetch the winner.
+     *
+     * @return array{0: ChatConversation, 1: bool} [thread, isNew]
+     */
+    private function resolveThread(User $me): array
+    {
+        $thread = $this->myThread($me);
+        if ($thread !== null) {
+            return [$thread, false];
+        }
+
+        try {
+            $thread = ChatConversation::query()->create([
+                'company_id' => null,
+                'type' => ChatConversation::TYPE_CUSTOMER,
+                'title' => null,
+                'created_by_user_id' => $me->id,
+                'customer_user_id' => $me->id,
+                'last_message_at' => now(),
+            ]);
+            ChatParticipant::query()->firstOrCreate([
+                'conversation_id' => $thread->id,
+                'user_id' => $me->id,
+            ]);
+
+            return [$thread, true];
+        } catch (UniqueConstraintViolationException $e) {
+            // Concurrent first message won — reuse its thread, don't re-notify.
+            return [$this->myThread($me) ?? throw $e, false];
+        }
     }
 
     private function myThread(User $me): ?ChatConversation
@@ -169,18 +217,35 @@ class CustomerChatController extends Controller
         ];
     }
 
-    /** In-app notification to the platform support crew on a NEW thread only. */
+    /**
+     * In-app notification to the platform support crew on a NEW thread only.
+     * The fan-out recipients each have their own admin language, so the title
+     * is resolved per recipient instead of a single hardcoded string.
+     */
     private function notifyPlatformStaff(User $customer, string $firstMessage): void
     {
+        $titles = [
+            'en' => 'New chat from customer: ',
+            'hy' => 'Նոր չաթ հաճախորդից՝ ',
+            'ru' => 'Новый чат от клиента: ',
+        ];
+
         try {
-            foreach ($this->adminAccessService->platformSupportUserIds() as $userId) {
-                if ($userId === $customer->id) {
+            $staff = User::query()
+                ->whereIn('id', $this->adminAccessService->platformSupportUserIds())
+                ->get(['id', 'preferred_language']);
+
+            foreach ($staff as $user) {
+                if ($user->id === $customer->id) {
                     continue;
                 }
+                $lang = in_array($user->preferred_language, ['en', 'hy', 'ru'], true)
+                    ? $user->preferred_language
+                    : 'hy';
                 $this->notificationService->create([
-                    'user_id' => $userId,
+                    'user_id' => $user->id,
                     'type' => 'chat',
-                    'title' => 'Նոր չաթ հաճախորդից՝ '.$customer->name,
+                    'title' => $titles[$lang].$customer->name,
                     'message' => mb_substr($firstMessage, 0, 200),
                 ]);
             }
