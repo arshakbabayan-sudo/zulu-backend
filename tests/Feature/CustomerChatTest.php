@@ -238,6 +238,19 @@ class CustomerChatTest extends TestCase
         );
     }
 
+    public function test_super_admin_may_use_the_customer_chat(): void
+    {
+        $this->seed(RbacBootstrapSeeder::class);
+        $admin = User::query()->where('email', 'admin@zulu.local')->firstOrFail();
+
+        // Super admin owns the site — not blocked by the B2C-only gate.
+        $this->getJson('/api/customer/chat', $this->authHeaders($admin))->assertOk();
+
+        $this->resetAuthGuards();
+        $this->postJson('/api/customer/chat/messages', ['body' => 'owner test'], $this->authHeaders($admin))
+            ->assertStatus(201);
+    }
+
     public function test_staff_reply_notifies_the_customer(): void
     {
         $this->seed(RbacBootstrapSeeder::class);

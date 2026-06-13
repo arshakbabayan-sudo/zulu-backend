@@ -134,7 +134,9 @@ class CustomerChatController extends Controller
      */
     private function denyIfStaff(User $me): ?JsonResponse
     {
-        if ($this->adminAccessService->canAccessAdminPanel($me)) {
+        // The super admin owns the site and may use/test the widget; only NON-super
+        // tenant/platform staff are blocked (their self-thread would pollute the queue).
+        if ($this->adminAccessService->canAccessAdminPanel($me) && ! $this->adminAccessService->isSuperAdmin($me)) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
