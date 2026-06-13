@@ -3,11 +3,13 @@
 namespace Tests\Feature\Sprint1;
 
 use App\Models\Company;
+use App\Models\Invoice;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Package;
 use App\Models\PackageComponent;
 use App\Models\User;
+use Illuminate\Http\Request;
 use App\Services\Analytics\StatisticsService;
 use App\Services\Bookings\BookingService;
 use App\Services\Commissions\CommissionService;
@@ -134,6 +136,83 @@ class StatisticsCompanyStatsParityTest extends TestCase
             ['booking', 'package_order'],
             $orders->map(fn (Order $order): ?string => $order->metadata['legacy_origin'] ?? null)->all()
         );
+    }
+
+    public function test_sales_trend_returns_twelve_points_without_sql_error(): void
+    {
+        // Regression: the old getSalesTrend used MySQL DATE_FORMAT/YEARWEEK and
+        // 500'd on Postgres (and SQLite). It must now PHP-bucket into 12 points.
+        $company = $this->createCompany();
+        $user = $this->createUser();
+        $packageService = $this->makePackageOrderService();
+        $package = $this->createPackageWithComponents($company, ['hotel'], 'Trend');
+        $order = $packageService->createOrder($package, $user, [
+            'booking_channel' => 'public_b2c',
+            'adults_count' => 1,
+        ]);
+        $packageService->markPaid($order->fresh());
+        Invoice::query()
+            ->whereHas('order', fn ($q) => $q->where('id', $order->id))
+            ->update(['client_price' => 250, 'currency' => 'USD', 'status' => Invoice::STATUS_PAID]);
+
+        $trend = app(StatisticsService::class)->getSalesTrend($company->id, 'monthly', 'USD');
+
+        $this->assertCount(12, $trend['labels']);
+        $this->assertCount(12, $trend['values']);
+        $this->assertSame('USD', $trend['currency']);
+        // The paid invoice lands in the current (last) month bucket.
+        $this->assertGreaterThan(0, $trend['values'][11]);
+    }
+
+    public function test_revenue_is_grouped_by_currency_and_never_summed(): void
+    {
+        $company = $this->createCompany();
+        $user = $this->createUser();
+        $packageService = $this->makePackageOrderService();
+
+        $p1 = $this->createPackageWithComponents($company, ['hotel'], 'USD One');
+        $o1 = $packageService->createOrder($p1, $user, ['booking_channel' => 'public_b2c', 'adults_count' => 1]);
+        $packageService->markPaid($o1->fresh());
+        Invoice::query()->whereHas('order', fn ($q) => $q->where('id', $o1->id))
+            ->update(['client_price' => 100, 'currency' => 'USD', 'status' => Invoice::STATUS_PAID]);
+
+        $p2 = $this->createPackageWithComponents($company, ['hotel'], 'EUR One');
+        $o2 = $packageService->createOrder($p2, $user, ['booking_channel' => 'public_b2c', 'adults_count' => 1]);
+        $packageService->markPaid($o2->fresh());
+        Invoice::query()->whereHas('order', fn ($q) => $q->where('id', $o2->id))
+            ->update(['client_price' => 70, 'currency' => 'EUR', 'status' => Invoice::STATUS_PAID]);
+
+        $stats = app(StatisticsService::class)->getCompanyStats($company->id, []);
+
+        // Two currencies kept apart, not collapsed into one total.
+        $this->assertArrayHasKey('USD', $stats['revenue_by_currency']);
+        $this->assertArrayHasKey('EUR', $stats['revenue_by_currency']);
+        $this->assertEqualsWithDelta(100.0, $stats['revenue_by_currency']['USD'], 0.01);
+        $this->assertEqualsWithDelta(70.0, $stats['revenue_by_currency']['EUR'], 0.01);
+    }
+
+    public function test_payload_includes_breakdowns_and_primary_currency(): void
+    {
+        $company = $this->createCompany();
+        $user = $this->createUser();
+        $packageService = $this->makePackageOrderService();
+        $package = $this->createPackageWithComponents($company, ['hotel', 'flight'], 'Breakdown');
+        $order = $packageService->createOrder($package, $user, ['booking_channel' => 'public_b2c', 'adults_count' => 1]);
+        $packageService->markPaid($order->fresh());
+        Invoice::query()->whereHas('order', fn ($q) => $q->where('id', $order->id))
+            ->update(['client_price' => 300, 'currency' => 'USD', 'status' => Invoice::STATUS_PAID]);
+
+        $payload = app(StatisticsService::class)->buildOperatorCompanyStatisticsPayload(
+            $company->id,
+            Request::create('/api/operator/statistics', 'GET')
+        );
+
+        $this->assertArrayHasKey('service_breakdown', $payload);
+        $this->assertArrayHasKey('top_destinations', $payload);
+        $this->assertArrayHasKey('trend', $payload);
+        $this->assertNotEmpty($payload['service_breakdown']);
+        $this->assertSame('USD', $payload['stats']['primary_currency']);
+        $this->assertArrayHasKey('active_offers', $payload['stats']);
     }
 
     private function createBookingFlow(
