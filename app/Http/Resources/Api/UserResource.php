@@ -22,6 +22,12 @@ class UserResource extends JsonResource
         $isPlatformAdmin = $adminAccess->isPlatformAdmin($user);
         $operatorStatisticsPlatformScope = $adminAccess->isAdminStatisticsSuperScope($user);
         $isStatisticsElevatedOnly = $adminAccess->isStatisticsElevatedOnly($user);
+        // Roadmap §11 — a tenant operator-admin can see their OWN company's
+        // statistics page (scoped server-side to that company). Excludes pure
+        // agents: resolveFirstOperatorAdminCompanyId only resolves operator-tier
+        // memberships.
+        $operatorStatisticsOwnScope = ! $operatorStatisticsPlatformScope
+            && $adminAccess->resolveFirstOperatorAdminCompanyId($user) !== null;
 
         // Role permissions grouped by company, so per-employee overrides
         // (Phase Գ.6 / Bucket D.4) can be applied per company before the
@@ -131,6 +137,7 @@ class UserResource extends JsonResource
             'canonical_role' => $canonicalRole,
             'is_super_admin' => $isSuperAdmin,
             'operator_statistics_platform_scope' => $operatorStatisticsPlatformScope,
+            'operator_statistics_own_scope' => $operatorStatisticsOwnScope,
             'is_statistics_elevated_only' => $isStatisticsElevatedOnly,
             'companies' => $sortedCompanies
                 ->map(fn ($c) => [
@@ -150,6 +157,7 @@ class UserResource extends JsonResource
                 'is_super_admin' => $isSuperAdmin,
                 'is_platform_admin' => $isPlatformAdmin,
                 'operator_statistics_platform_scope' => $operatorStatisticsPlatformScope,
+                'operator_statistics_own_scope' => $operatorStatisticsOwnScope,
                 'is_statistics_elevated_only' => $isStatisticsElevatedOnly,
             ],
         ];
