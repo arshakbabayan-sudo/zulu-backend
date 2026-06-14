@@ -70,6 +70,11 @@ class OrderItem extends Model
         return $this->belongsTo(Order::class, 'order_id');
     }
 
+    public function package(): BelongsTo
+    {
+        return $this->belongsTo(Package::class, 'package_id');
+    }
+
     public function parent(): BelongsTo
     {
         return $this->belongsTo(self::class, 'parent_item_id');

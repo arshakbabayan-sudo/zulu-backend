@@ -421,7 +421,7 @@ class PackageOrderService
         return Order::query()
             ->where('metadata->legacy_origin', 'package_order')
             ->where('user_id', $user->id)
-            ->with(['items'])
+            ->with(['items.package'])
             ->orderByDesc('created_at')
             ->paginate($perPage);
     }

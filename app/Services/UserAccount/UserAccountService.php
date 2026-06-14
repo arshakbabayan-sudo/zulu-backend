@@ -6,6 +6,7 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\SavedItem;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -76,6 +77,7 @@ class UserAccountService
         $orders = Order::query()
             ->where('user_id', $user->id)
             ->whereIn('metadata->legacy_origin', ['booking', 'package_order'])
+            ->with(['items.package'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -83,6 +85,23 @@ class UserAccountService
 
         foreach ($orders as $order) {
             $origin = (string) ($order->metadata['legacy_origin'] ?? '');
+
+            // Derive a human destination + trip length from the order's items and
+            // their linked package (was hardcoded null before, so cards showed
+            // only '#order_number'). The package relation is eager-loaded above.
+            $package = optional($order->items->first())->package;
+            $destination = $package
+                ? (collect([$package->destination_city, $package->destination_country])
+                    ->filter()
+                    ->implode(', ') ?: null)
+                : null;
+
+            $dateFrom = $order->items->min('date_from');
+            $dateTo = $order->items->max('date_to');
+            $duration = ($dateFrom && $dateTo)
+                ? ((int) Carbon::parse($dateFrom)->diffInDays(Carbon::parse($dateTo)) ?: $package?->duration_days)
+                : $package?->duration_days;
+
             if ($origin === 'package_order') {
                 $rows->push([
                     'type' => 'package',
@@ -92,8 +111,8 @@ class UserAccountService
                     'payment_status' => $order->status,
                     'final_total_snapshot' => (float) $order->total,
                     'currency' => $order->currency,
-                    'destination' => null,
-                    'duration_days' => null,
+                    'destination' => $destination ?: $package?->package_title,
+                    'duration_days' => $duration,
                     'created_at' => $order->created_at?->toIso8601String(),
                 ]);
 
@@ -103,8 +122,14 @@ class UserAccountService
             $rows->push([
                 'type' => 'booking',
                 'id' => $order->id,
+                'order_number' => $order->order_number,
                 'status' => $order->status,
+                'payment_status' => $order->status,
+                'final_total_snapshot' => (float) $order->total,
                 'total_price' => (float) $order->total,
+                'currency' => $order->currency,
+                'destination' => $destination,
+                'duration_days' => $duration,
                 'created_at' => $order->created_at?->toIso8601String(),
             ]);
         }

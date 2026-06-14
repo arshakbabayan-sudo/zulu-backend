@@ -32,6 +32,21 @@ class OrderResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'items' => $this->whenLoaded('items', fn () => $this->items->values()),
+            // Lightweight package summary for B2C booking lists (My-account → Bookings).
+            // Populated only when the package relation was eager-loaded (items.package);
+            // returns null otherwise so we never trigger an N+1 lazy-load here.
+            'package' => $this->whenLoaded('items', function () {
+                $first = $this->items->first();
+                if ($first === null || ! $first->relationLoaded('package') || $first->package === null) {
+                    return null;
+                }
+
+                return [
+                    'package_title' => $first->package->package_title,
+                    'destination_city' => $first->package->destination_city,
+                    'destination_country' => $first->package->destination_country,
+                ];
+            }),
             'user' => $this->whenLoaded('user', function () {
                 return [
                     'id' => $this->user->id,
