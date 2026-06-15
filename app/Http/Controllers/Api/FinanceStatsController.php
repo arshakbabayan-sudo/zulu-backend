@@ -182,38 +182,47 @@ class FinanceStatsController extends Controller
         }
 
         $data = Cache::remember('platform_commissions_stats', 60, function () {
-            // commission_rules table stores both percentage + fixed rules; status
-            // and percent live on the JSON `data` payload (rule_type='commission').
-            // We use a defensive fallback path that works on the legacy
-            // `commission_policies` table if it still exists in some envs.
+            // commission_rules has FLAT columns (NOT a JSON payload): `type`
+            // (percentage|fixed|hybrid), `status` (active|inactive|scheduled),
+            // `active` (bool), and `percentage_value` stored AS a percent
+            // (10.0 = 10%; the calc services divide by 100). The previous version
+            // queried non-existent `rule_type` and `percent` columns, so every
+            // request 500'd whenever the table was present (column-not-found).
+            // Legacy `commission_policies` fallback kept for old envs.
             $activeCount = 0;
             $avgRate = 0.0;
             if (Schema::hasTable('commission_rules')) {
-                $activeCount = (int) DB::table('commission_rules')
-                    ->where('rule_type', 'commission')
+                $activeBase = fn () => DB::table('commission_rules')
                     ->where('status', 'active')
-                    ->count();
-                $avgRate = (float) (DB::table('commission_rules')
-                    ->where('rule_type', 'commission')
-                    ->where('status', 'active')
-                    ->whereNotNull('percent')
-                    ->avg('percent') ?? 0);
+                    ->where('active', true);
+                $activeCount = (int) $activeBase()->count();
+                $avgRate = (float) ($activeBase()
+                    ->whereNotNull('percentage_value')
+                    ->avg('percentage_value') ?? 0);
             } elseif (Schema::hasTable('commission_policies')) {
                 $activeCount = (int) DB::table('commission_policies')->where('status', 'active')->count();
                 $avgRate = (float) (DB::table('commission_policies')->where('status', 'active')->whereNotNull('percent')->avg('percent') ?? 0);
             }
 
+            // commission_transactions carry NO status column — every row is a
+            // recorded accrual. "Recorded (30d)" = Σ commission_amount in window.
             $thirtyDaysAgo = now()->subDays(30);
             $recordedAmount = 0.0;
-            $pendingAmount = 0.0;
-            $pendingCount = 0;
             if (Schema::hasTable('commission_transactions')) {
                 $recordedAmount = (float) (DB::table('commission_transactions')
                     ->where('created_at', '>=', $thirtyDaysAgo)
                     ->sum('commission_amount') ?? 0);
-                $pendingAggregate = DB::table('commission_transactions')
-                    ->where('status', 'pending')
-                    ->selectRaw('COALESCE(SUM(commission_amount), 0) AS amount, COUNT(*) AS cnt')
+            }
+
+            // "Pending" = net still owed to sellers, from the entitlement ledger
+            // (the real source of pending payouts; commission_transactions have
+            // no pending state). Mirrors entitlementSplitAndPending().
+            $pendingAmount = 0.0;
+            $pendingCount = 0;
+            if (Schema::hasTable('supplier_entitlements')) {
+                $pendingAggregate = DB::table('supplier_entitlements')
+                    ->whereIn('status', ['pending', 'accrued', 'payable'])
+                    ->selectRaw('COALESCE(SUM(net_amount), 0) AS amount, COUNT(*) AS cnt')
                     ->first();
                 $pendingAmount = (float) ($pendingAggregate->amount ?? 0);
                 $pendingCount = (int) ($pendingAggregate->cnt ?? 0);
