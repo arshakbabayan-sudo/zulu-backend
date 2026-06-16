@@ -7,9 +7,11 @@ use App\Http\Controllers\Concerns\AuthorizesCommerceAccess;
 use App\Http\Controllers\Concerns\HandlesCustomFieldValues;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\PackageResource;
+use App\Models\Company;
 use App\Models\Offer;
 use App\Models\PackageComponent;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Packages\PackageReviewService;
 use App\Services\Packages\PackageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -287,12 +289,112 @@ class PackageController extends Controller
             return $response;
         }
 
+        // §10 first-package gate: a company's first package must be approved by
+        // a ZULU admin. Until the company is trusted, operators submit it for
+        // review instead of self-publishing. Platform/ZULU admins bypass (they
+        // ARE the approver and reach activation via the approval path).
+        if (! $this->adminAccessService->isPlatformAdmin($request->user())) {
+            $trusted = Company::query()
+                ->whereKey($model->company_id)
+                ->whereNotNull('packages_trusted_at')
+                ->exists();
+            if (! $trusted) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your first package must be approved by ZULU. Submit it for review.',
+                    'code' => 'first_package_requires_review',
+                ], 422);
+            }
+        }
+
         $model = $packageService->activate($model);
         $model->load(['offer', 'components.offer']);
 
         return response()->json([
             'success' => true,
             'data' => PackageResource::make($model)->toArray($request),
+        ]);
+    }
+
+    /** §10 — operator submits a draft/rejected package for ZULU review. */
+    public function submitForReview(Request $request, string $package, PackageReviewService $reviewService, PackageService $packageService): JsonResponse
+    {
+        $companyIds = $this->adminAccessService->companyIdsForCommerceList($request->user(), 'packages.edit');
+        $model = $packageService->findForCompanyScope($package, $companyIds);
+        if ($model === null) {
+            $candidate = $packageService->findByIdWithPackageOffer($package);
+            if ($candidate !== null && $request->user()->belongsToCompany((int) $candidate->company_id)) {
+                return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+            }
+
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        if ($response = $this->ensureCommerceAccess($request, (int) $model->company_id, 'packages.edit')) {
+            return $response;
+        }
+
+        $model = $reviewService->submitForReview($model);
+        $model->load(['offer', 'components.offer']);
+
+        return response()->json([
+            'success' => true,
+            'data' => PackageResource::make($model)->toArray($request),
+        ]);
+    }
+
+    /** §10 — ZULU admin (platform-admin gated) approves a pending_review package → active. */
+    public function approvePackage(Request $request, string $package, PackageReviewService $reviewService, PackageService $packageService): JsonResponse
+    {
+        $model = $packageService->findByIdWithPackageOffer($package);
+        if ($model === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $model = $reviewService->approve($model, $request->user());
+        $model->load(['offer', 'components.offer']);
+
+        return response()->json([
+            'success' => true,
+            'data' => PackageResource::make($model)->toArray($request),
+        ]);
+    }
+
+    /** §10 — ZULU admin rejects a pending_review package (reason required). */
+    public function rejectPackage(Request $request, string $package, PackageReviewService $reviewService, PackageService $packageService): JsonResponse
+    {
+        $validated = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
+
+        $model = $packageService->findByIdWithPackageOffer($package);
+        if ($model === null) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        $model = $reviewService->reject($model, $request->user(), $validated['reason']);
+
+        return response()->json([
+            'success' => true,
+            'data' => PackageResource::make($model)->toArray($request),
+        ]);
+    }
+
+    /** §10 — ZULU admin queue of packages awaiting first-package review. */
+    public function pendingReview(Request $request, PackageReviewService $reviewService): JsonResponse
+    {
+        $paginator = $reviewService->pendingReviewQueue([
+            'company_id' => $request->query('company_id'),
+            'q' => $request->query('q'),
+        ], (int) $request->query('per_page', 20));
+
+        return response()->json([
+            'success' => true,
+            'data' => $paginator->items(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
         ]);
     }
 

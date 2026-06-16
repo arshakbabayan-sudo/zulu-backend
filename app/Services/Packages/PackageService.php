@@ -424,7 +424,9 @@ class PackageService
     {
         /** @var array<string, list<string>> $allowed */
         $allowed = [
-            'draft' => ['active', 'archived'],
+            'draft' => ['active', 'pending_review', 'archived'],
+            'pending_review' => ['active', 'rejected', 'draft', 'archived'],
+            'rejected' => ['pending_review', 'draft', 'archived'],
             'active' => ['inactive', 'archived'],
             'inactive' => ['active', 'archived', 'draft'],
             'archived' => [],

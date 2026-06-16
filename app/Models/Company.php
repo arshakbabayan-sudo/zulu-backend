@@ -66,6 +66,9 @@ class Company extends Model
         'stripe_charges_enabled',
         'stripe_payouts_enabled',
         'stripe_details_submitted',
+        // §10 — set on the company's FIRST ZULU-approved package; thereafter
+        // the company may self-publish packages directly.
+        'packages_trusted_at',
     ];
 
     /**
@@ -88,6 +91,7 @@ class Company extends Model
             'profile_completed' => 'boolean',
             'seller_activated_at' => 'datetime',
             'archived_at' => 'datetime',
+            'packages_trusted_at' => 'datetime',
             // Phase Է — token columns encrypted at rest. DB dumps + replica
             // exports won't leak usable Google bearers.
             'google_access_token' => 'encrypted',

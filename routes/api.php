@@ -789,6 +789,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::delete('packages/{package}/components/{component}', [PackageController::class, 'removeComponent'])->whereNumber('package')->whereNumber('component')->middleware(['throttle:inventory-write', 'permission:packages.manage_components']);
     Route::post('packages/{package}/activate', [PackageController::class, 'activate'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.edit']);
     Route::post('packages/{package}/deactivate', [PackageController::class, 'deactivate'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.edit']);
+    // §10 — operator submits a package for ZULU first-package review.
+    Route::post('packages/{package}/submit-for-review', [PackageController::class, 'submitForReview'])->whereNumber('package')->middleware(['throttle:inventory-write', 'permission:packages.edit']);
 
     Route::post('package-orders', [PackageOrderController::class, 'store']);
     Route::get('package-orders', [PackageOrderController::class, 'index']);
@@ -936,6 +938,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('bookings/{id}/cancel', [PlatformAdminController::class, 'cancelBooking'])
             ->where('id', '[0-9a-f-]{36}');
         Route::get('packages', [PlatformAdminController::class, 'packages']);
+        // §10 — ZULU first-package approval queue + decisions.
+        Route::get('packages/pending-review', [PackageController::class, 'pendingReview']);
+        Route::post('packages/{package}/approve', [PackageController::class, 'approvePackage'])->whereNumber('package');
+        Route::post('packages/{package}/reject', [PackageController::class, 'rejectPackage'])->whereNumber('package');
         Route::post('packages/{package}/deactivate', [PlatformAdminController::class, 'deactivatePackage'])->whereNumber('package');
         Route::get('packages/{package}/homepage-features', [PlatformAdminController::class, 'listPackageHomepageFeatures'])->whereNumber('package');
         Route::put('packages/{package}/homepage-features', [PlatformAdminController::class, 'syncPackageHomepageFeatures'])->whereNumber('package');

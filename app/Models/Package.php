@@ -36,7 +36,7 @@ class Package extends Model
     public const DISPLAY_PRICE_MODES = ['total', 'per_person', 'from_price'];
 
     /** @var list<string> */
-    public const STATUSES = ['draft', 'active', 'inactive', 'archived'];
+    public const STATUSES = ['draft', 'pending_review', 'active', 'inactive', 'archived', 'rejected'];
 
     protected $fillable = [
         'source_lang',
@@ -64,6 +64,10 @@ class Package extends Model
         'is_featured',
         'component_count',
         'status',
+        'submitted_for_review_at',
+        'reviewed_at',
+        'reviewed_by',
+        'rejection_reason',
         'short_description',
         'main_image',
         'latitude',
@@ -85,6 +89,8 @@ class Package extends Model
             'is_featured' => 'boolean',
             'popularity_score' => 'integer',
             'component_count' => 'integer',
+            'submitted_for_review_at' => 'datetime',
+            'reviewed_at' => 'datetime',
         ];
     }
 
