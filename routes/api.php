@@ -93,7 +93,9 @@ use App\Http\Controllers\Api\MediaUploadController;
 use App\Http\Controllers\Api\Modules\UserVisaApiController;
 use App\Http\Controllers\Api\MoneyFlowTermController;
 use App\Http\Controllers\Api\NewsletterController;
+use App\Http\Controllers\Api\AdminFaqController;
 use App\Http\Controllers\Api\DeviceTokenController;
+use App\Http\Controllers\Api\FaqController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\OAuthController;
@@ -281,6 +283,9 @@ Route::prefix('packages')->middleware('throttle:api_public')->group(function () 
 });
 
 Route::get('pages/{slug}', [PublicPageController::class, 'show'])->middleware('throttle:api_public');
+
+// Public FAQ / help — active entries in the requested language (?lang=).
+Route::get('faqs', [FaqController::class, 'index'])->middleware('throttle:api_public');
 
 // GDPR — public endpoints (no auth — user comes from email link)
 Route::post('account/delete-confirm', [AccountController::class, 'confirmDeletion'])
@@ -1056,6 +1061,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('notifications', [AdminNotificationController::class, 'index']);
         Route::get('notifications/stats', [AdminNotificationController::class, 'stats']);
         Route::post('notifications/bulk-send', [AdminNotificationController::class, 'bulkSend']);
+
+        // FAQ / help management (§12, 2026-06-17) — trilingual CRUD.
+        Route::get('faqs', [AdminFaqController::class, 'index']);
+        Route::post('faqs', [AdminFaqController::class, 'store']);
+        Route::patch('faqs/{faq}', [AdminFaqController::class, 'update'])->whereNumber('faq');
+        Route::delete('faqs/{faq}', [AdminFaqController::class, 'destroy'])->whereNumber('faq');
 
         // Admin notices — authored announcements w/ audience + scheduling
         // (roadmap §4, 2026-06-12). Super-admin only (controller gate).
