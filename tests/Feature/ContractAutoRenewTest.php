@@ -162,6 +162,8 @@ class ContractAutoRenewTest extends TestCase
             'party_a_company_id' => null,
             'party_b_company_id' => $company->id,
             'template_id' => $template->id,
+            'commission_clause' => [],
+            'payment_terms' => [],
             'rendered_body' => ['html' => 'body'],
             'language' => 'en',
             'created_by_user_id' => $admin->id,
