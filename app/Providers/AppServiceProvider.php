@@ -69,14 +69,46 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->bind(PushProvider::class, function () {
-            $projectId = (string) config('services.firebase.project_id', '');
-            $serverKey = config('services.firebase.server_key');
-            if ($projectId !== '') {
-                return new FirebasePushProvider($projectId, is_string($serverKey) ? $serverKey : null);
+            $serviceAccount = $this->firebaseServiceAccount();
+            if ($serviceAccount !== null) {
+                $projectId = (string) (config('services.firebase.project_id')
+                    ?: ($serviceAccount['project_id'] ?? ''));
+                if ($projectId !== '') {
+                    return new FirebasePushProvider($projectId, $serviceAccount);
+                }
             }
 
             return new NoopPushProvider;
         });
+    }
+
+    /**
+     * Decode the configured Firebase service-account JSON — from a file path
+     * (services.firebase.credentials, written by deploy) or inline JSON
+     * (services.firebase.credentials_json, CI/local). Returns null when neither
+     * is present/valid, leaving push on the Noop provider.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function firebaseServiceAccount(): ?array
+    {
+        $json = '';
+        $path = (string) config('services.firebase.credentials', '');
+        if ($path !== '' && is_file($path) && is_readable($path)) {
+            $json = (string) file_get_contents($path);
+        }
+        if ($json === '') {
+            $json = (string) config('services.firebase.credentials_json', '');
+        }
+        if ($json === '') {
+            return null;
+        }
+
+        $decoded = json_decode($json, true);
+
+        return is_array($decoded) && isset($decoded['client_email'], $decoded['private_key'])
+            ? $decoded
+            : null;
     }
 
     public function boot(): void

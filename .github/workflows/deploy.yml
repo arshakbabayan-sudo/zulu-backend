@@ -39,11 +39,16 @@ jobs:
           STRIPE_SECRET: ${{ secrets.STRIPE_SECRET }}
           STRIPE_CURRENCY: ${{ secrets.STRIPE_CURRENCY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         run: |
+          # base64 the FCM service-account JSON so it survives inline shell
+          # transport without quoting issues (only [A-Za-z0-9+/=], no quotes).
+          FIREBASE_B64="$(printf '%s' "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" | base64 -w0)"
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes \
             -o SendEnv=TG_BOT_TOKEN,TG_CHAT_ID \
             "$SSH_USER@$SSH_HOST" \
-            "TG_BOT_TOKEN='$TG_BOT_TOKEN' TG_CHAT_ID='$TG_CHAT_ID' GOOGLE_DRIVE_CLIENT_ID='$GOOGLE_DRIVE_CLIENT_ID' GOOGLE_DRIVE_CLIENT_SECRET='$GOOGLE_DRIVE_CLIENT_SECRET' GOOGLE_DRIVE_REDIRECT_URI='$GOOGLE_DRIVE_REDIRECT_URI' STRIPE_KEY='$STRIPE_KEY' STRIPE_SECRET='$STRIPE_SECRET' STRIPE_CURRENCY='$STRIPE_CURRENCY' STRIPE_WEBHOOK_SECRET='$STRIPE_WEBHOOK_SECRET' bash -se" <<'REMOTE_EOF'
+            "TG_BOT_TOKEN='$TG_BOT_TOKEN' TG_CHAT_ID='$TG_CHAT_ID' GOOGLE_DRIVE_CLIENT_ID='$GOOGLE_DRIVE_CLIENT_ID' GOOGLE_DRIVE_CLIENT_SECRET='$GOOGLE_DRIVE_CLIENT_SECRET' GOOGLE_DRIVE_REDIRECT_URI='$GOOGLE_DRIVE_REDIRECT_URI' STRIPE_KEY='$STRIPE_KEY' STRIPE_SECRET='$STRIPE_SECRET' STRIPE_CURRENCY='$STRIPE_CURRENCY' STRIPE_WEBHOOK_SECRET='$STRIPE_WEBHOOK_SECRET' FIREBASE_B64='$FIREBASE_B64' FIREBASE_PROJECT_ID='$FIREBASE_PROJECT_ID' bash -se" <<'REMOTE_EOF'
             set -euo pipefail
             cd /var/www/zulu-backend
 
@@ -73,6 +78,15 @@ jobs:
             upsert_env GOOGLE_DRIVE_CLIENT_ID "${GOOGLE_DRIVE_CLIENT_ID:-}"
             upsert_env GOOGLE_DRIVE_CLIENT_SECRET "${GOOGLE_DRIVE_CLIENT_SECRET:-}"
             upsert_env GOOGLE_DRIVE_REDIRECT_URI "${GOOGLE_DRIVE_REDIRECT_URI:-}"
+
+            echo "=== Sync FIREBASE FCM v1 service account (push, 2026-06-17) ==="
+            if [ -n "${FIREBASE_B64:-}" ]; then
+              mkdir -p storage/app/firebase
+              echo "$FIREBASE_B64" | base64 -d > storage/app/firebase/credentials.json
+              chmod 600 storage/app/firebase/credentials.json
+              upsert_env FIREBASE_CREDENTIALS "$(pwd)/storage/app/firebase/credentials.json"
+              upsert_env FIREBASE_PROJECT_ID "${FIREBASE_PROJECT_ID:-}"
+            fi
 
             echo "=== Sync STRIPE env vars (Stripe Connect test, 2026-06-01) ==="
             upsert_env PAYMENT_DRIVER stripe

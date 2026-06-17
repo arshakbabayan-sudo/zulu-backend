@@ -70,12 +70,16 @@ return [
         'from' => env('TWILIO_FROM_NUMBER'),
     ],
 
-    // Firebase Cloud Messaging — push gateway. Empty by default;
-    // presence of `project_id` flips PushProvider binding from
-    // NoopPushProvider to FirebasePushProvider.
+    // Firebase Cloud Messaging — push gateway (HTTP v1, service-account auth).
+    // Empty by default; presence of a service-account JSON flips PushProvider
+    // from NoopPushProvider to FirebasePushProvider. `credentials` is a path to
+    // the JSON written by deploy; `credentials_json` is the raw JSON inline
+    // (CI / local). project_id is read from the JSON when FIREBASE_PROJECT_ID
+    // is unset.
     'firebase' => [
         'project_id' => env('FIREBASE_PROJECT_ID'),
-        'server_key' => env('FIREBASE_SERVER_KEY'),
+        'credentials' => env('FIREBASE_CREDENTIALS'),
+        'credentials_json' => env('FIREBASE_SERVICE_ACCOUNT_JSON'),
     ],
 
     'oauth' => [

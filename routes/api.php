@@ -93,6 +93,7 @@ use App\Http\Controllers\Api\MediaUploadController;
 use App\Http\Controllers\Api\Modules\UserVisaApiController;
 use App\Http\Controllers\Api\MoneyFlowTermController;
 use App\Http\Controllers\Api\NewsletterController;
+use App\Http\Controllers\Api\DeviceTokenController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\OAuthController;
@@ -831,6 +832,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::get('notifications/paginated', [NotificationController::class, 'paginatedIndex']);
     Route::post('notifications/{notification}/read', [NotificationController::class, 'markRead'])->whereNumber('notification');
+
+    // Push device tokens (FCM) — the SDK registers the browser/app token here.
+    Route::post('device-tokens', [DeviceTokenController::class, 'store']);
+    Route::delete('device-tokens', [DeviceTokenController::class, 'destroy']);
 
     // File manager (Phase Ե, 2026-05-25) — Laravel default disk via FILESYSTEM_DISK.
     Route::get('files', [FileAssetController::class, 'index']);
