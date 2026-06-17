@@ -33,6 +33,25 @@ class PackageSearchService
             $query->where('destination_city', (string) $filters['destination_city']);
         }
 
+        // Price range filter on the stored base_price. Currencies are not summed
+        // across rows — pair with the `currency` filter to compare like-for-like.
+        if (array_key_exists('price_min', $filters) && $filters['price_min'] !== null && $filters['price_min'] !== '') {
+            $query->where('base_price', '>=', (float) $filters['price_min']);
+        }
+
+        if (array_key_exists('price_max', $filters) && $filters['price_max'] !== null && $filters['price_max'] !== '') {
+            $query->where('base_price', '<=', (float) $filters['price_max']);
+        }
+
+        if (! empty($filters['currency'])) {
+            $query->where('currency', strtoupper((string) $filters['currency']));
+        }
+
+        // Availability gate — when set, return only packages flagged bookable.
+        if (! empty($filters['bookable_only'])) {
+            $query->where('is_bookable', true);
+        }
+
         if (array_key_exists('adults_count', $filters) && $filters['adults_count'] !== null) {
             $query->where('adults_count', (int) $filters['adults_count']);
         }
