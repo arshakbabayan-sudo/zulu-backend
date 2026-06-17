@@ -129,6 +129,14 @@ Schedule::command('accounts:purge-expired-data-exports')
     ->withoutOverlapping()
     ->onOneServer();
 
+// §12 — auto-renew contracts whose renewal window opened (auto_renew=true).
+// Rolls a contract over for another term once it is within its
+// termination-notice window of expiry and was not terminated.
+Schedule::command('contracts:auto-renew')
+    ->dailyAt('05:00')
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // Phase 1 / Step C.4 — daily FX refresh. Pulls USD/EUR/RUB/GBP ↔ AMD and
 // cross pairs from CBA (primary) → ECB → exchangerate-api fallback chain.
 // Non-zero exit only when EVERY pair fails (rare; partial failures stay

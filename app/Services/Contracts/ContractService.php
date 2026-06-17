@@ -8,7 +8,9 @@ use App\Models\ContractTemplate;
 use App\Models\ContractVersion;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Notifications\NotificationService;
 use App\Services\Webhooks\WebhookService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -16,6 +18,9 @@ use RuntimeException;
 
 class ContractService
 {
+    /** Renewal term (months) used when the original term cannot be derived. */
+    public const DEFAULT_RENEWAL_MONTHS = 12;
+
     public function __construct(
         private ?AuditService $auditService = null,
         private ?WebhookService $webhookService = null,
@@ -206,6 +211,127 @@ class ContractService
         $this->fireContractWebhook('contract.terminated', $contract->fresh(), ['reason' => $reason]);
 
         return $contract->fresh();
+    }
+
+    /**
+     * Auto-renew every contract whose renewal window has opened. Returns the
+     * number renewed. Eligible: status active|countersigned, auto_renew=true,
+     * an expiry_date set, not terminated, and the renewal window is open —
+     * i.e. now is within `termination_notice_days` of expiry (the period in
+     * which, absent a termination notice, the agreement rolls over). Driven by
+     * the daily `contracts:auto-renew` command. The per-row notice window is
+     * evaluated in PHP so the rule stays portable across sqlite/Postgres.
+     */
+    public function renewDueContracts(?Carbon $asOf = null): int
+    {
+        $now = $asOf ? $asOf->copy() : now();
+
+        $candidates = Contract::query()
+            ->whereIn('status', ['active', 'countersigned'])
+            ->where('auto_renew', true)
+            ->whereNull('terminated_at')
+            ->whereNotNull('expiry_date')
+            ->get();
+
+        $renewed = 0;
+        foreach ($candidates as $contract) {
+            $noticeDays = max(0, (int) ($contract->termination_notice_days ?? 0));
+            $windowOpensAt = $contract->expiry_date->copy()->subDays($noticeDays);
+            if ($now->lt($windowOpensAt)) {
+                continue; // renewal window not open yet
+            }
+            $this->renew($contract);
+            $renewed++;
+        }
+
+        return $renewed;
+    }
+
+    /**
+     * Extend a contract by another term. The new term preserves the original
+     * duration (effective_date → expiry_date, in whole months); when that can't
+     * be derived it falls back to DEFAULT_RENEWAL_MONTHS. Snapshots a version,
+     * writes an audit entry, notifies the creator, and fires contract.renewed.
+     */
+    public function renew(Contract $contract, ?User $actor = null): Contract
+    {
+        if (! in_array($contract->status, ['active', 'countersigned'], true)) {
+            throw new RuntimeException("Only active or countersigned contracts can be renewed (got '{$contract->status}').");
+        }
+        if ($contract->expiry_date === null) {
+            throw new RuntimeException('Cannot renew a contract without an expiry date.');
+        }
+
+        $resolvedActor = $actor ?? $contract->createdBy;
+        $previousExpiry = $contract->expiry_date->copy();
+
+        $months = self::DEFAULT_RENEWAL_MONTHS;
+        if ($contract->effective_date !== null) {
+            $derived = (int) $contract->effective_date->diffInMonths($contract->expiry_date);
+            if ($derived >= 1) {
+                $months = $derived;
+            }
+        }
+        $newExpiry = $previousExpiry->copy()->addMonths($months);
+
+        return DB::transaction(function () use ($contract, $resolvedActor, $previousExpiry, $newExpiry, $months): Contract {
+            $contract->expiry_date = $newExpiry;
+            // A renewal keeps a countersigned-but-now-effective contract live.
+            if ($contract->status === 'countersigned') {
+                $contract->status = 'active';
+            }
+            $contract->save();
+
+            if ($resolvedActor !== null) {
+                $this->snapshotVersion($contract, $resolvedActor);
+
+                $this->audit()->log([
+                    'category' => 'contract',
+                    'actor' => $resolvedActor,
+                    'subject_type' => 'Contract',
+                    'subject_id' => (string) $contract->id,
+                    'action' => 'renewed',
+                    'changes' => ['expiry_date' => [
+                        'from' => $previousExpiry->toDateString(),
+                        'to' => $newExpiry->toDateString(),
+                    ]],
+                    'context' => ['contract_number' => $contract->contract_number, 'term_months' => $months],
+                ]);
+            }
+
+            $this->notifyRenewal($contract, $newExpiry);
+            $this->fireContractWebhook('contract.renewed', $contract->fresh(), [
+                'previous_expiry_date' => $previousExpiry->toDateString(),
+                'new_expiry_date' => $newExpiry->toDateString(),
+                'term_months' => $months,
+            ]);
+
+            return $contract->fresh();
+        });
+    }
+
+    /**
+     * In-app heads-up to the contract creator that an auto-renewal happened.
+     * Best-effort — a notification failure must never roll back the renewal.
+     */
+    private function notifyRenewal(Contract $contract, Carbon $newExpiry): void
+    {
+        if ($contract->created_by_user_id === null) {
+            return;
+        }
+        try {
+            app(NotificationService::class)->create([
+                'user_id' => (int) $contract->created_by_user_id,
+                'type' => 'contract.renewed',
+                'title' => 'Contract auto-renewed',
+                'message' => "Contract {$contract->contract_number} was auto-renewed until {$newExpiry->toDateString()}.",
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Contract renewal notification failed', [
+                'contract_id' => $contract->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
