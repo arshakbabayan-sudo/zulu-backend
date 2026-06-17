@@ -1,0 +1,57 @@
+name: Backend tests
+
+# Self-serve verification for backend changes. Runs the PHPUnit/Pest suite in a
+# clean CI environment (sqlite :memory:, per phpunit.xml) so backend work can be
+# verified BEFORE it reaches prod. Intentionally SEPARATE from deploy.yml — this
+# does not deploy and does not gate the deploy job (the suite carries a few known
+# pre-existing failures; gating would block all deploys). Workflow:
+#   1. push backend work to a `claude/**` branch  ->  this runs automatically
+#   2. read the result (X passed / Y failed) and compare Y against the baseline
+#   3. only then fast-forward `main` (which triggers the Hetzner deploy)
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, bcmath, intl, pdo_sqlite, sqlite3, gd, zip, exif, fileinfo
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare test env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run test suite
+        run: php artisan test --no-interaction
