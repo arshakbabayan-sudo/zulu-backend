@@ -83,7 +83,22 @@ class GoogleDriveAuthController extends Controller
 
         $client->setState($state);
 
-        return redirect()->away($client->createAuthUrl());
+        $authUrl = $client->createAuthUrl();
+
+        // The admin SPA authenticates with a Bearer token, which a full-page
+        // browser navigation cannot carry (so navigating straight here would
+        // 401). The frontend therefore calls this endpoint via fetch (with the
+        // Authorization header) using ?json=1, gets the Google auth URL back as
+        // JSON, then navigates the browser to it. The Sanctum token never
+        // travels in a query string / referrer / log this way.
+        if ($request->boolean('json')) {
+            return response()->json([
+                'success' => true,
+                'data' => ['auth_url' => $authUrl],
+            ]);
+        }
+
+        return redirect()->away($authUrl);
     }
 
     public function callback(Request $request): RedirectResponse|JsonResponse
