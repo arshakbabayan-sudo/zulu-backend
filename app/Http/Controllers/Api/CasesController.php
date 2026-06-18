@@ -114,10 +114,47 @@ class CasesController extends Controller
             'opened_at' => $openedAt,
         ]);
 
+        // Auto-responder — immediately acknowledge receipt to the opener.
+        $this->sendReceiptAcknowledgement($row, $user);
+
         return response()->json([
             'success' => true,
             'data' => $this->serialize($row->fresh(['assignedTo', 'openedBy', 'company'])),
         ], 201);
+    }
+
+    /**
+     * Auto-acknowledge a freshly opened case to its opener, in their language.
+     * Best-effort — a notification failure must never block case creation.
+     */
+    private function sendReceiptAcknowledgement(AdminCase $case, User $user): void
+    {
+        try {
+            $lang = in_array($user->preferred_language, ['hy', 'ru', 'en'], true)
+                ? (string) $user->preferred_language
+                : 'en';
+            $pick = fn (array $m): string => $m[$lang] ?? $m['en'];
+
+            app(NotificationService::class)->create([
+                'user_id' => (int) $user->id,
+                'type' => 'case_received',
+                'title' => $pick([
+                    'hy' => "Հայցը ստացվեց՝ #{$case->case_number}",
+                    'ru' => "Запрос получен: #{$case->case_number}",
+                    'en' => "Request received: #{$case->case_number}",
+                ]),
+                'message' => $pick([
+                    'hy' => 'Շնորհակալություն, հայցդ ստացանք ու հնարավորինս շուտ կպատասխանենք։',
+                    'ru' => 'Спасибо, мы получили ваш запрос и ответим как можно скорее.',
+                    'en' => 'Thanks — we received your request and will respond as soon as possible.',
+                ]),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('case receipt acknowledgement failed', [
+                'case_id' => $case->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function update(Request $request, int $id): JsonResponse
