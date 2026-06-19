@@ -1,0 +1,45 @@
+name: Diag GoogleDrive status 500
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Read prod logs + schema
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" 'bash -se' <<'REMOTE_EOF'
+          set -uo pipefail
+          cd /var/www/zulu-backend
+          echo "=== deployed HEAD ==="
+          git rev-parse HEAD
+          echo
+          echo "=== companies google_drive columns present? ==="
+          php artisan tinker --execute="echo json_encode(array_values(array_filter(\Illuminate\Support\Facades\Schema::getColumnListing('companies'), fn(\$c)=>str_contains(\$c,'google'))));" 2>&1 | tail -5
+          echo
+          echo "=== ANIE row google fields (raw) ==="
+          php artisan tinker --execute="\$c=\App\Models\Company::where('name','like','%ANIE%')->first(); echo \$c? ('id='.\$c->id.' refresh_raw_len='.strlen((string)\$c->getRawOriginal('google_refresh_token')).' folder='.var_export(\$c->getRawOriginal('google_drive_folder_id'),true).' connAt='.var_export(\$c->getRawOriginal('google_drive_connected_at'),true).' email='.var_export(\$c->getRawOriginal('google_drive_connected_email'),true)) : 'no ANIE';" 2>&1 | tail -5
+          echo
+          echo "=== newest laravel log: google/drive/exception matches ==="
+          LOG=$(ls -t storage/logs/*.log 2>/dev/null | head -1); echo "LOG=$LOG"
+          grep -nE "google-drive|GoogleDrive|google_drive|Decrypt|SQLSTATE" "$LOG" 2>/dev/null | tail -25
+          echo
+          echo "=== last 60 lines of newest log ==="
+          tail -n 60 "$LOG"
+          REMOTE_EOF
