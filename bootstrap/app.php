@@ -35,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         PruneExpiredTokens::class,
         PruneOrphanOffers::class,
         \App\Console\Commands\EscalateOverdueCases::class,
+        \App\Console\Commands\ResetDataCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
