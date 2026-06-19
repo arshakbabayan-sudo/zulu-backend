@@ -1,0 +1,46 @@
+name: Run zulu:reset-data on prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = report only; force = wipe data; force-files = wipe data + uploaded files'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - dry-run
+          - force
+          - force-files
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run command
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          case "$MODE" in
+            dry-run)     FLAGS="--dry-run" ;;
+            force)       FLAGS="--force" ;;
+            force-files) FLAGS="--force --wipe-files" ;;
+            *) echo "unknown mode '$MODE'"; exit 1 ;;
+          esac
+          echo "=== zulu:reset-data $FLAGS (as www-data) ==="
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" \
+            "cd /var/www/zulu-backend && sudo -u www-data php artisan zulu:reset-data $FLAGS --no-interaction"
