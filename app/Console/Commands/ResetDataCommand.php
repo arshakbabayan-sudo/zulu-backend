@@ -82,8 +82,10 @@ class ResetDataCommand extends Command
     private const CONFIG_MUST_SURVIVE = [
         'roles', 'permissions', 'role_permissions', 'statuses', 'supported_languages',
         'ui_translations', 'countries', 'regions', 'cities', 'platform_settings',
-        'exchange_rates', 'pricing_rules', 'commission_rules', 'notification_templates',
+        'exchange_rates', 'commission_rules', 'notification_templates',
         'footer_columns', 'footer_links', 'header_menu_items',
+        // NOTE: pricing_rules / money_flow_terms are KEPT but their per-deleted-operator
+        // rows are pruned above, so their counts legitimately shrink — not asserted here.
     ];
 
     /** Company-scoped config that CASCADE-dies with deleted companies (reported, not asserted). */
@@ -145,6 +147,33 @@ class ResetDataCommand extends Command
             $del('user_notification_preferences', fn ($q) => $q->where('user_id', '<>', $userId));
             $del('user_two_factor', fn ($q) => $q->where('user_id', '<>', $userId));
             $del('user_company', fn ($q) => $q->where(fn ($w) => $w->where('user_id', '<>', $userId)->orWhere('company_id', '<>', $companyId)->orWhere('role_id', '<>', $roleId)));
+
+            // Per-operator/agent CONFIG rows pointing at a to-be-deleted company:
+            // their FK is nullOnDelete, but a scope-shape CHECK constraint forbids
+            // a null operator_id/agent_id on a scoped row — so the company delete
+            // would 23514. Drop those orphan-scoped rows first; GLOBAL rows (both
+            // null) and the kept company's rows survive.
+            $scopedConfig = [
+                'pricing_rules' => ['operator_id', 'agent_id'],
+                'money_flow_terms' => ['operator_id', 'agent_id'],
+                'fx_partnership_premiums' => ['operator_id', 'agent_id'],
+                'operator_agent_commission' => ['operator_company_id', 'agent_company_id'],
+            ];
+            foreach ($scopedConfig as $table => $cols) {
+                if (! Schema::hasTable($table)) {
+                    continue;
+                }
+                $cols = array_values(array_filter($cols, fn ($c) => Schema::hasColumn($table, $c)));
+                if ($cols === []) {
+                    continue;
+                }
+                DB::table($table)->where(function ($q) use ($companyId, $cols): void {
+                    foreach ($cols as $col) {
+                        $q->orWhere(fn ($w) => $w->whereNotNull($col)->where($col, '<>', $companyId));
+                    }
+                })->delete();
+            }
+
             $del('companies', fn ($q) => $q->where('id', '<>', $companyId));
             $del('users', fn ($q) => $q->where('id', '<>', $userId));
 
