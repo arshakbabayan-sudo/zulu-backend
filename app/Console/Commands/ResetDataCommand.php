@@ -129,21 +129,24 @@ class ResetDataCommand extends Command
 
         $preCounts = $this->counts(self::CONFIG_MUST_SURVIVE);
 
-        DB::transaction(function () use ($userId, $roleId, $companyId, $preCounts): void {
-            $this->wipeDataTables();
+        $skipped = [];
+        DB::transaction(function () use ($userId, $roleId, $companyId, $preCounts, &$skipped): void {
+            $skipped = $this->wipeDataTables();
 
             // Partial-keep tables: id-filtered hard deletes (children → parents).
-            DB::table('personal_access_tokens')
-                ->where(fn ($q) => $q->where('tokenable_type', 'not like', '%User')->orWhere('tokenable_id', '<>', $userId))
-                ->delete();
-            DB::table('user_permission_overrides')->where('user_id', '<>', $userId)->delete();
-            DB::table('user_notification_preferences')->where('user_id', '<>', $userId)->delete();
-            DB::table('user_two_factor')->where('user_id', '<>', $userId)->delete();
-            DB::table('user_company')
-                ->where(fn ($q) => $q->where('user_id', '<>', $userId)->orWhere('company_id', '<>', $companyId)->orWhere('role_id', '<>', $roleId))
-                ->delete();
-            DB::table('companies')->where('id', '<>', $companyId)->delete();
-            DB::table('users')->where('id', '<>', $userId)->delete();
+            // Guarded by hasTable so a renamed/dropped table never aborts the wipe.
+            $del = function (string $table, callable $build): void {
+                if (Schema::hasTable($table)) {
+                    $build(DB::table($table))->delete();
+                }
+            };
+            $del('personal_access_tokens', fn ($q) => $q->where(fn ($w) => $w->where('tokenable_type', 'not like', '%User')->orWhere('tokenable_id', '<>', $userId)));
+            $del('user_permission_overrides', fn ($q) => $q->where('user_id', '<>', $userId));
+            $del('user_notification_preferences', fn ($q) => $q->where('user_id', '<>', $userId));
+            $del('user_two_factor', fn ($q) => $q->where('user_id', '<>', $userId));
+            $del('user_company', fn ($q) => $q->where(fn ($w) => $w->where('user_id', '<>', $userId)->orWhere('company_id', '<>', $companyId)->orWhere('role_id', '<>', $roleId)));
+            $del('companies', fn ($q) => $q->where('id', '<>', $companyId));
+            $del('users', fn ($q) => $q->where('id', '<>', $userId));
 
             // Idempotent re-anchor of the super-admin pivot (a re-run can't orphan him).
             $exists = DB::table('user_company')
@@ -175,6 +178,9 @@ class ResetDataCommand extends Command
         });
 
         $this->info('✔ Data wiped. Super admin preserved, all global config intact.');
+        if ($skipped !== []) {
+            $this->line('  (skipped non-existent tables: '.implode(', ', $skipped).')');
+        }
 
         if ($this->option('wipe-files')) {
             $this->wipeFiles();
@@ -187,28 +193,30 @@ class ResetDataCommand extends Command
         return self::SUCCESS;
     }
 
-    private function wipeDataTables(): void
+    /** @return string[] names skipped because the table no longer exists (e.g. dropped legacy schema) */
+    private function wipeDataTables(): array
     {
-        $tables = self::TRUNCATE_TABLES;
+        $existing = array_values(array_filter(self::TRUNCATE_TABLES, fn ($t) => Schema::hasTable($t)));
+        $skipped = array_values(array_diff(self::TRUNCATE_TABLES, $existing));
 
         if (DB::getDriverName() === 'pgsql') {
-            $quoted = implode(', ', array_map(fn ($t) => '"'.$t.'"', $tables));
+            $quoted = implode(', ', array_map(fn ($t) => '"'.$t.'"', $existing));
             DB::statement("TRUNCATE TABLE {$quoted} RESTART IDENTITY CASCADE");
 
-            return;
+            return $skipped;
         }
 
         // sqlite / others (CI tests): disable FK checks and DELETE each table.
         Schema::disableForeignKeyConstraints();
         try {
-            foreach ($tables as $t) {
-                if (Schema::hasTable($t)) {
-                    DB::table($t)->delete();
-                }
+            foreach ($existing as $t) {
+                DB::table($t)->delete();
             }
         } finally {
             Schema::enableForeignKeyConstraints();
         }
+
+        return $skipped;
     }
 
     private function reportDryRun(int $userId, int $companyId): int
