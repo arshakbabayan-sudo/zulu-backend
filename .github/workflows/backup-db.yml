@@ -1,0 +1,45 @@
+name: Backup prod DB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: pg_dump full database
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" 'bash -se' <<'REMOTE_EOF'
+          set -euo pipefail
+          cd /var/www/zulu-backend
+          getenv() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | sed -E 's/^"//; s/"$//'; }
+          DB_DATABASE=$(getenv DB_DATABASE); DB_USERNAME=$(getenv DB_USERNAME)
+          DB_PASSWORD=$(getenv DB_PASSWORD); DB_HOST=$(getenv DB_HOST); DB_PORT=$(getenv DB_PORT)
+          mkdir -p storage/backups
+          TS=$(date +%Y%m%d-%H%M%S)
+          OUT="storage/backups/pre-reset-$TS.sql.gz"
+          echo "=== Dumping $DB_DATABASE -> $OUT ==="
+          PGPASSWORD="$DB_PASSWORD" pg_dump -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -U "$DB_USERNAME" -d "$DB_DATABASE" --no-owner --no-privileges | gzip > "$OUT"
+          echo "=== Backups on disk ==="
+          ls -lh storage/backups/ | tail -8
+          echo "=== Current row counts (snapshot) ==="
+          PGPASSWORD="$DB_PASSWORD" psql -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" -U "$DB_USERNAME" -d "$DB_DATABASE" -t -c \
+            "select 'users='||count(*) from users
+             union all select 'companies='||count(*) from companies;" || true
+          REMOTE_EOF
