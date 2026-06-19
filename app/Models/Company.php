@@ -126,7 +126,16 @@ class Company extends Model
      */
     public function hasGoogleDriveConnected(): bool
     {
-        return $this->google_refresh_token !== null
+        // Read the RAW (still-encrypted) refresh token rather than the decrypted
+        // accessor: a token left over from a previous APP_KEY / a partial connect
+        // can no longer be decrypted, and touching the `encrypted` cast would
+        // throw a DecryptException — which used to 500 the status endpoint and
+        // the upload gate. Presence of the stored value is all we need here; the
+        // actual token is only decrypted when a Drive client is built.
+        $rawRefresh = $this->getRawOriginal('google_refresh_token');
+
+        return $rawRefresh !== null
+            && $rawRefresh !== ''
             && $this->google_drive_folder_id !== null
             && $this->google_drive_folder_id !== '';
     }

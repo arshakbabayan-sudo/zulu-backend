@@ -181,12 +181,31 @@ class GoogleDriveAuthController extends Controller
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
+        // Guard every field that could throw (a malformed timestamp, a token that
+        // can no longer be decrypted) so a half-written / stale connection never
+        // turns the status check into a 500 — the UI just shows "not connected".
+        try {
+            $connectedAt = optional($company->google_drive_connected_at)->toIso8601String();
+        } catch (\Throwable $e) {
+            $connectedAt = null;
+        }
+
+        try {
+            $connected = $company->hasGoogleDriveConnected();
+        } catch (\Throwable $e) {
+            Log::warning('Google Drive status check failed', [
+                'company_id' => $companyId,
+                'error' => $e->getMessage(),
+            ]);
+            $connected = false;
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
-                'connected' => $company->hasGoogleDriveConnected(),
+                'connected' => $connected,
                 'connected_email' => $company->google_drive_connected_email,
-                'connected_at' => optional($company->google_drive_connected_at)->toIso8601String(),
+                'connected_at' => $connectedAt,
                 'folder_id' => $company->google_drive_folder_id,
             ],
         ]);
