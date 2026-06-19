@@ -83,7 +83,22 @@ class GoogleDriveAuthController extends Controller
 
         $client->setState($state);
 
-        $authUrl = $client->createAuthUrl();
+        // createAuthUrl() throws (e.g. "Redirect URI must be absolute") when the
+        // OAuth client is misconfigured — empty/placeholder GOOGLE_DRIVE_* env on
+        // the server. Surface a clean 503 instead of a raw 500.
+        try {
+            $authUrl = $client->createAuthUrl();
+        } catch (\Throwable $e) {
+            Log::error('Google Drive createAuthUrl failed — client likely misconfigured', [
+                'company_id' => $companyId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Google Drive is not configured on the server',
+            ], 503);
+        }
 
         // The admin SPA authenticates with a Bearer token, which a full-page
         // browser navigation cannot carry (so navigating straight here would
