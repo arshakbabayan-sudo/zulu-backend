@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceCatalogItem;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Pricing\DisplayCurrencyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -176,9 +177,13 @@ class ServiceCatalogController extends Controller
 
         $limit = max(1, min(100, (int) $request->query('limit', 50)));
 
+        // Part A — DISPLAY-currency conversion (additive; charge currency unchanged).
+        $display = app(DisplayCurrencyService::class);
+        $displayCurrency = $display->sanitize($request->query('display_currency'));
+
         return response()->json([
             'success' => true,
-            'data' => $query->limit($limit)->get()->map(fn ($r) => [
+            'data' => $query->limit($limit)->get()->map(fn ($r) => $display->attach([
                 'id' => $r->id,
                 'name' => $r->name,
                 'description' => $r->description,
@@ -190,7 +195,7 @@ class ServiceCatalogController extends Controller
                     'id' => $r->company->id,
                     'name' => $r->company->name,
                 ] : null,
-            ])->all(),
+            ], $r->unit_price, $r->currency, $displayCurrency))->all(),
         ]);
     }
 

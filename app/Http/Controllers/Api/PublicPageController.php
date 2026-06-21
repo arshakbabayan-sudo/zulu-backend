@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Package;
 use App\Models\PackageHomepageFeature;
 use App\Models\Page;
+use App\Services\Pricing\DisplayCurrencyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -16,6 +17,8 @@ class PublicPageController extends Controller
     public function show(Request $request, string $slug): JsonResponse
     {
         $lang = $this->resolveLang($request);
+        // Part A — DISPLAY-currency for homepage featured-package prices.
+        $displayCurrency = app(DisplayCurrencyService::class)->sanitize($request->query('display_currency'));
 
         $page = Page::query()
             ->where('page_slug', $slug)
@@ -57,7 +60,7 @@ class PublicPageController extends Controller
                             'widget_content' => $widgetContent->getTranslation($lang) ?? [],
                         ];
                     })->values()->all(),
-                    'sections' => $slug === 'home-page' ? $this->buildHomeSections($lang) : (object) [],
+                    'sections' => $slug === 'home-page' ? $this->buildHomeSections($lang, $displayCurrency) : (object) [],
                 ],
             ])
             // Public CMS page payloads change only when an admin edits a page
@@ -74,17 +77,17 @@ class PublicPageController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function buildHomeSections(string $lang): array
+    private function buildHomeSections(string $lang, ?string $displayCurrency = null): array
     {
         $hasFeaturesTable = Schema::hasTable('package_homepage_features');
         $hasPartnerColumn = Schema::hasColumn('companies', 'is_partner_visible');
 
         return [
             'special_offers' => $hasFeaturesTable
-                ? $this->packagesForSection(PackageHomepageFeature::SECTION_SPECIAL_OFFERS, $lang)
+                ? $this->packagesForSection(PackageHomepageFeature::SECTION_SPECIAL_OFFERS, $lang, $displayCurrency)
                 : [],
             'popular_destinations' => $hasFeaturesTable
-                ? $this->packagesForSection(PackageHomepageFeature::SECTION_POPULAR_DESTINATIONS, $lang)
+                ? $this->packagesForSection(PackageHomepageFeature::SECTION_POPULAR_DESTINATIONS, $lang, $displayCurrency)
                 : [],
             'partners' => $hasPartnerColumn
                 ? $this->partnerOperators($lang)
@@ -95,8 +98,10 @@ class PublicPageController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function packagesForSection(string $sectionSlug, string $lang): array
+    private function packagesForSection(string $sectionSlug, string $lang, ?string $displayCurrency = null): array
     {
+        $display = app(DisplayCurrencyService::class);
+
         $rows = Package::query()
             ->join('package_homepage_features as f', 'f.package_id', '=', 'packages.id')
             ->where('f.section_slug', $sectionSlug)
@@ -121,8 +126,8 @@ class PublicPageController extends Controller
             ])
             ->get();
 
-        return $rows->map(function (Package $pkg) use ($lang): array {
-            return [
+        return $rows->map(function (Package $pkg) use ($lang, $display, $displayCurrency): array {
+            return $display->attach([
                 'id' => $pkg->id,
                 'title' => $pkg->getTranslated('package_title', $lang),
                 'subtitle' => $pkg->getTranslated('package_subtitle', $lang),
@@ -135,7 +140,7 @@ class PublicPageController extends Controller
                 'currency' => $pkg->currency,
                 'main_image' => $pkg->main_image,
                 'link' => '/packages/'.$pkg->id,
-            ];
+            ], $pkg->base_price, $pkg->currency, $displayCurrency);
         })->values()->all();
     }
 

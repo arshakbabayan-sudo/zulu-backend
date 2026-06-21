@@ -24,6 +24,9 @@ class StorefrontPackageController extends Controller
             'price_min' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'price_max' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'currency' => ['sometimes', 'nullable', 'string', 'size:3'],
+            // Part A — DISPLAY currency (presentation only). Distinct from the
+            // `currency` FILTER above.
+            'display_currency' => ['sometimes', 'nullable', 'string', \Illuminate\Validation\Rule::in(['USD', 'EUR', 'AMD'])],
             'bookable_only' => ['sometimes', 'boolean'],
             'date_from' => ['sometimes', 'nullable', 'string'],
             'date_to' => ['sometimes', 'nullable', 'string'],
@@ -67,7 +70,10 @@ class StorefrontPackageController extends Controller
             ], 404);
         }
 
-        $pricing = $packageService->composePricing($model);
+        $displayCurrency = request()->query('display_currency');
+        $displayCurrency = is_string($displayCurrency) ? $displayCurrency : null;
+
+        $pricing = $packageService->composePricing($model, $displayCurrency);
 
         return response()->json([
             'success' => true,

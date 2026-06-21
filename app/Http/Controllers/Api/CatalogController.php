@@ -22,12 +22,17 @@ class CatalogController extends Controller
                 'string',
                 Rule::in(['flight', 'hotel', 'transfer', 'car', 'excursion', 'package', 'visa']),
             ],
+            // Part A — DISPLAY currency (how prices are presented). The resources
+            // read it off the request; the cache key MUST include it so a USD
+            // and an AMD request don't share a cached payload.
+            'display_currency' => ['sometimes', 'nullable', 'string', Rule::in(['USD', 'EUR', 'AMD'])],
         ]);
 
         $type = $validated['type'] ?? null;
+        $displayCurrency = isset($validated['display_currency']) ? strtoupper($validated['display_currency']) : null;
         $lang = $request->attributes->get('lang');
         $lang = is_string($lang) && $lang !== '' ? $lang : (string) config('app.locale', 'en');
-        $cacheKey = 'catalog_offers:'.md5(json_encode([$type, $lang], JSON_UNESCAPED_UNICODE));
+        $cacheKey = 'catalog_offers:'.md5(json_encode([$type, $lang, $displayCurrency], JSON_UNESCAPED_UNICODE));
         $data = Cache::remember($cacheKey, 30, function () use ($catalogService, $type, $request) {
             $offers = $catalogService->listPublishedOffers($type);
 

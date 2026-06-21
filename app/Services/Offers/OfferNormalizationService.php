@@ -12,6 +12,7 @@ use App\Models\Package;
 use App\Models\Transfer;
 use App\Models\Visa;
 use App\Services\Cars\CarAdvancedOptionsNormalizer;
+use App\Services\Pricing\DisplayCurrencyService;
 use App\Services\Pricing\PriceCalculatorService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -48,6 +49,9 @@ class OfferNormalizationService
         'capacity_type',
         'price',
         'currency',
+        'display_price',
+        'display_currency',
+        'fx_rate',
         'price_type',
         'availability_status',
         'available_quantity',
@@ -84,20 +88,21 @@ class OfferNormalizationService
     /**
      * @param  bool  $retailAsMainPrice  When true, normalized `price` is B2C (retail); when false, B2B (base).
      * @param  string|null  $languageCode  Resolved UI locale (e.g. from request); defaults to app default.
+     * @param  string|null  $displayCurrency  Requested DISPLAY currency (USD|EUR|AMD), already sanitized; null = native.
      * @return array<string, mixed>|null
      */
-    public function normalize(Offer $offer, bool $retailAsMainPrice = false, ?string $languageCode = null): ?array
+    public function normalize(Offer $offer, bool $retailAsMainPrice = false, ?string $languageCode = null, ?string $displayCurrency = null): ?array
     {
         $lang = $languageCode ?? config('app.locale', 'en');
 
         return match ($offer->type) {
-            'flight' => $this->normalizeFlightOffer($offer, $retailAsMainPrice, $lang),
-            'hotel' => $this->normalizeHotelOffer($offer, $retailAsMainPrice, $lang),
-            'transfer' => $this->normalizeTransferOffer($offer, $retailAsMainPrice, $lang),
-            'car' => $this->normalizeCarOffer($offer, $retailAsMainPrice, $lang),
-            'excursion' => $this->normalizeExcursionOffer($offer, $retailAsMainPrice, $lang),
-            'package' => $this->normalizePackageOffer($offer, $retailAsMainPrice, $lang),
-            'visa' => $this->normalizeVisaOffer($offer, $retailAsMainPrice, $lang),
+            'flight' => $this->normalizeFlightOffer($offer, $retailAsMainPrice, $lang, $displayCurrency),
+            'hotel' => $this->normalizeHotelOffer($offer, $retailAsMainPrice, $lang, $displayCurrency),
+            'transfer' => $this->normalizeTransferOffer($offer, $retailAsMainPrice, $lang, $displayCurrency),
+            'car' => $this->normalizeCarOffer($offer, $retailAsMainPrice, $lang, $displayCurrency),
+            'excursion' => $this->normalizeExcursionOffer($offer, $retailAsMainPrice, $lang, $displayCurrency),
+            'package' => $this->normalizePackageOffer($offer, $retailAsMainPrice, $lang, $displayCurrency),
+            'visa' => $this->normalizeVisaOffer($offer, $retailAsMainPrice, $lang, $displayCurrency),
             default => null,
         };
     }
@@ -105,7 +110,7 @@ class OfferNormalizationService
     /**
      * @return array<string, mixed>|null
      */
-    private function normalizeFlightOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en'): ?array
+    private function normalizeFlightOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): ?array
     {
         if (! $offer->relationLoaded('flight') || ! $offer->flight instanceof Flight) {
             return null;
@@ -113,7 +118,7 @@ class OfferNormalizationService
 
         $f = $offer->flight;
 
-        $base = $this->baseFromOffer($offer, 'flight', $retailAsMainPrice, $lang);
+        $base = $this->baseFromOffer($offer, 'flight', $retailAsMainPrice, $lang, $displayCurrency);
         $departureLabels = $this->locationLabelsFor($f->departure_location_id);
         $arrivalLabels = $this->locationLabelsFor($f->arrival_location_id);
         $base['from_location'] = $this->formatFlightEndpoint(
@@ -151,7 +156,7 @@ class OfferNormalizationService
     /**
      * @return array<string, mixed>|null
      */
-    private function normalizeHotelOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en'): ?array
+    private function normalizeHotelOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): ?array
     {
         if (! $offer->relationLoaded('hotel') || ! $offer->hotel instanceof Hotel) {
             return null;
@@ -159,7 +164,7 @@ class OfferNormalizationService
 
         $h = $offer->hotel;
 
-        $base = $this->baseFromOffer($offer, 'hotel', $retailAsMainPrice, $lang);
+        $base = $this->baseFromOffer($offer, 'hotel', $retailAsMainPrice, $lang, $displayCurrency);
         $base['subtitle'] = $h->getTranslated('short_description', $lang) ?? $h->short_description;
         $base['main_image'] = $h->main_image;
         $base['rating'] = $h->review_score;
@@ -200,7 +205,7 @@ class OfferNormalizationService
     /**
      * @return array<string, mixed>|null
      */
-    private function normalizeTransferOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en'): ?array
+    private function normalizeTransferOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): ?array
     {
         if (! $offer->relationLoaded('transfer') || ! $offer->transfer instanceof Transfer) {
             return null;
@@ -208,7 +213,7 @@ class OfferNormalizationService
 
         $t = $offer->transfer;
 
-        $base = $this->baseFromOffer($offer, 'transfer', $retailAsMainPrice, $lang);
+        $base = $this->baseFromOffer($offer, 'transfer', $retailAsMainPrice, $lang, $displayCurrency);
         $originLabels = $this->locationLabelsFor($t->origin_location_id);
         $destinationLabels = $this->locationLabelsFor($t->destination_location_id);
         $tAttrs = $t->getAttributes();
@@ -246,7 +251,7 @@ class OfferNormalizationService
     /**
      * @return array<string, mixed>|null
      */
-    private function normalizeCarOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en'): ?array
+    private function normalizeCarOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): ?array
     {
         if (! $offer->relationLoaded('car') || ! $offer->car instanceof Car) {
             return null;
@@ -254,7 +259,7 @@ class OfferNormalizationService
 
         $c = $offer->car;
 
-        $base = $this->baseFromOffer($offer, 'car', $retailAsMainPrice, $lang);
+        $base = $this->baseFromOffer($offer, 'car', $retailAsMainPrice, $lang, $displayCurrency);
         $carLabels = $this->locationLabelsFor($c->location_id);
         $carDerived = $carLabels['city'] ?? $carLabels['country'];
         $base['from_location'] = $this->nullableNonEmptyString($c->getAttributes()['pickup_location'] ?? null)
@@ -286,7 +291,7 @@ class OfferNormalizationService
     /**
      * @return array<string, mixed>|null
      */
-    private function normalizeExcursionOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en'): ?array
+    private function normalizeExcursionOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): ?array
     {
         if (! $offer->relationLoaded('excursion') || ! $offer->excursion instanceof Excursion) {
             return null;
@@ -294,7 +299,7 @@ class OfferNormalizationService
 
         $e = $offer->excursion;
 
-        $base = $this->baseFromOffer($offer, 'excursion', $retailAsMainPrice, $lang);
+        $base = $this->baseFromOffer($offer, 'excursion', $retailAsMainPrice, $lang, $displayCurrency);
         $base['destination_location'] = $this->nullableNonEmptyString($e->location);
         $base['duration'] = $this->nullableNonEmptyString($e->duration);
         $base['max_passengers'] = $e->group_size;
@@ -318,7 +323,7 @@ class OfferNormalizationService
      *
      * @return array<string, mixed>|null
      */
-    private function normalizePackageOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en'): ?array
+    private function normalizePackageOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): ?array
     {
         if (! $offer->relationLoaded('package') || ! $offer->package instanceof Package) {
             return null;
@@ -326,7 +331,7 @@ class OfferNormalizationService
 
         $p = $offer->package;
 
-        $base = $this->baseFromOffer($offer, 'package', $retailAsMainPrice, $lang);
+        $base = $this->baseFromOffer($offer, 'package', $retailAsMainPrice, $lang, $displayCurrency);
         $subtitle = $p->package_subtitle !== null && $p->package_subtitle !== ''
             ? ($p->getTranslated('package_subtitle', $lang) ?? $p->package_subtitle)
             : (string) $p->package_type;
@@ -350,7 +355,7 @@ class OfferNormalizationService
      *
      * @return array<string, mixed>|null
      */
-    private function normalizeVisaOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en'): ?array
+    private function normalizeVisaOffer(Offer $offer, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): ?array
     {
         if (! $offer->relationLoaded('visa') || ! $offer->visa instanceof Visa) {
             return null;
@@ -358,7 +363,7 @@ class OfferNormalizationService
 
         $v = $offer->visa;
 
-        $base = $this->baseFromOffer($offer, 'visa', $retailAsMainPrice, $lang);
+        $base = $this->baseFromOffer($offer, 'visa', $retailAsMainPrice, $lang, $displayCurrency);
         $base['destination_location'] = $this->nullableNonEmptyString($v->country);
         $base['subtitle'] = $this->nullableNonEmptyString($v->visa_type);
         $base['duration'] = $v->processing_days;
@@ -369,12 +374,19 @@ class OfferNormalizationService
     /**
      * @return array<string, mixed>
      */
-    private function baseFromOffer(Offer $offer, string $moduleType, bool $retailAsMainPrice = false, string $lang = 'en'): array
+    private function baseFromOffer(Offer $offer, string $moduleType, bool $retailAsMainPrice = false, string $lang = 'en', ?string $displayCurrency = null): array
     {
         $rawPrice = $offer->price ?? 0;
         $displayPrice = $retailAsMainPrice
             ? app(PriceCalculatorService::class)->b2cPrice($rawPrice)
             : $offer->price;
+
+        // Part A — additive DISPLAY-currency conversion of the emitted `price`.
+        $displayFields = app(DisplayCurrencyService::class)->fieldsFor(
+            $displayPrice,
+            $offer->currency,
+            app(DisplayCurrencyService::class)->sanitize($displayCurrency),
+        );
 
         return [
             'offer_id' => $offer->id,
@@ -396,6 +408,9 @@ class OfferNormalizationService
             'capacity_type' => null,
             'price' => $displayPrice,
             'currency' => $offer->currency,
+            'display_price' => $displayFields['display_price'],
+            'display_currency' => $displayFields['display_currency'],
+            'fx_rate' => $displayFields['fx_rate'],
             'price_type' => null,
             'availability_status' => null,
             'available_quantity' => null,

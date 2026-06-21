@@ -7,6 +7,7 @@ use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Package;
 use App\Services\Availability\AvailabilityNormalizerService;
 use App\Services\Packages\PackageService;
+use App\Services\Pricing\DisplayCurrencyService;
 use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -36,6 +37,16 @@ class PackageResource extends JsonResource
             'capacity' => $this->adults_count,
         ]);
 
+        // Part A — additive top-level display siblings. Mirror the `pricing`
+        // object's B2C sell price (NOT the gated net base_price), so the card
+        // always has an honest display value even for unauthenticated callers.
+        $displayService = app(DisplayCurrencyService::class);
+        $displayFields = $displayService->fieldsFor(
+            $pricing['sell_price'] ?? 0,
+            $this->currency,
+            $displayService->sanitize($request->query('display_currency')),
+        );
+
         return [
             'id' => $this->id,
             'offer_id' => $this->offer_id,
@@ -53,6 +64,9 @@ class PackageResource extends JsonResource
             'children_count' => $this->children_count,
             'infants_count' => $this->infants_count,
             'base_price' => $this->safeBasePrice($request, $this->base_price, $ownerId),
+            'display_price' => $displayFields['display_price'],
+            'display_currency' => $displayFields['display_currency'],
+            'fx_rate' => $displayFields['fx_rate'],
             'display_price_mode' => $this->display_price_mode,
             'currency' => $this->currency,
             'pricing' => $pricing,

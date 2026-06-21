@@ -3,6 +3,7 @@
 namespace App\Services\Packages;
 
 use App\Models\Package;
+use App\Services\Pricing\DisplayCurrencyService;
 use Illuminate\Support\Collection;
 
 class PackageSearchService
@@ -79,9 +80,20 @@ class PackageSearchService
             ->orderByDesc('created_at')
             ->paginate($perPage, ['*'], 'page', $page);
 
+        // Part A — additive display-currency conversion of each row's base_price.
+        // base_price here is the stored package price (not operator-net markup);
+        // it is the public-facing card price, so converting it is correct.
+        $displayService = app(DisplayCurrencyService::class);
+        $displayCurrency = $displayService->sanitize($filters['display_currency'] ?? null);
+
         return [
             'data' => collect($paginator->items())
-                ->map(fn (Package $package): array => $package->toArray())
+                ->map(fn (Package $package): array => $displayService->attach(
+                    $package->toArray(),
+                    $package->base_price,
+                    $package->currency,
+                    $displayCurrency,
+                ))
                 ->values()
                 ->all(),
             'meta' => [

@@ -68,6 +68,10 @@ class DiscoveryController extends Controller
             'price_min' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'price_max' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'currency' => ['sometimes', 'nullable', 'string', 'size:3'],
+            // Part A — DISPLAY currency (how prices are presented). Distinct
+            // from the `currency` FILTER above; unknown values are ignored
+            // downstream (treated as absent → native currency).
+            'display_currency' => ['sometimes', 'nullable', 'string', Rule::in(['USD', 'EUR', 'AMD'])],
             'sort' => ['sometimes', 'nullable', 'string', Rule::in(['price_asc', 'price_desc', 'newest'])],
             'per_page' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:100'],
             'page' => ['sometimes', 'nullable', 'integer', 'min:1'],
@@ -105,6 +109,7 @@ class DiscoveryController extends Controller
             'price_min' => $validated['price_min'] ?? null,
             'price_max' => $validated['price_max'] ?? null,
             'currency' => isset($validated['currency']) ? strtoupper($validated['currency']) : null,
+            'display_currency' => isset($validated['display_currency']) ? strtoupper($validated['display_currency']) : null,
             'free_cancellation' => $this->parseBooleanish($request->query('free_cancellation')),
             'is_package_eligible' => $this->parseBooleanish($request->query('is_package_eligible')),
             'sort' => $validated['sort'] ?? null,
@@ -136,7 +141,11 @@ class DiscoveryController extends Controller
         $lang = $request->attributes->get('lang');
         $lang = is_string($lang) && $lang !== '' ? $lang : null;
 
-        $payload = $discoveryService->findPublishedOfferWithNormalized($id, $lang);
+        // Part A — DISPLAY currency (service sanitizes against USD/EUR/AMD).
+        $displayCurrency = $request->query('display_currency');
+        $displayCurrency = is_string($displayCurrency) ? $displayCurrency : null;
+
+        $payload = $discoveryService->findPublishedOfferWithNormalized($id, $lang, $displayCurrency);
 
         if ($payload === null) {
             return response()->json([

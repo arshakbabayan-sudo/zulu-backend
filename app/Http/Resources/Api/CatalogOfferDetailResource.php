@@ -7,6 +7,7 @@ use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Http\Resources\Api\Concerns\SummarizesOfferModules;
 use App\Models\Offer;
 use App\Services\Offers\OfferNormalizationService;
+use App\Services\Pricing\DisplayCurrencyService;
 use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -40,6 +41,11 @@ class CatalogOfferDetailResource extends JsonResource
         );
         $lang = $this->apiLang($request);
 
+        // Part A — additive top-level display siblings (mirror safePricing).
+        $displayService = app(DisplayCurrencyService::class);
+        $displayCurrency = $displayService->sanitize($request->query('display_currency'));
+        $displayFields = $displayService->fieldsFor($b2cPrice, $this->currency, $displayCurrency);
+
         $data = [
             'id' => $this->id,
             'source_lang' => $this->resource->getAttribute('source_lang'),
@@ -48,6 +54,9 @@ class CatalogOfferDetailResource extends JsonResource
             'title' => $this->getTranslated('title', $lang) ?? $this->title,
             'price' => $b2cPrice,
             'currency' => $this->currency,
+            'display_price' => $displayFields['display_price'],
+            'display_currency' => $displayFields['display_currency'],
+            'fx_rate' => $displayFields['fx_rate'],
             'pricing' => $pricing,
             'flight' => $this->when(
                 $this->relationLoaded('flight'),
@@ -79,7 +88,7 @@ class CatalogOfferDetailResource extends JsonResource
             ),
         ];
 
-        $normalized = app(OfferNormalizationService::class)->normalize($this->resource, true, $lang);
+        $normalized = app(OfferNormalizationService::class)->normalize($this->resource, true, $lang, $displayCurrency);
         if ($normalized !== null) {
             $data['normalized_offer'] = $normalized;
         }

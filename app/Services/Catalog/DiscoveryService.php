@@ -11,6 +11,7 @@ use App\Models\ServiceConnection;
 use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Offers\OfferNormalizationService;
 use App\Services\Offers\OfferVisibilityService;
+use App\Services\Pricing\DisplayCurrencyService;
 use App\Services\Pricing\PriceCalculatorService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,9 +35,17 @@ class DiscoveryService
     public function search(array $input, ?string $languageCode = null): array
     {
         $lang = $languageCode ?? config('app.locale', 'en');
+
+        // Part A — normalize the requested DISPLAY currency before it lands in
+        // the cache key, so unknown values don't fragment the cache and a
+        // given (filters, lang, display_currency) tuple caches once. This is
+        // DISTINCT from the `currency` FILTER param already in $input.
+        $displayCurrency = app(DisplayCurrencyService::class)->sanitize($input['display_currency'] ?? null);
+        $input['display_currency'] = $displayCurrency;
+
         $cacheKey = 'discovery_search:'.md5(json_encode([$input, $lang], JSON_UNESCAPED_UNICODE));
 
-        return Cache::remember($cacheKey, 30, function () use ($input, $lang): array {
+        return Cache::remember($cacheKey, 30, function () use ($input, $lang, $displayCurrency): array {
             $perPage = (int) ($input['per_page'] ?? 20);
             $perPage = max(1, min(100, $perPage));
             $page = max(1, (int) ($input['page'] ?? 1));
@@ -147,7 +156,7 @@ class DiscoveryService
 
             $items = [];
             foreach ($offers as $offer) {
-                $normalized = $this->normalizationService->normalize($offer, true, $lang);
+                $normalized = $this->normalizationService->normalize($offer, true, $lang, $displayCurrency);
                 if ($normalized !== null) {
                     $items[] = $normalized;
                 }
@@ -183,9 +192,10 @@ class DiscoveryService
      * @param  string|null  $languageCode  Resolved locale for offer title + normalized copy.
      * @return array{offer: array<string, mixed>, normalized: array<string, mixed>, hotel_rooms?: list<array<string, mixed>>, review_target?: array{entity_type: string, entity_id: int}}|null
      */
-    public function findPublishedOfferWithNormalized(int $id, ?string $languageCode = null): ?array
+    public function findPublishedOfferWithNormalized(int $id, ?string $languageCode = null, ?string $displayCurrency = null): ?array
     {
         $lang = $languageCode ?? config('app.locale', 'en');
+        $displayCurrency = app(DisplayCurrencyService::class)->sanitize($displayCurrency);
         $offer = Offer::query()
             ->where('status', Offer::STATUS_PUBLISHED)
             ->whereKey($id)
@@ -216,12 +226,21 @@ class DiscoveryService
             return null;
         }
 
-        $normalized = $this->normalizationService->normalize($offer, true, $lang);
+        $normalized = $this->normalizationService->normalize($offer, true, $lang, $displayCurrency);
         if ($normalized === null) {
             return null;
         }
 
         $pricing = app(PriceCalculatorService::class)->normalizedPrice($offer->price, $offer->currency);
+
+        // Part A — additive DISPLAY-currency conversion of the B2C sell price
+        // (calculated_price). base_price is operator-net — never converted.
+        $displayFields = app(DisplayCurrencyService::class)->fieldsFor(
+            $pricing['calculated_price'] ?? null,
+            $offer->currency,
+            $displayCurrency,
+        );
+        $pricing = $pricing + $displayFields;
 
         // Translation status for the customer site banner. The "module" entity
         // (hotel/excursion/transfer/visa/package) is where the long-form text
@@ -240,6 +259,10 @@ class DiscoveryService
                 'base_price' => $pricing['base_price'],
                 'calculated_price' => $pricing['calculated_price'],
                 'currency' => $offer->currency,
+                // Part A — additive top-level display siblings (sell price only).
+                'display_price' => $displayFields['display_price'],
+                'display_currency' => $displayFields['display_currency'],
+                'fx_rate' => $displayFields['fx_rate'],
                 'pricing' => $pricing,
                 'status' => $offer->status,
                 'company_id' => $offer->company_id,
@@ -248,7 +271,7 @@ class DiscoveryService
         ];
 
         if ($offer->type === 'hotel' && $offer->hotel instanceof Hotel) {
-            $payload['hotel_rooms'] = $this->hotelRoomsForPublic($offer->hotel);
+            $payload['hotel_rooms'] = $this->hotelRoomsForPublic($offer->hotel, $displayCurrency);
         }
 
         $reviewTarget = $this->reviewTargetForOffer($offer);
@@ -291,13 +314,15 @@ class DiscoveryService
      *
      * @return list<array<string, mixed>>
      */
-    private function hotelRoomsForPublic(Hotel $hotel): array
+    private function hotelRoomsForPublic(Hotel $hotel, ?string $displayCurrency = null): array
     {
         if (! $hotel->relationLoaded('rooms')) {
             return [];
         }
 
-        return $hotel->rooms->map(function (HotelRoom $room) {
+        $displayService = app(DisplayCurrencyService::class);
+
+        return $hotel->rooms->map(function (HotelRoom $room) use ($displayService, $displayCurrency) {
             return [
                 'id' => $room->id,
                 'room_type' => $room->room_type,
@@ -308,12 +333,12 @@ class DiscoveryService
                 'bed_count' => (int) $room->bed_count,
                 'room_size' => $room->room_size,
                 'pricings' => $room->relationLoaded('pricings')
-                    ? $room->pricings->map(fn ($p) => [
+                    ? $room->pricings->map(fn ($p) => $displayService->attach([
                         'price' => (float) $p->price,
                         'currency' => $p->currency,
                         'pricing_mode' => $p->pricing_mode,
                         'min_nights' => $p->min_nights !== null ? (int) $p->min_nights : null,
-                    ])->values()->all()
+                    ], (float) $p->price, $p->currency, $displayCurrency))->values()->all()
                     : [],
             ];
         })->values()->all();

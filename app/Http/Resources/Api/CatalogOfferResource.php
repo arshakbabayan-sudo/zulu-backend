@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api;
 use App\Http\Resources\Api\Concerns\AppliesPricingVisibility;
 use App\Http\Resources\Api\Concerns\ResolvesApiLanguage;
 use App\Models\Offer;
+use App\Services\Pricing\DisplayCurrencyService;
 use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -34,12 +35,23 @@ class CatalogOfferResource extends JsonResource
         );
         $lang = $this->apiLang($request);
 
+        // Part A — additive top-level display siblings (mirror safePricing).
+        $displayService = app(DisplayCurrencyService::class);
+        $displayFields = $displayService->fieldsFor(
+            $b2cPrice,
+            $this->currency,
+            $displayService->sanitize($request->query('display_currency')),
+        );
+
         return [
             'id' => $this->id,
             'type' => $this->type,
             'title' => $this->getTranslated('title', $lang) ?? $this->title,
             'price' => $b2cPrice,
             'currency' => $this->currency,
+            'display_price' => $displayFields['display_price'],
+            'display_currency' => $displayFields['display_currency'],
+            'fx_rate' => $displayFields['fx_rate'],
             'pricing' => $pricing,
         ];
     }

@@ -8,6 +8,7 @@ use App\Models\Offer;
 use App\Models\Package;
 use App\Models\PackageComponent;
 use App\Models\Transfer;
+use App\Services\Pricing\DisplayCurrencyService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -208,10 +209,17 @@ class PackageService
      *     currency: string,
      *     display_mode: string,
      *     adults_count: int,
-     *     per_person: float
+     *     per_person: float,
+     *     display_total: float,
+     *     display_per_person: float,
+     *     display_currency: string|null,
+     *     fx_rate: string
      * }
+     *
+     * @param  string|null  $displayCurrency  Requested DISPLAY currency (USD|EUR|AMD); null = native. The
+     *                                        actual charge currency is NOT changed — display only (Part A).
      */
-    public function composePricing(Package $package): array
+    public function composePricing(Package $package, ?string $displayCurrency = null): array
     {
         $package->loadMissing(['components.offer']);
 
@@ -232,18 +240,34 @@ class PackageService
                 'offer_id' => $component->offer_id,
             ];
 
+            // Single-currency sum: every component price is stored in the same
+            // package currency, so this never sums across currencies.
             $total += $price;
         }
 
+        $total = round($total, 2);
+        $currency = $package->currency ?? 'USD';
+        $perPerson = $package->adults_count > 0
+            ? round($total / (int) $package->adults_count, 2)
+            : $total;
+
+        // Part A — additive display-currency conversion of total + per_person.
+        $displayService = app(DisplayCurrencyService::class);
+        $displayCurrency = $displayService->sanitize($displayCurrency);
+        $totalFields = $displayService->fieldsFor($total, $currency, $displayCurrency);
+        $perPersonFields = $displayService->fieldsFor($perPerson, $currency, $displayCurrency);
+
         return [
             'items' => $items,
-            'total' => round($total, 2),
-            'currency' => $package->currency ?? 'USD',
+            'total' => $total,
+            'currency' => $currency,
             'display_mode' => $package->display_price_mode ?? 'total',
             'adults_count' => $package->adults_count ?? 1,
-            'per_person' => $package->adults_count > 0
-                ? round($total / (int) $package->adults_count, 2)
-                : round($total, 2),
+            'per_person' => $perPerson,
+            'display_total' => $totalFields['display_price'],
+            'display_per_person' => $perPersonFields['display_price'],
+            'display_currency' => $totalFields['display_currency'],
+            'fx_rate' => $totalFields['fx_rate'],
         ];
     }
 

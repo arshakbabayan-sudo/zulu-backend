@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Api\Concerns;
 
 use App\Models\User;
+use App\Services\Pricing\DisplayCurrencyService;
 use App\Services\Pricing\PriceCalculatorService;
 use Illuminate\Http\Request;
 
@@ -85,11 +86,21 @@ trait AppliesPricingVisibility
     ): array {
         $calculator = app(PriceCalculatorService::class);
         $sellPrice = $calculator->b2cPrice($basePrice ?? 0);
+        $currencyUpper = $currency !== null ? strtoupper($currency) : null;
+
+        // Part A — additive DISPLAY-currency conversion of the B2C sell price
+        // only. base_price (operator-net) is NEVER converted here.
+        $displayService = app(DisplayCurrencyService::class);
+        $displayCurrency = $displayService->sanitize($request->query('display_currency'));
+        $displayFields = $displayService->fieldsFor($sellPrice, $currencyUpper, $displayCurrency);
 
         $payload = [
             'sell_price' => $sellPrice,
             'calculated_price' => $sellPrice, // back-compat alias
-            'currency' => $currency !== null ? strtoupper($currency) : null,
+            'currency' => $currencyUpper,
+            'display_price' => $displayFields['display_price'],
+            'display_currency' => $displayFields['display_currency'],
+            'fx_rate' => $displayFields['fx_rate'],
         ];
 
         if ($this->canSeeNetPrice($request, $ownerCompanyId)) {
