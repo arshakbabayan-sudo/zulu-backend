@@ -10,6 +10,7 @@ use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Services\Marketplace\MarketplaceService;
+use App\Services\Payments\ChargeAmountResolver;
 use App\Services\Payments\PaymentGatewayService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -103,7 +104,8 @@ class MarketplaceController extends Controller
     public function paymentIntent(
         Request $request,
         string $orderId,
-        PaymentGatewayService $gateway
+        PaymentGatewayService $gateway,
+        ChargeAmountResolver $chargeResolver
     ): JsonResponse {
         $order = Order::query()->findOrFail($orderId);
         if ((int) $order->user_id !== (int) $request->user()->id) {
@@ -133,7 +135,19 @@ class MarketplaceController extends Controller
             ], 503);
         }
 
-        [$invoice, $payment] = DB::transaction(function () use ($order, $total, $currency): array {
+        // B3 — server-authoritative customer charge. When a non-AMD order is
+        // paid in the Armenia phase, the gateway must charge the AMD amount
+        // (order.total × seller-effective-rate), with the rate FROZEN at
+        // intent-create time. SAFE-BY-DEFAULT: if the order is already AMD, or
+        // no seller FX setting / base rate resolves, this returns the order's
+        // native amount/currency unchanged and writes no snapshot — zero
+        // behaviour change for unconfigured platforms. The amount/currency are
+        // ALWAYS derived server-side from the Order, never from the request.
+        [$invoice, $payment] = DB::transaction(function () use ($order, $total, $currency, $chargeResolver): array {
+            $charge = $chargeResolver->resolveForOrder($order, $total, $currency);
+            $chargeAmount = $charge['amount'];
+            $chargeCurrency = $charge['currency'];
+
             $invoice = Invoice::query()
                 ->where('order_id', $order->id)
                 ->whereIn('status', [Invoice::STATUS_PENDING, Invoice::STATUS_ISSUED])
@@ -142,8 +156,8 @@ class MarketplaceController extends Controller
             if ($invoice === null) {
                 $invoice = Invoice::query()->create([
                     'order_id' => $order->id,
-                    'total_amount' => $total,
-                    'currency' => $currency,
+                    'total_amount' => $chargeAmount,
+                    'currency' => $chargeCurrency,
                     'status' => Invoice::STATUS_PENDING,
                 ]);
             }
@@ -156,10 +170,22 @@ class MarketplaceController extends Controller
             if ($payment === null) {
                 $payment = Payment::query()->create([
                     'invoice_id' => $invoice->id,
-                    'amount' => $total,
-                    'currency' => $currency,
+                    'amount' => $chargeAmount,
+                    'currency' => $chargeCurrency,
                     'status' => Payment::STATUS_PENDING,
                 ]);
+            } elseif (
+                (float) $payment->amount !== $chargeAmount
+                || strtoupper((string) $payment->currency) !== $chargeCurrency
+            ) {
+                // Idempotent reuse: a pending Payment from a prior call may still
+                // carry the native (pre-conversion) amount/currency. Align it to
+                // the resolved charge BEFORE the gateway reads it. Note the
+                // resolver returns the ALREADY-FROZEN charge on reuse (it reads
+                // the existing snapshot), so this never re-prices a placed order.
+                $payment->amount = $chargeAmount;
+                $payment->currency = $chargeCurrency;
+                $payment->save();
             }
 
             return [$invoice, $payment];
@@ -173,14 +199,16 @@ class MarketplaceController extends Controller
             ], 502);
         }
 
+        // Surface the ACTUAL charged amount/currency (server-authoritative,
+        // post-conversion) so the client renders what is really being charged.
         return response()->json([
             'success' => true,
             'data' => [
                 'client_secret' => $result['client_secret'],
                 'payment_intent_id' => $result['gateway_reference'] ?? null,
                 'publishable_key' => (string) config('payment.stripe.key', ''),
-                'currency' => strtolower($currency),
-                'amount' => $total,
+                'currency' => strtolower((string) $payment->currency),
+                'amount' => (float) $payment->amount,
                 'invoice_id' => $invoice->id,
                 'payment_id' => $payment->id,
                 'order_id' => $order->id,

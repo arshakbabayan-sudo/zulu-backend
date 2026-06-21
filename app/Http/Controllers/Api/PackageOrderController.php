@@ -13,6 +13,7 @@ use App\Models\Package;
 use App\Models\Payment;
 use App\Services\Admin\AdminAccessService;
 use App\Services\Packages\PackageOrderService;
+use App\Services\Payments\ChargeAmountResolver;
 use App\Services\Payments\PaymentGatewayService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -126,7 +127,8 @@ class PackageOrderController extends Controller
         Request $request,
         string $order,
         PackageOrderService $service,
-        PaymentGatewayService $gateway
+        PaymentGatewayService $gateway,
+        ChargeAmountResolver $chargeResolver
     ): JsonResponse {
         $model = $service->findForUserUuid($order, $request->user());
         if ($model === null) {
@@ -156,7 +158,17 @@ class PackageOrderController extends Controller
             ], 503);
         }
 
-        [$invoice, $payment] = DB::transaction(function () use ($model, $total, $currency): array {
+        // B3 — server-authoritative customer charge (seller FX model). Same
+        // safe-by-default conversion + frozen snapshot as the marketplace
+        // payment-intent path: a non-AMD package order is charged the AMD
+        // amount (order.total × seller-effective-rate) with the rate frozen at
+        // intent-create; an already-AMD order or an unconfigured platform is
+        // charged exactly as today. Always server-side, never from the request.
+        [$invoice, $payment] = DB::transaction(function () use ($model, $total, $currency, $chargeResolver): array {
+            $charge = $chargeResolver->resolveForOrder($model, $total, $currency);
+            $chargeAmount = $charge['amount'];
+            $chargeCurrency = $charge['currency'];
+
             $invoice = Invoice::query()
                 ->where('order_id', $model->id)
                 ->whereIn('status', [Invoice::STATUS_PENDING, Invoice::STATUS_ISSUED])
@@ -165,8 +177,8 @@ class PackageOrderController extends Controller
             if ($invoice === null) {
                 $invoice = Invoice::query()->create([
                     'order_id' => $model->id,
-                    'total_amount' => $total,
-                    'currency' => $currency,
+                    'total_amount' => $chargeAmount,
+                    'currency' => $chargeCurrency,
                     'status' => Invoice::STATUS_PENDING,
                 ]);
             }
@@ -179,10 +191,21 @@ class PackageOrderController extends Controller
             if ($payment === null) {
                 $payment = Payment::query()->create([
                     'invoice_id' => $invoice->id,
-                    'amount' => $total,
-                    'currency' => $currency,
+                    'amount' => $chargeAmount,
+                    'currency' => $chargeCurrency,
                     'status' => Payment::STATUS_PENDING,
                 ]);
+            } elseif (
+                (float) $payment->amount !== $chargeAmount
+                || strtoupper((string) $payment->currency) !== $chargeCurrency
+            ) {
+                // Idempotent reuse: align a stale pending Payment to the resolved
+                // (already-frozen) charge before the gateway reads it. Never
+                // re-prices a placed order — the resolver returns the frozen
+                // charge on reuse.
+                $payment->amount = $chargeAmount;
+                $payment->currency = $chargeCurrency;
+                $payment->save();
             }
 
             return [$invoice, $payment];
@@ -196,14 +219,16 @@ class PackageOrderController extends Controller
             ], 502);
         }
 
+        // Surface the ACTUAL charged amount/currency (server-authoritative,
+        // post-conversion).
         return response()->json([
             'success' => true,
             'data' => [
                 'client_secret' => $result['client_secret'],
                 'payment_intent_id' => $result['gateway_reference'] ?? null,
                 'publishable_key' => (string) config('payment.stripe.key', ''),
-                'currency' => strtolower($currency),
-                'amount' => $total,
+                'currency' => strtolower((string) $payment->currency),
+                'amount' => (float) $payment->amount,
                 'invoice_id' => $invoice->id,
                 'payment_id' => $payment->id,
             ],
