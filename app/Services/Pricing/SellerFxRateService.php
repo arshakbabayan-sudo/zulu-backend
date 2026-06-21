@@ -148,7 +148,27 @@ class SellerFxRateService
         $sourceCurrency = strtoupper($sourceCurrency);
         $targetCurrency = strtoupper($targetCurrency);
 
+        // Same currency → trivial no-op (no conversion, no config required).
+        if ($sourceCurrency === $targetCurrency) {
+            return [
+                'amount' => round((float) $amount, 2),
+                'rate' => '1',
+                'target_currency' => $targetCurrency,
+                'source' => null,
+                'setting_id' => null,
+            ];
+        }
+
+        // Cross-currency conversion requires an EXPLICIT seller FX setting at
+        // some scope (agent → operator → platform). With no setting we NEVER
+        // convert — the customer is charged in the native currency
+        // (safe-by-default). Deliberate: a CBA rate merely existing in
+        // exchange_rates must NOT trigger conversion on its own; an operator or
+        // super-admin must opt in by configuring a setting.
         $setting = $this->resolveSetting($operatorCompanyId, $agentCompanyId, $targetCurrency);
+        if ($setting === null) {
+            return null;
+        }
 
         $rate = $this->effectiveRate($sourceCurrency, $targetCurrency, $setting);
         if ($rate === null) {
@@ -161,8 +181,8 @@ class SellerFxRateService
             'amount' => round((float) $converted, 2),
             'rate' => $rate,
             'target_currency' => $targetCurrency,
-            'source' => $setting?->source,
-            'setting_id' => $setting?->id,
+            'source' => $setting->source,
+            'setting_id' => $setting->id,
         ];
     }
 
