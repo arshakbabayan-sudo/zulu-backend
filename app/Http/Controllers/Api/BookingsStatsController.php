@@ -127,11 +127,23 @@ class BookingsStatsController extends Controller
                 ->where('created_at', '>=', $rangeStart)
                 ->sum('total');
 
+            // Phase 1 §1 — revenue partitioned by currency. The 'revenue_amount'
+            // scalar sums ACROSS currencies; the sibling groups by orders.currency.
+            $revenueByCurrency = (clone $base)
+                ->whereIn('status', ['paid', 'confirmed'])
+                ->where('created_at', '>=', $rangeStart)
+                ->selectRaw('currency, COALESCE(SUM(total), 0) AS amount')
+                ->groupBy('currency')
+                ->pluck('amount', 'currency')
+                ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                ->toArray();
+
             return [
                 'total_count' => $totalCount,
                 'pending_count' => $pendingCount,
                 'confirmed_count' => $confirmedCount,
                 'revenue_amount' => round($revenueAmount, 2),
+                'revenue_amount_by_currency' => $revenueByCurrency,
             ];
         });
 
@@ -194,11 +206,23 @@ class BookingsStatsController extends Controller
                 ->where('created_at', '>=', $rangeStart)
                 ->sum('total');
 
+            // Phase 1 §1 — value partitioned by currency. The 'total_value'
+            // scalar sums ACROSS currencies; the sibling groups by orders.currency.
+            $totalValueByCurrency = (clone $base)
+                ->whereIn('status', ['paid', 'confirmed'])
+                ->where('created_at', '>=', $rangeStart)
+                ->selectRaw('currency, COALESCE(SUM(total), 0) AS amount')
+                ->groupBy('currency')
+                ->pluck('amount', 'currency')
+                ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                ->toArray();
+
             return [
                 'total_count' => $totalCount,
                 'paid_count' => $paidCount,
                 'pending_count' => $pendingCount,
                 'total_value' => round($totalValue, 2),
+                'total_value_by_currency' => $totalValueByCurrency,
             ];
         });
 

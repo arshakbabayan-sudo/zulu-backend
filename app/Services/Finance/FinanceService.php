@@ -258,6 +258,58 @@ class FinanceService
 
         $currency = $currencyRow !== null ? (string) $currencyRow->currency : null;
 
+        // Phase 1 §1 — per-currency breakdown. The scalar totals above sum
+        // ACROSS currencies (AMD+USD+EUR+RUB into one meaningless number);
+        // 'totals_by_currency' partitions each money total by the entitlement's
+        // currency so consumers can render real, currency-correct figures.
+        // The original scalars + 'currency' (most-common) are kept for
+        // back-compat. pluck('x','currency') after a GROUP BY works on both
+        // Postgres and SQLite.
+        $totalsByCurrency = [];
+        $accumulate = function (string $field, array $rows) use (&$totalsByCurrency): void {
+            foreach ($rows as $cur => $amount) {
+                $code = strtoupper((string) $cur);
+                if ($code === '') {
+                    continue;
+                }
+                if (! isset($totalsByCurrency[$code])) {
+                    $totalsByCurrency[$code] = [
+                        'gross' => 0.0,
+                        'commission' => 0.0,
+                        'net' => 0.0,
+                        'pending' => 0.0,
+                        'payable' => 0.0,
+                        'settled' => 0.0,
+                    ];
+                }
+                $totalsByCurrency[$code][$field] = round((float) $amount, 2);
+            }
+        };
+
+        $entBase = fn () => DB::table('supplier_entitlements')->where('company_id', $cid);
+
+        $accumulate('gross', (clone $entBase())
+            ->selectRaw('currency, COALESCE(SUM(gross_amount), 0) AS amount')
+            ->groupBy('currency')->pluck('amount', 'currency')->toArray());
+        $accumulate('commission', (clone $entBase())
+            ->selectRaw('currency, COALESCE(SUM(commission_amount), 0) AS amount')
+            ->groupBy('currency')->pluck('amount', 'currency')->toArray());
+        $accumulate('net', (clone $entBase())
+            ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+            ->groupBy('currency')->pluck('amount', 'currency')->toArray());
+        $accumulate('pending', (clone $entBase())
+            ->whereIn('status', ['pending', 'accrued'])
+            ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+            ->groupBy('currency')->pluck('amount', 'currency')->toArray());
+        $accumulate('payable', (clone $entBase())
+            ->where('status', 'payable')
+            ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+            ->groupBy('currency')->pluck('amount', 'currency')->toArray());
+        $accumulate('settled', (clone $entBase())
+            ->where('status', 'settled')
+            ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+            ->groupBy('currency')->pluck('amount', 'currency')->toArray());
+
         return [
             'company_id' => $cid,
             'currency' => $currency,
@@ -267,6 +319,7 @@ class FinanceService
             'pending_amount' => $pendingAmount,
             'payable_amount' => $payableAmount,
             'settled_amount' => $settledAmount,
+            'totals_by_currency' => $totalsByCurrency,
             'entitlements_count' => $entitlementsCount,
             'settlements_count' => $settlementsCount,
             'last_settlement_at' => $lastSettlementAt !== null ? (string) $lastSettlementAt : null,

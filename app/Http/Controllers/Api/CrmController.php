@@ -1393,17 +1393,50 @@ class CrmController extends Controller
         }
         $open = (clone $dealQuery)->whereNotIn('stage', ['won', 'lost']);
 
+        // Phase 1 §1 — 'pipeline_value' (open deals) and each stage's 'value'
+        // sum value_amount ACROSS currencies (crm_deals has a `currency` col).
+        // Add additive 'pipeline_value_by_currency' + a per-stage 'by_currency'
+        // map. The scalars + existing 'value' are kept for back-compat.
+        $pipelineValueByCurrency = (clone $open)
+            ->selectRaw('currency, COALESCE(SUM(value_amount), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+            ->toArray();
+
+        $stageCurrencyRows = (clone $dealQuery)
+            ->selectRaw('stage, currency, COALESCE(SUM(value_amount), 0) AS amount')
+            ->groupBy('stage', 'currency')
+            ->get();
+        $stageCurrencyMap = [];
+        foreach ($stageCurrencyRows as $r) {
+            $code = strtoupper((string) $r->currency);
+            if ($code === '') {
+                continue;
+            }
+            $stageCurrencyMap[(string) $r->stage][$code] = round((float) $r->amount, 2);
+        }
+
+        $byStage = (clone $dealQuery)
+            ->selectRaw('stage, count(*) as count, coalesce(sum(value_amount),0) as value')
+            ->groupBy('stage')
+            ->get()
+            ->map(function ($row) use ($stageCurrencyMap) {
+                $arr = (array) $row;
+                $arr['value_by_currency'] = $stageCurrencyMap[(string) $row->stage] ?? [];
+
+                return $arr;
+            })
+            ->keyBy('stage');
+
         return response()->json([
             'success' => true,
             'data' => [
                 'open_deals' => (clone $open)->count(),
                 'pipeline_value' => (float) (clone $open)->sum('value_amount'),
+                'pipeline_value_by_currency' => $pipelineValueByCurrency,
                 'won_deals' => (clone $dealQuery)->where('stage', 'won')->count(),
-                'by_stage' => (clone $dealQuery)
-                    ->selectRaw('stage, count(*) as count, coalesce(sum(value_amount),0) as value')
-                    ->groupBy('stage')
-                    ->get()
-                    ->keyBy('stage'),
+                'by_stage' => $byStage,
             ],
         ]);
     }

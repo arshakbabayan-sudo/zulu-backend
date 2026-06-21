@@ -59,6 +59,21 @@ class CustomerStatsController extends Controller
             ->where('created_at', '>=', $cutoff365)
             ->sum('total');
 
+        // Phase 1 §1 — the spend scalars (total / last_30_days / last_365_days)
+        // sum ACROSS currencies. Add additive *_by_currency siblings (keyed by
+        // 3-letter currency → float). The existing 'by_currency' list (with
+        // order counts) is kept untouched. Scalars kept for back-compat.
+        $spendByCurrency = fn ($query) => (clone $query)
+            ->selectRaw('currency, COALESCE(SUM(total), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+            ->toArray();
+
+        $totalByCurrency = $spendByCurrency($paid);
+        $monthlyByCurrency = $spendByCurrency((clone $paid)->where('created_at', '>=', $cutoff30));
+        $yearlyByCurrency = $spendByCurrency((clone $paid)->where('created_at', '>=', $cutoff365));
+
         $loyalty = LoyaltyAccount::query()->where('user_id', $user->id)->first();
         $voucherCount = Voucher::query()
             ->whereHas('order', fn ($q) => $q->where('user_id', $user->id))
@@ -84,6 +99,9 @@ class CustomerStatsController extends Controller
                     'last_30_days' => (float) $monthlySpend,
                     'last_365_days' => (float) $yearlySpend,
                     'by_currency' => $byCurrency,
+                    'total_by_currency' => $totalByCurrency,
+                    'last_30_days_by_currency' => $monthlyByCurrency,
+                    'last_365_days_by_currency' => $yearlyByCurrency,
                 ],
                 'first_order_at' => $firstOrder,
                 'last_order_at' => $lastOrder,

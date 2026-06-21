@@ -75,8 +75,19 @@ class PlatformStatisticsService
             ->whereIn('status', ['paid', 'confirmed'])
             ->where('created_at', '>=', $cutoff);
 
+        // Phase 1 §1 — revenue partitioned by currency. The 'total' scalar (and
+        // avg_order_value) sum ACROSS currencies; 'total_by_currency' groups by
+        // orders.currency. Original scalars kept for back-compat.
+        $totalByCurrency = $paidOrders->clone()
+            ->selectRaw('currency, COALESCE(SUM(total), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+            ->toArray();
+
         return [
             'total' => (float) $paidOrders->clone()->sum('total'),
+            'total_by_currency' => $totalByCurrency,
             'order_count' => (int) $paidOrders->clone()->count(),
             'avg_order_value' => (float) $paidOrders->clone()->avg('total') ?? 0,
         ];
@@ -172,12 +183,24 @@ class PlatformStatisticsService
      */
     private function insuranceStats(CarbonImmutable $cutoff): array
     {
+        // Phase 1 §1 — premiums partitioned by currency (insurance_policies has
+        // a `currency` column). The scalar 'total_premium_collected' sums ACROSS
+        // currencies; the sibling groups by currency. Scalar kept.
+        $premiumByCurrency = InsurancePolicy::query()
+            ->where('issued_at', '>=', $cutoff)
+            ->selectRaw('currency, COALESCE(SUM(premium_paid), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+            ->toArray();
+
         return [
             'active_policies' => InsurancePolicy::query()->where('status', 'active')->count(),
             'issued_in_window' => InsurancePolicy::query()->where('issued_at', '>=', $cutoff)->count(),
             'total_premium_collected' => (float) InsurancePolicy::query()
                 ->where('issued_at', '>=', $cutoff)
                 ->sum('premium_paid'),
+            'total_premium_collected_by_currency' => $premiumByCurrency,
         ];
     }
 
@@ -216,6 +239,25 @@ class PlatformStatisticsService
             ->get()
             ->keyBy(fn ($r) => CarbonImmutable::parse($r->bucket)->toDateString());
 
+        // Phase 1 §1 — per-day revenue partitioned by currency. The scalar
+        // 'revenue' per day sums ACROSS currencies; 'revenue_by_currency' groups
+        // by day AND orders.currency. Scalar kept.
+        $byDateCurrency = [];
+        $currencyRows = Order::query()
+            ->selectRaw("date_trunc('day', created_at) as bucket, currency, sum(total) as revenue")
+            ->whereIn('status', ['paid', 'confirmed'])
+            ->where('created_at', '>=', $cutoff)
+            ->groupBy('bucket', 'currency')
+            ->get();
+        foreach ($currencyRows as $r) {
+            $date = CarbonImmutable::parse($r->bucket)->toDateString();
+            $code = strtoupper((string) $r->currency);
+            if ($code === '') {
+                continue;
+            }
+            $byDateCurrency[$date][$code] = round((float) $r->revenue, 2);
+        }
+
         $series = [];
         for ($i = 0; $i < $days; $i++) {
             $date = $cutoff->addDays($i)->toDateString();
@@ -223,6 +265,7 @@ class PlatformStatisticsService
             $series[] = [
                 'date' => $date,
                 'revenue' => $row ? (float) $row->revenue : 0.0,
+                'revenue_by_currency' => $byDateCurrency[$date] ?? [],
                 'orders' => $row ? (int) $row->orders : 0,
             ];
         }
@@ -282,12 +325,23 @@ class PlatformStatisticsService
 
         $paid = (clone $orders)->whereIn('status', ['paid', 'confirmed']);
 
+        // Phase 1 §1 — seller revenue partitioned by currency. The 'total_revenue'
+        // scalar (and avg_order_value) sum ACROSS currencies; the sibling groups
+        // by orders.currency. Scalars kept.
+        $totalRevenueByCurrency = (clone $paid)
+            ->selectRaw('currency, COALESCE(SUM(total), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+            ->toArray();
+
         return [
             'company_id' => $companyId,
             'window_days' => $days,
             'total_orders' => (int) (clone $orders)->count(),
             'paid_orders' => (int) (clone $paid)->count(),
             'total_revenue' => (float) (clone $paid)->sum('total'),
+            'total_revenue_by_currency' => $totalRevenueByCurrency,
             'avg_order_value' => (float) ((clone $paid)->avg('total') ?? 0),
             'orders_by_status' => (clone $orders)
                 ->selectRaw('status, count(*) as count')
@@ -332,10 +386,37 @@ class PlatformStatisticsService
         $companyIds = $rows->pluck('company_id')->all();
         $names = Company::query()->whereIn('id', $companyIds)->pluck('name', 'id');
 
+        // Phase 1 §1 — per-seller revenue partitioned by currency. The scalar
+        // 'revenue' (also the ranking key, intentionally unchanged) sums ACROSS
+        // currencies; 'revenue_by_currency' groups each seller's revenue by
+        // orders.currency. Ranking + scalar kept for back-compat.
+        $revenueByCurrency = [];
+        if (count($companyIds) > 0) {
+            $currencyRows = Order::query()
+                ->select([
+                    'company_id',
+                    'currency',
+                    DB::raw('COALESCE(SUM(total), 0) as revenue'),
+                ])
+                ->whereIn('status', ['paid', 'confirmed'])
+                ->where('created_at', '>=', $cutoff)
+                ->whereIn('company_id', $companyIds)
+                ->groupBy('company_id', 'currency')
+                ->get();
+            foreach ($currencyRows as $r) {
+                $code = strtoupper((string) $r->currency);
+                if ($code === '') {
+                    continue;
+                }
+                $revenueByCurrency[(int) $r->company_id][$code] = round((float) $r->revenue, 2);
+            }
+        }
+
         return $rows->map(fn ($r) => [
             'company_id' => (int) $r->company_id,
             'name' => $names[$r->company_id] ?? null,
             'revenue' => (float) $r->revenue,
+            'revenue_by_currency' => $revenueByCurrency[(int) $r->company_id] ?? [],
             'orders' => (int) $r->orders,
         ])->all();
     }

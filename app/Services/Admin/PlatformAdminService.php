@@ -555,16 +555,42 @@ class PlatformAdminService
             $commissionTotalSum = $applyCommScope(DB::table('commission_transactions'))->sum('commission_amount');
             $commissionCount = $applyCommScope(DB::table('commission_transactions'))->count();
 
+            // Phase 1 §1 — per-currency breakdowns. The scalars above sum
+            // ACROSS currencies; the *_by_currency siblings partition each total
+            // by currency (GROUP BY). NOTE: commission_transactions has NO plain
+            // `currency` column — `commission_amount` is denominated in
+            // `commission_currency`, so we group by that. Original scalars kept.
+            $paidByCurrency = $applyPaymentScope(DB::table('payments'))
+                ->where('status', Payment::STATUS_PAID)
+                ->selectRaw('currency, COALESCE(SUM(amount), 0) AS amount')
+                ->groupBy('currency')
+                ->pluck('amount', 'currency')
+                ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                ->toArray();
+            $commissionAccruedByCurrency = $applyCommScope(DB::table('commission_transactions'))
+                ->selectRaw('commission_currency, COALESCE(SUM(commission_amount), 0) AS amount')
+                ->groupBy('commission_currency')
+                ->pluck('amount', 'commission_currency')
+                ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                ->toArray();
+
             // §8 — real pending-payout figure (was hardcoded 0.0): net still owed
             // to the in-scope sellers via the supplier_entitlements ledger.
             $pendingPayouts = 0.0;
+            $pendingPayoutsByCurrency = [];
             if (Schema::hasTable('supplier_entitlements')) {
                 $pendingQuery = DB::table('supplier_entitlements')
                     ->whereIn('status', ['pending', 'accrued', 'payable']);
                 if ($scopeCompanyIds !== null) {
                     $pendingQuery->whereIn('company_id', count($scopeCompanyIds) > 0 ? $scopeCompanyIds : [-1]);
                 }
-                $pendingPayouts = (float) $pendingQuery->sum('net_amount');
+                $pendingPayouts = (float) (clone $pendingQuery)->sum('net_amount');
+                $pendingPayoutsByCurrency = (clone $pendingQuery)
+                    ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+                    ->groupBy('currency')
+                    ->pluck('amount', 'currency')
+                    ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                    ->toArray();
             }
 
             return [
@@ -574,6 +600,10 @@ class PlatformAdminService
                 'pending_payouts' => $pendingPayouts,
                 'payments_count_paid' => (int) $paidCount,
                 'commission_records_count' => (int) $commissionCount,
+                'total_payments_paid_by_currency' => $paidByCurrency,
+                'total_commission_accrued_by_currency' => $commissionAccruedByCurrency,
+                'total_commission_pending_by_currency' => $pendingPayoutsByCurrency,
+                'pending_payouts_by_currency' => $pendingPayoutsByCurrency,
             ];
         });
     }

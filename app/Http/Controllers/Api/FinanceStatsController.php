@@ -208,10 +208,20 @@ class FinanceStatsController extends Controller
             // recorded accrual. "Recorded (30d)" = Σ commission_amount in window.
             $thirtyDaysAgo = now()->subDays(30);
             $recordedAmount = 0.0;
+            $recordedAmountByCurrency = [];
             if (Schema::hasTable('commission_transactions')) {
                 $recordedAmount = (float) (DB::table('commission_transactions')
                     ->where('created_at', '>=', $thirtyDaysAgo)
                     ->sum('commission_amount') ?? 0);
+                // Phase 1 §1 — per-currency. commission_amount is in
+                // commission_currency (no plain `currency` column here).
+                $recordedAmountByCurrency = DB::table('commission_transactions')
+                    ->where('created_at', '>=', $thirtyDaysAgo)
+                    ->selectRaw('commission_currency, COALESCE(SUM(commission_amount), 0) AS amount')
+                    ->groupBy('commission_currency')
+                    ->pluck('amount', 'commission_currency')
+                    ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                    ->toArray();
             }
 
             // "Pending" = net still owed to sellers, from the entitlement ledger
@@ -219,6 +229,7 @@ class FinanceStatsController extends Controller
             // no pending state). Mirrors entitlementSplitAndPending().
             $pendingAmount = 0.0;
             $pendingCount = 0;
+            $pendingAmountByCurrency = [];
             if (Schema::hasTable('supplier_entitlements')) {
                 $pendingAggregate = DB::table('supplier_entitlements')
                     ->whereIn('status', ['pending', 'accrued', 'payable'])
@@ -226,6 +237,13 @@ class FinanceStatsController extends Controller
                     ->first();
                 $pendingAmount = (float) ($pendingAggregate->amount ?? 0);
                 $pendingCount = (int) ($pendingAggregate->cnt ?? 0);
+                $pendingAmountByCurrency = DB::table('supplier_entitlements')
+                    ->whereIn('status', ['pending', 'accrued', 'payable'])
+                    ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+                    ->groupBy('currency')
+                    ->pluck('amount', 'currency')
+                    ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                    ->toArray();
             }
 
             return [
@@ -234,6 +252,8 @@ class FinanceStatsController extends Controller
                 'pending_amount' => $pendingAmount,
                 'pending_count' => $pendingCount,
                 'avg_rate_pct' => round($avgRate, 2),
+                'recorded_amount_by_currency' => $recordedAmountByCurrency,
+                'pending_amount_by_currency' => $pendingAmountByCurrency,
             ];
         });
 
@@ -501,11 +521,39 @@ class FinanceStatsController extends Controller
                 return [];
             }
 
-            return $rows->map(function ($r) use ($total) {
+            // Phase 1 §1 — per-service amounts partitioned by currency. The
+            // top-level list shape + 'amount'/'pct' scalars are kept (PDF + UI
+            // consumers depend on them); each row gains an additive
+            // 'amount_by_currency' so a mixed-currency 'amount'/'pct' can be
+            // shown currency-correct. (item_type IS the service.)
+            $byServiceCurrency = DB::table('payments')
+                ->join('invoices', 'invoices.id', '=', 'payments.invoice_id')
+                ->join('orders', 'orders.id', '=', 'invoices.order_id')
+                ->join('order_items', 'order_items.order_id', '=', 'orders.id')
+                ->where('payments.status', Payment::STATUS_PAID)
+                ->where('payments.paid_at', '>=', $rangeStart)
+                ->selectRaw('COALESCE(order_items.item_type, ?) AS service, order_items.currency AS currency, SUM(order_items.total) AS amount', ['other'])
+                ->groupBy('service', 'order_items.currency')
+                ->get();
+
+            $currencyMap = [];
+            foreach ($byServiceCurrency as $r) {
+                $svc = (string) $r->service;
+                $code = strtoupper((string) $r->currency);
+                if ($code === '') {
+                    continue;
+                }
+                $currencyMap[$svc][$code] = round((float) $r->amount, 2);
+            }
+
+            return $rows->map(function ($r) use ($total, $currencyMap) {
+                $svc = (string) $r->service;
+
                 return [
-                    'service' => (string) $r->service,
+                    'service' => $svc,
                     'amount' => (float) $r->amount,
                     'pct' => round(((float) $r->amount / $total) * 100, 1),
+                    'amount_by_currency' => $currencyMap[$svc] ?? [],
                 ];
             })->values()->toArray();
         });
@@ -540,16 +588,43 @@ class FinanceStatsController extends Controller
 
             $total = (float) $rows->sum('amount');
             if ($total <= 0) {
-                return ['total' => 0.0, 'breakdown' => []];
+                return ['total' => 0.0, 'total_by_currency' => [], 'breakdown' => []];
+            }
+
+            // Phase 1 §1 — per-currency. The scalar 'total' + per-method 'amount'
+            // sum ACROSS currencies; add additive 'total_by_currency' (all
+            // methods) + per-method 'amount_by_currency'. Scalars are kept.
+            $byMethodCurrency = DB::table('payments')
+                ->where('status', Payment::STATUS_PAID)
+                ->where('paid_at', '>=', $rangeStart)
+                ->selectRaw('COALESCE(payment_method, ?) AS method, currency, SUM(amount) AS amount', ['unknown'])
+                ->groupBy('method', 'currency')
+                ->get();
+
+            $methodCurrencyMap = [];
+            $totalByCurrency = [];
+            foreach ($byMethodCurrency as $r) {
+                $method = (string) $r->method;
+                $code = strtoupper((string) $r->currency);
+                if ($code === '') {
+                    continue;
+                }
+                $amount = round((float) $r->amount, 2);
+                $methodCurrencyMap[$method][$code] = $amount;
+                $totalByCurrency[$code] = round(($totalByCurrency[$code] ?? 0.0) + $amount, 2);
             }
 
             return [
                 'total' => $total,
-                'breakdown' => $rows->map(function ($r) use ($total) {
+                'total_by_currency' => $totalByCurrency,
+                'breakdown' => $rows->map(function ($r) use ($total, $methodCurrencyMap) {
+                    $method = (string) $r->method;
+
                     return [
-                        'method' => (string) $r->method,
+                        'method' => $method,
                         'amount' => (float) $r->amount,
                         'pct' => round(((float) $r->amount / $total) * 100, 1),
+                        'amount_by_currency' => $methodCurrencyMap[$method] ?? [],
                     ];
                 })->values()->toArray(),
             ];
@@ -623,11 +698,30 @@ class FinanceStatsController extends Controller
             $paidSum = (float) DB::table('payments')->where('status', Payment::STATUS_PAID)->sum('amount');
             $paidCount = (int) DB::table('payments')->where('status', Payment::STATUS_PAID)->count();
 
+            // Phase 1 §1 — all-time paid total partitioned by currency. (Distinct
+            // from 'currency_breakdown' below, which is DATE-WINDOWED by paid_at.)
+            $paidByCurrency = DB::table('payments')
+                ->where('status', Payment::STATUS_PAID)
+                ->selectRaw('currency, COALESCE(SUM(amount), 0) AS amount')
+                ->groupBy('currency')
+                ->pluck('amount', 'currency')
+                ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                ->toArray();
+
             $commissionAccrued = 0.0;
             $commissionRecordsCount = 0;
+            $commissionAccruedByCurrency = [];
             if (Schema::hasTable('commission_transactions')) {
                 $commissionAccrued = (float) DB::table('commission_transactions')->sum('commission_amount');
                 $commissionRecordsCount = (int) DB::table('commission_transactions')->count();
+                // NOTE: commission_transactions has NO plain `currency` column;
+                // commission_amount is denominated in `commission_currency`.
+                $commissionAccruedByCurrency = DB::table('commission_transactions')
+                    ->selectRaw('commission_currency, COALESCE(SUM(commission_amount), 0) AS amount')
+                    ->groupBy('commission_currency')
+                    ->pluck('amount', 'commission_currency')
+                    ->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => round((float) $v, 2)])
+                    ->toArray();
             }
 
             // §8 — REAL operator-vs-agent commission split (the old agent_id
@@ -638,7 +732,7 @@ class FinanceStatsController extends Controller
             // commission_amount INCLUDES that agent share. So:
             //   agent    = Σ net of agent_share rows
             //   platform = Σ commission of all rows − agent share
-            [$platformSplit, $agentSplit, $pendingPayouts] = $this->entitlementSplitAndPending();
+            [$platformSplit, $agentSplit, $pendingPayouts, $splitByCurrency, $pendingByCurrency] = $this->entitlementSplitAndPending();
 
             $currencyBreakdown = (array) DB::table('payments')
                 ->where('status', Payment::STATUS_PAID)
@@ -676,9 +770,15 @@ class FinanceStatsController extends Controller
                 'commission_records_count' => $commissionRecordsCount,
                 // New v2 fields
                 'currency_breakdown' => $currencyBreakdown,
+                // Phase 1 §1 — all-time per-currency siblings (additive).
+                'total_payments_paid_by_currency' => $paidByCurrency,
+                'commission_accrued_by_currency' => $commissionAccruedByCurrency,
+                'total_commission_pending_by_currency' => $pendingByCurrency,
+                'pending_payouts_by_currency' => $pendingByCurrency,
                 'commission_split' => [
                     'platform' => $platformSplit,
                     'agent' => $agentSplit,
+                    'by_currency' => $splitByCurrency,
                 ],
                 'pending_meta' => [
                     'count' => (int) ($pendingAge->cnt ?? 0),
@@ -695,12 +795,18 @@ class FinanceStatsController extends Controller
      * split). Agent rows are tagged with a notes prefix; the operator row's
      * commission_amount already includes the agent share.
      *
-     * @return array{0: float, 1: float, 2: float} [platform, agent, pendingPayouts]
+     * Phase 1 §1 — also returns per-currency breakdowns (the scalar platform/
+     * agent/pending figures sum ACROSS currencies, which is meaningless when
+     * AMD+USD+EUR+RUB mix). $splitByCurrency = {CUR:{platform,agent}};
+     * $pendingByCurrency = {CUR:float}. Both are additive; the scalars are kept.
+     *
+     * @return array{0: float, 1: float, 2: float, 3: array<string,array{platform:float,agent:float}>, 4: array<string,float>}
+     *               [platform, agent, pendingPayouts, splitByCurrency, pendingByCurrency]
      */
     private function entitlementSplitAndPending(): array
     {
         if (! Schema::hasTable('supplier_entitlements')) {
-            return [0.0, 0.0, 0.0];
+            return [0.0, 0.0, 0.0, [], []];
         }
 
         $totalCommission = (float) DB::table('supplier_entitlements')->sum('commission_amount');
@@ -711,16 +817,87 @@ class FinanceStatsController extends Controller
         $platform = max(0.0, round($totalCommission - $agentShare, 2));
         $agent = round($agentShare, 2);
 
+        // Per-currency split: platform = Σ commission per cur − agent share per
+        // cur; agent = Σ net of agent_share rows per cur.
+        $commissionByCurrency = DB::table('supplier_entitlements')
+            ->selectRaw('currency, COALESCE(SUM(commission_amount), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->toArray();
+        $agentShareByCurrency = DB::table('supplier_entitlements')
+            ->where('notes', 'like', 'agent_share_of_order_id:%')
+            ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->toArray();
+
+        $splitByCurrency = [];
+        foreach ($commissionByCurrency as $cur => $comm) {
+            $code = strtoupper((string) $cur);
+            if ($code === '') {
+                continue;
+            }
+            $agentCur = (float) ($agentShareByCurrency[$cur] ?? 0);
+            $splitByCurrency[$code] = [
+                'platform' => max(0.0, round((float) $comm - $agentCur, 2)),
+                'agent' => round($agentCur, 2),
+            ];
+        }
+        // Currencies that only had agent_share rows (no commission row) — rare,
+        // but keep them so the agent figure is never silently dropped.
+        foreach ($agentShareByCurrency as $cur => $agentCur) {
+            $code = strtoupper((string) $cur);
+            if ($code === '' || isset($splitByCurrency[$code])) {
+                continue;
+            }
+            $splitByCurrency[$code] = [
+                'platform' => 0.0,
+                'agent' => round((float) $agentCur, 2),
+            ];
+        }
+
         // Pending payouts = net still owed to sellers (not yet settled/cancelled).
         $pending = (float) DB::table('supplier_entitlements')
             ->whereIn('status', ['pending', 'accrued', 'payable'])
             ->sum('net_amount');
+
+        $pendingByCurrency = [];
+        $entPendingByCurrency = DB::table('supplier_entitlements')
+            ->whereIn('status', ['pending', 'accrued', 'payable'])
+            ->selectRaw('currency, COALESCE(SUM(net_amount), 0) AS amount')
+            ->groupBy('currency')
+            ->pluck('amount', 'currency')
+            ->toArray();
+        foreach ($entPendingByCurrency as $cur => $amount) {
+            $code = strtoupper((string) $cur);
+            if ($code === '') {
+                continue;
+            }
+            $pendingByCurrency[$code] = ($pendingByCurrency[$code] ?? 0.0) + (float) $amount;
+        }
+
         if (Schema::hasTable('settlements')) {
             $pending += (float) DB::table('settlements')
                 ->whereNotIn('status', ['settled', 'cancelled', 'completed'])
                 ->sum('total_net_amount');
+
+            $settlePendingByCurrency = DB::table('settlements')
+                ->whereNotIn('status', ['settled', 'cancelled', 'completed'])
+                ->selectRaw('currency, COALESCE(SUM(total_net_amount), 0) AS amount')
+                ->groupBy('currency')
+                ->pluck('amount', 'currency')
+                ->toArray();
+            foreach ($settlePendingByCurrency as $cur => $amount) {
+                $code = strtoupper((string) $cur);
+                if ($code === '') {
+                    continue;
+                }
+                $pendingByCurrency[$code] = ($pendingByCurrency[$code] ?? 0.0) + (float) $amount;
+            }
         }
 
-        return [$platform, $agent, round($pending, 2)];
+        $pendingByCurrency = array_map(fn ($v) => round((float) $v, 2), $pendingByCurrency);
+
+        return [$platform, $agent, round($pending, 2), $splitByCurrency, $pendingByCurrency];
     }
 }
