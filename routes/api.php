@@ -118,6 +118,7 @@ use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\SavedTravelerController;
 use App\Http\Controllers\Api\SellerConnectionController;
 use App\Http\Controllers\Api\SellerContractController;
+use App\Http\Controllers\Api\SellerFxRateController;
 use App\Http\Controllers\Api\SellerWebhookController;
 use App\Http\Controllers\Api\ServiceCatalogController;
 use App\Http\Controllers\Api\StorefrontPackageController;
@@ -490,6 +491,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         ->whereNumber('agent')->middleware('permission:commissions.manage');
     Route::delete('operator/commission-settings/agents/{agent}', [OperatorCommissionController::class, 'deleteOverride'])
         ->whereNumber('agent')->middleware('permission:commissions.manage');
+
+    // B2a — operator/agent self-service "seller FX-rate" setting.
+    // Read gated on commissions.view (super/platform bypass; operator owner +
+    // agent both hold .view). The WRITE is NOT a .manage permission-middleware
+    // on purpose: the `agent` role holds only .view perms, so a .manage gate
+    // would 403 agency owners — the controller does an in-controller
+    // agent-aware (canManageSellerStatus) gate + PINS company_id from the
+    // authenticated membership, so tenant isolation holds.
+    Route::get('operator/seller-fx-rate', [SellerFxRateController::class, 'showOwn'])->middleware('permission:commissions.view');
+    Route::put('operator/seller-fx-rate', [SellerFxRateController::class, 'upsertOwn']);
 
     // Seller contracts (PART 05)
     Route::get('seller/contracts', [SellerContractController::class, 'index']);
@@ -1129,6 +1140,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('exchange-rates', [ExchangeRateController::class, 'store']);
         Route::patch('exchange-rates/{exchangeRate}', [ExchangeRateController::class, 'update']);
         Route::delete('exchange-rates/{exchangeRate}', [ExchangeRateController::class, 'destroy']);
+
+        // B2a — super-admin "seller FX-rate" setting CRUD (platform default +
+        // any operator/agent row). EnsurePlatformAdmin blocks operators from any
+        // POST/PUT here; the controller adds an is_super_admin defence-in-depth
+        // guard so platform staff can't write the platform default unintended.
+        Route::get('seller-fx-rates', [SellerFxRateController::class, 'index']);
+        Route::post('seller-fx-rates', [SellerFxRateController::class, 'store']);
+        Route::put('seller-fx-rates/{sellerFxRate}', [SellerFxRateController::class, 'update'])->whereNumber('sellerFxRate');
 
         // Phase 1 / Step D.2 — money flow terms CRUD (mirror pattern).
         Route::get('money-flow-terms', [MoneyFlowTermController::class, 'index']);

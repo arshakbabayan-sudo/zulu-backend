@@ -167,6 +167,61 @@ class SellerFxRateService
     }
 
     /**
+     * B2a — admin write helper. Upsert a single seller FX setting keyed on the
+     * migration's unique index (scope, company_id, target_currency) so a
+     * re-upsert UPDATES the existing row instead of hitting the unique
+     * constraint (23505).
+     *
+     * Caller is responsible for authorization + validation; this method only
+     * normalizes currency casing and persists the already-validated payload.
+     * `company_id` MUST be the trusted, pinned id (null for platform scope) —
+     * never a raw request value for a non-super caller.
+     *
+     * $attributes accepts: source ('cba'|'manual'), margin (numeric string),
+     * manual_rates (array|null), is_active (bool).
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function upsertSetting(
+        string $scope,
+        ?int $companyId,
+        string $targetCurrency,
+        array $attributes,
+    ): SellerFxRate {
+        $targetCurrency = strtoupper($targetCurrency);
+
+        $payload = [
+            'source' => $attributes['source'] ?? SellerFxRate::SOURCE_CBA,
+            'margin' => (string) ($attributes['margin'] ?? '0'),
+            'is_active' => array_key_exists('is_active', $attributes)
+                ? (bool) $attributes['is_active']
+                : true,
+        ];
+
+        // manual_rates only meaningful for the manual source; upper-case keys.
+        if (($payload['source']) === SellerFxRate::SOURCE_MANUAL) {
+            $rates = [];
+            foreach ((array) ($attributes['manual_rates'] ?? []) as $cur => $rate) {
+                $rates[strtoupper((string) $cur)] = (string) $rate;
+            }
+            $payload['manual_rates'] = $rates;
+        } else {
+            // CBA source uses the live exchange_rates table — clear any stale
+            // manual map so the row is unambiguous.
+            $payload['manual_rates'] = null;
+        }
+
+        return SellerFxRate::query()->updateOrCreate(
+            [
+                'scope' => $scope,
+                'company_id' => $companyId,
+                'target_currency' => $targetCurrency,
+            ],
+            $payload,
+        );
+    }
+
+    /**
      * Read the base per-unit rate (before margin) as a bcmath string, or null.
      */
     private function resolveBaseRate(
