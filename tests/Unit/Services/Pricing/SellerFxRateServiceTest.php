@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Pricing;
 
+use App\Models\Company;
 use App\Models\ExchangeRate;
 use App\Models\SellerFxRate;
 use App\Services\Pricing\SellerFxRateService;
@@ -13,6 +14,20 @@ use Tests\TestCase;
 class SellerFxRateServiceTest extends TestCase
 {
     use RefreshDatabase;
+
+    private Company $operatorCompany;
+
+    private Company $agentCompany;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // seller_fx_rates.company_id has a FK to companies — create real rows
+        // so the inserts below satisfy the constraint.
+        $this->operatorCompany = Company::create(['name' => 'Operator Co', 'type' => 'operator']);
+        $this->agentCompany = Company::create(['name' => 'Agent Co', 'type' => 'agency']);
+    }
 
     private function service(): SellerFxRateService
     {
@@ -33,6 +48,9 @@ class SellerFxRateServiceTest extends TestCase
 
     public function test_resolve_setting_precedence_agent_over_operator_over_platform(): void
     {
+        $opId = $this->operatorCompany->id;
+        $agId = $this->agentCompany->id;
+
         $platform = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_PLATFORM,
             'company_id' => null,
@@ -43,7 +61,7 @@ class SellerFxRateServiceTest extends TestCase
         ]);
         $operator = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_OPERATOR,
-            'company_id' => 10,
+            'company_id' => $opId,
             'target_currency' => 'AMD',
             'source' => SellerFxRate::SOURCE_CBA,
             'margin' => '2',
@@ -51,7 +69,7 @@ class SellerFxRateServiceTest extends TestCase
         ]);
         $agent = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_AGENT,
-            'company_id' => 20,
+            'company_id' => $agId,
             'target_currency' => 'AMD',
             'source' => SellerFxRate::SOURCE_CBA,
             'margin' => '3',
@@ -61,25 +79,25 @@ class SellerFxRateServiceTest extends TestCase
         // Agent present → agent wins.
         $this->assertSame(
             $agent->id,
-            $this->service()->resolveSetting(10, 20, 'AMD')?->id
+            $this->service()->resolveSetting($opId, $agId, 'AMD')?->id
         );
 
         // No agent → operator wins.
         $this->assertSame(
             $operator->id,
-            $this->service()->resolveSetting(10, null, 'AMD')?->id
+            $this->service()->resolveSetting($opId, null, 'AMD')?->id
         );
 
         // Neither agent nor operator setting matches → platform wins.
         $this->assertSame(
             $platform->id,
-            $this->service()->resolveSetting(999, 888, 'AMD')?->id
+            $this->service()->resolveSetting(999999, 888888, 'AMD')?->id
         );
     }
 
     public function test_resolve_setting_returns_null_when_none(): void
     {
-        $this->assertNull($this->service()->resolveSetting(1, 2, 'AMD'));
+        $this->assertNull($this->service()->resolveSetting(999999, 888888, 'AMD'));
     }
 
     public function test_effective_rate_cba_source_is_cba_rate_plus_absolute_margin(): void
@@ -88,7 +106,7 @@ class SellerFxRateServiceTest extends TestCase
 
         $setting = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_OPERATOR,
-            'company_id' => 10,
+            'company_id' => $this->operatorCompany->id,
             'target_currency' => 'AMD',
             'source' => SellerFxRate::SOURCE_CBA,
             'margin' => '2',
@@ -103,7 +121,7 @@ class SellerFxRateServiceTest extends TestCase
     {
         $setting = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_OPERATOR,
-            'company_id' => 10,
+            'company_id' => $this->operatorCompany->id,
             'target_currency' => 'AMD',
             'source' => SellerFxRate::SOURCE_MANUAL,
             'margin' => '2.5',
@@ -121,7 +139,7 @@ class SellerFxRateServiceTest extends TestCase
     {
         $setting = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_OPERATOR,
-            'company_id' => 10,
+            'company_id' => $this->operatorCompany->id,
             'target_currency' => 'AMD',
             'source' => SellerFxRate::SOURCE_CBA,
             'margin' => '50',
@@ -148,7 +166,7 @@ class SellerFxRateServiceTest extends TestCase
         // Manual setting but the requested currency is missing from manual_rates.
         $manualSetting = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_OPERATOR,
-            'company_id' => 10,
+            'company_id' => $this->operatorCompany->id,
             'target_currency' => 'AMD',
             'source' => SellerFxRate::SOURCE_MANUAL,
             'margin' => '2',
@@ -164,14 +182,14 @@ class SellerFxRateServiceTest extends TestCase
 
         $setting = SellerFxRate::create([
             'scope' => SellerFxRate::SCOPE_OPERATOR,
-            'company_id' => 10,
+            'company_id' => $this->operatorCompany->id,
             'target_currency' => 'AMD',
             'source' => SellerFxRate::SOURCE_CBA,
             'margin' => '2',
             'is_active' => true,
         ]);
 
-        $result = $this->service()->convert('100', 'USD', 'AMD', 10, null);
+        $result = $this->service()->convert('100', 'USD', 'AMD', $this->operatorCompany->id, null);
 
         $this->assertNotNull($result);
         // 100 * (400 + 2) = 40200.00
@@ -185,7 +203,7 @@ class SellerFxRateServiceTest extends TestCase
     public function test_convert_same_currency_leaves_amount_unchanged_rate_one(): void
     {
         // No setting at all → effectiveRate short-circuits to '1' for same cur.
-        $result = $this->service()->convert('100', 'AMD', 'AMD', 10, null);
+        $result = $this->service()->convert('100', 'AMD', 'AMD', $this->operatorCompany->id, null);
 
         $this->assertNotNull($result);
         $this->assertSame(100.00, $result['amount']);
