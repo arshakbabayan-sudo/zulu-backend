@@ -51,17 +51,7 @@ class MarketplaceBookingCabinPricingTest extends TestCase
             'status' => Offer::STATUS_PUBLISHED,
         ]);
 
-        $flight = Flight::query()->create([
-            'offer_id' => $offer->id,
-            'company_id' => $company->id,
-            'flight_code_internal' => 'CBN-'.str()->uuid(),
-            'service_type' => 'scheduled',
-            'cabin_class' => 'economy',
-            'seat_capacity_total' => 100,
-            'seat_capacity_available' => 100,
-            'adult_price' => 100.00,
-            'status' => 'active',
-        ]);
+        $flight = $this->makeFlight($offer, $company, 'CBN');
 
         // Economy = 200 raw → b2c 230.00; Business = 500 raw → b2c 575.00.
         $economy = FlightCabin::query()->create([
@@ -83,6 +73,45 @@ class MarketplaceBookingCabinPricingTest extends TestCase
         Sanctum::actingAs($user);
 
         return [$company, $user, $offer, $flight, $economy, $business];
+    }
+
+    /** Create a Flight with every NOT NULL column the schema requires (mirrors a known-good flight row). */
+    private function makeFlight(Offer $offer, Company $company, string $code): Flight
+    {
+        return Flight::query()->create([
+            'offer_id' => $offer->id,
+            'company_id' => $company->id,
+            'flight_code_internal' => $code.'-'.str()->uuid(),
+            'service_type' => 'scheduled',
+            'departure_airport' => 'EVN',
+            'arrival_airport' => 'SSH',
+            'departure_at' => '2026-09-01 08:00:00',
+            'arrival_at' => '2026-09-01 12:00:00',
+            'duration_minutes' => 240,
+            'connection_type' => 'direct',
+            'stops_count' => 0,
+            'cabin_class' => 'economy',
+            'seat_capacity_total' => 150,
+            'seat_capacity_available' => 50,
+            'adult_age_from' => 18,
+            'child_age_from' => 2,
+            'child_age_to' => 11,
+            'infant_age_from' => 0,
+            'infant_age_to' => 1,
+            'adult_price' => 100.00,
+            'child_price' => 0,
+            'infant_price' => 0,
+            'hand_baggage_included' => false,
+            'checked_baggage_included' => false,
+            'reservation_allowed' => true,
+            'online_checkin_allowed' => true,
+            'airport_checkin_allowed' => true,
+            'cancellation_policy_type' => 'non_refundable',
+            'change_policy_type' => 'not_allowed',
+            'seat_map_available' => false,
+            'extra_baggage_allowed' => false,
+            'status' => 'active',
+        ]);
     }
 
     public function test_booking_with_business_cabin_charges_that_cabin_b2c_price_times_quantity(): void
@@ -140,17 +169,7 @@ class MarketplaceBookingCabinPricingTest extends TestCase
             'currency' => 'USD',
             'status' => Offer::STATUS_PUBLISHED,
         ]);
-        $otherFlight = Flight::query()->create([
-            'offer_id' => $otherOffer->id,
-            'company_id' => $company->id,
-            'flight_code_internal' => 'OTH-'.str()->uuid(),
-            'service_type' => 'scheduled',
-            'cabin_class' => 'economy',
-            'seat_capacity_total' => 10,
-            'seat_capacity_available' => 10,
-            'adult_price' => 10.00,
-            'status' => 'active',
-        ]);
+        $otherFlight = $this->makeFlight($otherOffer, $company, 'OTH');
         $foreignCabin = FlightCabin::query()->create([
             'flight_id' => $otherFlight->id,
             'cabin_class' => 'economy',
