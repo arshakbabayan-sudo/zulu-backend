@@ -74,6 +74,24 @@ class CartService
             // Lock cart row to avoid concurrent modification
             Order::query()->where('id', $cart->id)->lockForUpdate()->first();
 
+            // Roadmap §3 — ONE currency per cart. The cart total is a single
+            // number; mixing currencies (e.g. a USD hotel + an AMD transfer)
+            // would silently sum them into a meaningless total that then flows
+            // straight to the charge. An EMPTY cart adopts the new item's
+            // currency; a non-empty cart rejects a differing currency.
+            $itemCurrency = strtoupper((string) $item['currency']);
+            $cartCurrency = strtoupper((string) ($cart->currency ?? ''));
+            if ($cart->items()->count() === 0) {
+                if ($cartCurrency !== $itemCurrency) {
+                    $cart->currency = $itemCurrency;
+                    $cart->save();
+                }
+            } elseif ($cartCurrency !== $itemCurrency) {
+                throw new InvalidArgumentException(
+                    "Cart currency is {$cartCurrency}; cannot add an item priced in {$itemCurrency}. A cart can hold only one currency."
+                );
+            }
+
             $quantity = max(1, (int) ($item['quantity'] ?? 1));
             $unitPrice = (float) ($item['unit_price'] ?? 0);
             $total = $item['total'] ?? ($quantity * $unitPrice);

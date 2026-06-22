@@ -138,4 +138,39 @@ class CartServiceTest extends TestCase
         $user = User::factory()->create();
         $this->assertNull($this->service->findOpenCart($user));
     }
+
+    public function test_add_item_rejects_a_different_currency_in_the_same_cart(): void
+    {
+        $user = User::factory()->create();
+        $this->service->addItem($user, ['item_type' => 'hotel', 'currency' => 'USD', 'unit_price' => 100]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->service->addItem($user, ['item_type' => 'transfer', 'currency' => 'AMD', 'unit_price' => 40000]);
+    }
+
+    public function test_add_item_keeps_same_currency_items(): void
+    {
+        $user = User::factory()->create();
+        $this->service->addItem($user, ['item_type' => 'hotel', 'currency' => 'usd', 'unit_price' => 100]);
+        $cart = $this->service->addItem($user, ['item_type' => 'flight', 'currency' => 'USD', 'unit_price' => 250]);
+
+        // Case-insensitive match; total is a single-currency sum.
+        $this->assertCount(2, $cart->items);
+        $this->assertSame(350.0, (float) $cart->total);
+        $this->assertSame('USD', strtoupper((string) $cart->currency));
+    }
+
+    public function test_emptied_cart_adopts_a_new_currency(): void
+    {
+        $user = User::factory()->create();
+        $this->service->addItem($user, ['item_type' => 'hotel', 'currency' => 'USD', 'unit_price' => 100]);
+        $this->service->clearCart($user);
+
+        // After clearing, the (still-open) cart may take a different currency.
+        $cart = $this->service->addItem($user, ['item_type' => 'transfer', 'currency' => 'AMD', 'unit_price' => 40000]);
+
+        $this->assertCount(1, $cart->items);
+        $this->assertSame('AMD', strtoupper((string) $cart->currency));
+        $this->assertSame(40000.0, (float) $cart->total);
+    }
 }
