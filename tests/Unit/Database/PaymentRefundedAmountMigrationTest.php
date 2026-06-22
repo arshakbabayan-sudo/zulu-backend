@@ -64,9 +64,11 @@ class PaymentRefundedAmountMigrationTest extends TestCase
         $migration->up();
         $this->assertTrue(Schema::hasColumn('payments', 'refunded_amount'));
 
-        // Backfill: terminal-REFUNDED → amount; everyone else → 0.
-        $this->assertSame('80.00', (string) DB::table('payments')->where('id', $refunded->id)->value('refunded_amount'));
-        $this->assertSame('0.00', (string) DB::table('payments')->where('id', $paid->id)->value('refunded_amount'));
+        // Backfill: terminal-REFUNDED → amount; everyone else → 0. Compare
+        // numerically — DB::table()->value() bypasses the model's decimal:2 cast
+        // and SQLite returns the raw decimal (e.g. "80" not "80.00").
+        $this->assertSame(80.0, (float) DB::table('payments')->where('id', $refunded->id)->value('refunded_amount'));
+        $this->assertSame(0.0, (float) DB::table('payments')->where('id', $paid->id)->value('refunded_amount'));
     }
 
     private function makePayment(string $status, float $amount): Payment
