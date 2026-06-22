@@ -71,7 +71,13 @@ interface PaymentGatewayInterface
      * upstream event types differ — the router/dispatcher inspects
      * `$result['event_type']` to decide what handler to call.
      *
-     * @return array{success: true, event_type: string, gateway_reference: string, raw: mixed}|array{success: false, error: string}
+     * Audit C3 — drivers SHOULD also surface `event_id`: the gateway's stable
+     * per-event identifier (Stripe evt_…, Idram EDP_TRANS_ID), which the same
+     * gateway resends unchanged on retries. The webhook controller uses it as
+     * the idempotency key. Drivers with no native per-event id (ArCa) may omit
+     * it; the controller then falls back to a composite reference token.
+     *
+     * @return array{success: true, event_type: string, gateway_reference: string, event_id?: string, raw: mixed}|array{success: false, error: string}
      */
     public function constructWebhookEvent(string $payload, array $headers): array;
 }

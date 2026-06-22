@@ -98,6 +98,17 @@ class PaymentService
 
     public function markPaid(Payment $payment): Payment
     {
+        // Audit C3 — idempotency guard. If the payment is ALREADY paid, this is
+        // a duplicate/retried call (e.g. a second webhook delivery that slipped
+        // past the controller's lock, or the package-order path double-calling)
+        // so we MUST NOT re-fire the side-effects (PaymentReceived → invoice/
+        // order cascade + payment-received email, and customer/seller loyalty
+        // accrual). Return the current state unchanged. A first-time payment is
+        // STATUS_PENDING here, so this guard never affects the happy path.
+        if ($payment->status === Payment::STATUS_PAID) {
+            return $payment->fresh(['invoice']) ?? $payment;
+        }
+
         $payment->status = Payment::STATUS_PAID;
         $payment->paid_at = now();
         $payment->save();

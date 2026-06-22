@@ -8,8 +8,10 @@ use App\Models\Payment;
 use App\Models\PaymentLog;
 use App\Services\Payments\PaymentGatewayService;
 use App\Services\Payments\PaymentService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PaymentWebhookController extends Controller
@@ -150,47 +152,140 @@ class PaymentWebhookController extends Controller
             ? $rawPayload->toArray()
             : (is_array($rawPayload) ? $rawPayload : null);
 
-        if ($normalized === 'payment.succeeded' && $payment->status !== Payment::STATUS_PAID) {
-            $paymentService->markPaid($payment);
-            PaymentLog::query()->create([
-                'payment_id' => $payment->id,
-                'event_type' => 'webhook.payment_intent.succeeded',
-                'gateway' => $driver,
-                'gateway_reference' => $reference,
-                'status' => 'succeeded',
-                'response_payload' => $payloadArray,
-                'ip_address' => $request->ip(),
-            ]);
+        // Audit C3 — resolve the idempotency key for THIS event. Prefer the
+        // gateway's stable event id (Stripe evt_…, Idram EDP_TRANS_ID), which is
+        // resent unchanged on every retry. When the gateway has no per-event id
+        // (ArCa, or a malformed payload), fall back to a composite token so we
+        // still get a non-null, gateway-scoped dedupe key.
+        $idempotencyKey = $this->resolveIdempotencyKey($constructed, $reference, $normalized);
 
-            return;
+        $logType = match ($normalized) {
+            'payment.succeeded' => 'webhook.payment_intent.succeeded',
+            'payment.failed' => 'webhook.payment_intent.failed',
+            'refund.succeeded' => 'webhook.refund.succeeded',
+            default => 'webhook.'.$normalized,
+        };
+        $logStatus = match ($normalized) {
+            'payment.succeeded' => 'succeeded',
+            'payment.failed' => 'failed',
+            'refund.succeeded' => 'refunded',
+            default => null,
+        };
+
+        try {
+            DB::transaction(function () use (
+                $driver,
+                $reference,
+                $idempotencyKey,
+                $normalized,
+                $payment,
+                $payloadArray,
+                $logType,
+                $logStatus,
+                $request,
+                $paymentService
+            ): void {
+                // (1) INSERT the idempotency-token row FIRST, inside the
+                // transaction. The partial UNIQUE index on
+                // (gateway, gateway_event_id) makes a SECOND delivery of the
+                // SAME event fail here atomically — caught below as "already
+                // processed" so side-effects can't run twice, even across
+                // separate worker processes.
+                PaymentLog::query()->create([
+                    'payment_id' => $payment->id,
+                    'event_type' => $logType,
+                    'gateway' => $driver,
+                    'gateway_reference' => $reference,
+                    'gateway_event_id' => $idempotencyKey,
+                    'status' => $logStatus,
+                    'response_payload' => $payloadArray,
+                    'ip_address' => $request->ip(),
+                ]);
+
+                // (2) Re-fetch the Payment WITH a row lock and re-check status
+                // INSIDE the lock. This is the second line of defense: it covers
+                // gateways whose idempotency key is weaker (ArCa composite) and
+                // serializes concurrent transitions on the same payment row.
+                $locked = Payment::query()->lockForUpdate()->find($payment->id) ?? $payment;
+
+                if ($normalized === 'payment.succeeded') {
+                    if ($locked->status !== Payment::STATUS_PAID) {
+                        // markPaid is itself a no-op when already paid (audit C3),
+                        // so side-effects fire exactly once.
+                        $paymentService->markPaid($locked);
+                    }
+
+                    return;
+                }
+
+                if ($normalized === 'payment.failed') {
+                    if ($locked->status === Payment::STATUS_PENDING) {
+                        $paymentService->markFailed($locked);
+                    }
+
+                    return;
+                }
+
+                // refund.succeeded — the log row IS the side-effect (the refund
+                // itself is applied via the admin refund flow / gateway). Nothing
+                // further to do; the unique key still prevents a duplicate log.
+            });
+        } catch (QueryException $e) {
+            if ($this->isUniqueViolation($e)) {
+                // SECOND delivery of an already-processed event. Treat as
+                // success so the gateway stops retrying; do NOT re-run any
+                // side-effects. NEVER let this surface as a 500 on the live
+                // payment path.
+                Log::info('Payment webhook duplicate ignored (already processed)', [
+                    'driver' => $driver,
+                    'reference' => $reference,
+                    'gateway_event_id' => $idempotencyKey,
+                    'event' => $normalized,
+                ]);
+
+                return;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Resolve a stable, gateway-scoped idempotency token for this event.
+     * Prefers the gateway's own event id; falls back to a composite of the
+     * gateway_reference + normalized event type so the key is never null.
+     *
+     * @param  array<string, mixed>  $constructed
+     */
+    private function resolveIdempotencyKey(array $constructed, string $reference, string $normalized): string
+    {
+        $eventId = trim((string) ($constructed['event_id'] ?? ''));
+        if ($eventId !== '') {
+            return $eventId;
         }
 
-        if ($normalized === 'payment.failed' && $payment->status === Payment::STATUS_PENDING) {
-            $paymentService->markFailed($payment);
-            PaymentLog::query()->create([
-                'payment_id' => $payment->id,
-                'event_type' => 'webhook.payment_intent.failed',
-                'gateway' => $driver,
-                'gateway_reference' => $reference,
-                'status' => 'failed',
-                'response_payload' => $payloadArray,
-                'ip_address' => $request->ip(),
-            ]);
+        return $reference.':'.$normalized;
+    }
 
-            return;
+    /**
+     * Detect a unique-constraint violation across both supported engines:
+     * Postgres SQLSTATE 23505, SQLite 23000.
+     */
+    private function isUniqueViolation(QueryException $e): bool
+    {
+        $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+
+        if ($sqlState === '23505' || $sqlState === '23000') {
+            return true;
         }
 
-        if ($normalized === 'refund.succeeded') {
-            PaymentLog::query()->create([
-                'payment_id' => $payment->id,
-                'event_type' => 'webhook.refund.succeeded',
-                'gateway' => $driver,
-                'gateway_reference' => $reference,
-                'status' => 'refunded',
-                'response_payload' => $payloadArray,
-                'ip_address' => $request->ip(),
-            ]);
-        }
+        // Belt-and-braces: some SQLite builds surface the message rather than a
+        // clean SQLSTATE on the errorInfo tuple.
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'unique constraint')
+            || str_contains($message, 'unique violation')
+            || str_contains($message, 'duplicate key');
     }
 
     /**

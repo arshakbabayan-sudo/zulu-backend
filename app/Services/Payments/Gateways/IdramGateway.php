@@ -210,10 +210,17 @@ class IdramGateway implements PaymentGatewayInterface
             return ['success' => false, 'error' => 'Invalid checksum'];
         }
 
+        // Audit C3 — EDP_TRANS_ID is Idram's unique per-transaction id, so it is
+        // the natural idempotency key for dedupe. Surface it so the webhook
+        // controller can persist it on payment_logs.gateway_event_id; the
+        // controller falls back to a composite token when it is absent.
+        $transId = (string) ($data['EDP_TRANS_ID'] ?? '');
+
         return [
             'success' => true,
             'event_type' => 'payment.succeeded',
             'gateway_reference' => $billNo,
+            'event_id' => $transId,
             'raw' => $data,
         ];
     }

@@ -196,10 +196,18 @@ class StripeGateway implements PaymentGatewayInterface
 
             $reference = $event->data->object->id ?? '';
 
+            // Audit C3 — surface Stripe's stable EVENT id (evt_…) as the
+            // idempotency key. Stripe resends the SAME event id on every retry,
+            // so it is the cleanest dedupe token. (gateway_reference holds the
+            // PaymentIntent id, which repeats across the intent's lifecycle
+            // events and is NOT a per-event identifier.)
+            $eventId = $event->id ?? '';
+
             return [
                 'success' => true,
                 'event_type' => $event->type,
                 'gateway_reference' => is_string($reference) ? $reference : '',
+                'event_id' => is_string($eventId) ? $eventId : '',
                 'raw' => $event,
             ];
         } catch (SignatureVerificationException $e) {

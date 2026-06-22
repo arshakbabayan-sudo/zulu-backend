@@ -12,6 +12,7 @@ class PaymentLog extends Model
         'event_type',
         'gateway',
         'gateway_reference',
+        'gateway_event_id',
         'amount',
         'currency',
         'status',
