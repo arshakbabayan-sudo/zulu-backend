@@ -308,17 +308,23 @@ class PaymentService
 
         // Atomically book the refund. The WHERE re-asserts the cap at the row
         // level so two refunds racing past the in-memory check still cannot
-        // over-refund on the real DB: the second UPDATE matches 0 rows. Money
-        // literals are derived from validated integer cents (no user input) and
-        // formatted to 2dp so the cap compares like-for-like with no float drift.
+        // over-refund on the real DB: the losing UPDATE matches 0 rows. The cap
+        // is expressed in INTEGER CENTS so the guard behaves identically on
+        // SQLite (which stores DECIMAL as a drifting REAL) and Postgres (exact
+        // NUMERIC(12,2)): ROUND(stored * 100) recovers the intended cents whatever
+        // float drift the stored column may carry, so a legitimate final cent is
+        // never wrongly rejected and an over-refund is never allowed. The SET
+        // literal is derived from validated integer cents (no user input).
         $thisRefundLiteral = $this->sqlMoney($thisRefundCents);
-        $paidLiteral = $this->sqlMoney($paymentCents);
         $newStatus = $fullyRefundsNow ? Payment::STATUS_REFUNDED : Payment::STATUS_PAID;
 
-        DB::transaction(function () use ($payment, $thisRefundLiteral, $paidLiteral, $newStatus): void {
+        DB::transaction(function () use ($payment, $thisRefundLiteral, $thisRefundCents, $paymentCents, $newStatus): void {
             $affected = Payment::query()
                 ->whereKey($payment->getKey())
-                ->whereRaw('(COALESCE(refunded_amount, 0) + '.$thisRefundLiteral.') <= '.$paidLiteral)
+                ->whereRaw(
+                    '(CAST(ROUND(COALESCE(refunded_amount, 0) * 100) AS INTEGER) + ?) <= ?',
+                    [$thisRefundCents, $paymentCents]
+                )
                 ->update([
                     'refunded_amount' => DB::raw('COALESCE(refunded_amount, 0) + '.$thisRefundLiteral),
                     'status' => $newStatus,

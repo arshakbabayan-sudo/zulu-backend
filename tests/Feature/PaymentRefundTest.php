@@ -192,6 +192,29 @@ class PaymentRefundTest extends TestCase
         $this->assertSame(Payment::STATUS_REFUNDED, $refreshed->status);
     }
 
+    /**
+     * Audit C4 (§5) — the cap is integer-cents based, so a sequence of
+     * repeating-decimal partials (33.33 + 33.33 + 33.34 = 100.00) settles to a
+     * full refund and the final cent is never wrongly rejected by float drift
+     * in the stored column. Deterministic on both SQLite and Postgres.
+     */
+    public function test_partial_refunds_with_repeating_decimals_settle_to_full(): void
+    {
+        $payment = $this->createPaymentWithStatus(Payment::STATUS_PAID); // 100.00
+
+        $this->mock(PaymentGatewayService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('refundPaymentIntent')->times(3)->andReturn(['success' => true]);
+        });
+
+        $service = app(PaymentService::class);
+        $service->refund($payment->fresh(), 3333);
+        $service->refund($payment->fresh(), 3333);
+        $refreshed = $service->refund($payment->fresh(), 3334);
+
+        $this->assertSame('100.00', (string) $refreshed->refunded_amount);
+        $this->assertSame(Payment::STATUS_REFUNDED, $refreshed->status);
+    }
+
     private function createPaymentWithStatus(string $status): Payment
     {
         $invoice = Invoice::query()->create([
