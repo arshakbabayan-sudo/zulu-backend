@@ -235,10 +235,14 @@ class DiscoveryService
 
         // Part A — additive DISPLAY-currency conversion of the B2C sell price
         // (calculated_price). base_price is operator-net — never converted.
+        // B4 — thread the offer's operator company id so an AMD display equals
+        // the future seller-rate charge when a setting exists (agent null on
+        // public reads → operator/platform precedence).
         $displayFields = app(DisplayCurrencyService::class)->fieldsFor(
             $pricing['calculated_price'] ?? null,
             $offer->currency,
             $displayCurrency,
+            $offer->company_id !== null ? (int) $offer->company_id : null,
         );
         $pricing = $pricing + $displayFields;
 
@@ -263,6 +267,7 @@ class DiscoveryService
                 'display_price' => $displayFields['display_price'],
                 'display_currency' => $displayFields['display_currency'],
                 'fx_rate' => $displayFields['fx_rate'],
+                'fx_basis' => $displayFields['fx_basis'],
                 'pricing' => $pricing,
                 'status' => $offer->status,
                 'company_id' => $offer->company_id,
@@ -271,7 +276,11 @@ class DiscoveryService
         ];
 
         if ($offer->type === 'hotel' && $offer->hotel instanceof Hotel) {
-            $payload['hotel_rooms'] = $this->hotelRoomsForPublic($offer->hotel, $displayCurrency);
+            $payload['hotel_rooms'] = $this->hotelRoomsForPublic(
+                $offer->hotel,
+                $displayCurrency,
+                $offer->company_id !== null ? (int) $offer->company_id : null,
+            );
         }
 
         $reviewTarget = $this->reviewTargetForOffer($offer);
@@ -314,7 +323,7 @@ class DiscoveryService
      *
      * @return list<array<string, mixed>>
      */
-    private function hotelRoomsForPublic(Hotel $hotel, ?string $displayCurrency = null): array
+    private function hotelRoomsForPublic(Hotel $hotel, ?string $displayCurrency = null, ?int $operatorCompanyId = null): array
     {
         if (! $hotel->relationLoaded('rooms')) {
             return [];
@@ -322,7 +331,10 @@ class DiscoveryService
 
         $displayService = app(DisplayCurrencyService::class);
 
-        return $hotel->rooms->map(function (HotelRoom $room) use ($displayService, $displayCurrency) {
+        // B4 — $operatorCompanyId is the OWNING offer's operator so an AMD
+        // room-price display can mirror the future seller-rate charge when a
+        // setting exists; agent is unknown on public reads (null).
+        return $hotel->rooms->map(function (HotelRoom $room) use ($displayService, $displayCurrency, $operatorCompanyId) {
             return [
                 'id' => $room->id,
                 'room_type' => $room->room_type,
@@ -338,7 +350,7 @@ class DiscoveryService
                         'currency' => $p->currency,
                         'pricing_mode' => $p->pricing_mode,
                         'min_nights' => $p->min_nights !== null ? (int) $p->min_nights : null,
-                    ], (float) $p->price, $p->currency, $displayCurrency))->values()->all()
+                    ], (float) $p->price, $p->currency, $displayCurrency, $operatorCompanyId))->values()->all()
                     : [],
             ];
         })->values()->all();

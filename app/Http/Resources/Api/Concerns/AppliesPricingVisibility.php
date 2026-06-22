@@ -90,9 +90,12 @@ trait AppliesPricingVisibility
 
         // Part A — additive DISPLAY-currency conversion of the B2C sell price
         // only. base_price (operator-net) is NEVER converted here.
+        // B4 — $ownerCompanyId is the offer/package operator; threading it lets
+        // an AMD display mirror the future seller-rate charge when a setting
+        // exists (agent unknown on public reads → null → operator/platform).
         $displayService = app(DisplayCurrencyService::class);
         $displayCurrency = $displayService->sanitize($request->query('display_currency'));
-        $displayFields = $displayService->fieldsFor($sellPrice, $currencyUpper, $displayCurrency);
+        $displayFields = $displayService->fieldsFor($sellPrice, $currencyUpper, $displayCurrency, $ownerCompanyId);
 
         $payload = [
             'sell_price' => $sellPrice,
@@ -101,6 +104,7 @@ trait AppliesPricingVisibility
             'display_price' => $displayFields['display_price'],
             'display_currency' => $displayFields['display_currency'],
             'fx_rate' => $displayFields['fx_rate'],
+            'fx_basis' => $displayFields['fx_basis'],
         ];
 
         if ($this->canSeeNetPrice($request, $ownerCompanyId)) {

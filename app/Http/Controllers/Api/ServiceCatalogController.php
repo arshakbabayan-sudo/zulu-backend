@@ -195,7 +195,7 @@ class ServiceCatalogController extends Controller
                     'id' => $r->company->id,
                     'name' => $r->company->name,
                 ] : null,
-            ], $r->unit_price, $r->currency, $displayCurrency))->all(),
+            ], $r->unit_price, $r->currency, $displayCurrency, $r->company_id !== null ? (int) $r->company_id : null))->all(),
         ]);
     }
 

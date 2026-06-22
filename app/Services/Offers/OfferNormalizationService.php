@@ -52,6 +52,7 @@ class OfferNormalizationService
         'display_price',
         'display_currency',
         'fx_rate',
+        'fx_basis',
         'price_type',
         'availability_status',
         'available_quantity',
@@ -382,10 +383,14 @@ class OfferNormalizationService
             : $offer->price;
 
         // Part A — additive DISPLAY-currency conversion of the emitted `price`.
+        // B4 — thread the offer's operator company id so an AMD display can use
+        // the seller rate (= the future charge) when a setting exists; agent is
+        // unknown on public reads (null → operator/platform precedence).
         $displayFields = app(DisplayCurrencyService::class)->fieldsFor(
             $displayPrice,
             $offer->currency,
             app(DisplayCurrencyService::class)->sanitize($displayCurrency),
+            $offer->company_id !== null ? (int) $offer->company_id : null,
         );
 
         return [
@@ -411,6 +416,7 @@ class OfferNormalizationService
             'display_price' => $displayFields['display_price'],
             'display_currency' => $displayFields['display_currency'],
             'fx_rate' => $displayFields['fx_rate'],
+            'fx_basis' => $displayFields['fx_basis'],
             'price_type' => null,
             'availability_status' => null,
             'available_quantity' => null,

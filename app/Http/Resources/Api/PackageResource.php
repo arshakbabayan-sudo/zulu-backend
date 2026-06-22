@@ -40,11 +40,14 @@ class PackageResource extends JsonResource
         // Part A — additive top-level display siblings. Mirror the `pricing`
         // object's B2C sell price (NOT the gated net base_price), so the card
         // always has an honest display value even for unauthenticated callers.
+        // B4 — thread the package operator company id so an AMD display equals
+        // the future seller-rate charge when a setting exists (agent null).
         $displayService = app(DisplayCurrencyService::class);
         $displayFields = $displayService->fieldsFor(
             $pricing['sell_price'] ?? 0,
             $this->currency,
             $displayService->sanitize($request->query('display_currency')),
+            $ownerId,
         );
 
         return [
@@ -67,6 +70,7 @@ class PackageResource extends JsonResource
             'display_price' => $displayFields['display_price'],
             'display_currency' => $displayFields['display_currency'],
             'fx_rate' => $displayFields['fx_rate'],
+            'fx_basis' => $displayFields['fx_basis'],
             'display_price_mode' => $this->display_price_mode,
             'currency' => $this->currency,
             'pricing' => $pricing,

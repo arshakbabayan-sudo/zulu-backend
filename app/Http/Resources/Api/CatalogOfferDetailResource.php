@@ -42,9 +42,16 @@ class CatalogOfferDetailResource extends JsonResource
         $lang = $this->apiLang($request);
 
         // Part A — additive top-level display siblings (mirror safePricing).
+        // B4 — thread the offer's operator company id so an AMD display equals
+        // the future seller-rate charge when a setting exists (agent null).
         $displayService = app(DisplayCurrencyService::class);
         $displayCurrency = $displayService->sanitize($request->query('display_currency'));
-        $displayFields = $displayService->fieldsFor($b2cPrice, $this->currency, $displayCurrency);
+        $displayFields = $displayService->fieldsFor(
+            $b2cPrice,
+            $this->currency,
+            $displayCurrency,
+            $this->resource->company_id ?? null,
+        );
 
         $data = [
             'id' => $this->id,
@@ -57,6 +64,7 @@ class CatalogOfferDetailResource extends JsonResource
             'display_price' => $displayFields['display_price'],
             'display_currency' => $displayFields['display_currency'],
             'fx_rate' => $displayFields['fx_rate'],
+            'fx_basis' => $displayFields['fx_basis'],
             'pricing' => $pricing,
             'flight' => $this->when(
                 $this->relationLoaded('flight'),

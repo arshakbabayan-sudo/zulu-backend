@@ -252,10 +252,15 @@ class PackageService
             : $total;
 
         // Part A — additive display-currency conversion of total + per_person.
+        // B4 — thread the package operator company id so an AMD display equals
+        // the future seller-rate charge when a setting exists. The package
+        // total/per_person are aggregated from same-currency components, so the
+        // AMD seller conversion of each amount is correct (agent null).
         $displayService = app(DisplayCurrencyService::class);
         $displayCurrency = $displayService->sanitize($displayCurrency);
-        $totalFields = $displayService->fieldsFor($total, $currency, $displayCurrency);
-        $perPersonFields = $displayService->fieldsFor($perPerson, $currency, $displayCurrency);
+        $operatorCompanyId = $package->company_id !== null ? (int) $package->company_id : null;
+        $totalFields = $displayService->fieldsFor($total, $currency, $displayCurrency, $operatorCompanyId);
+        $perPersonFields = $displayService->fieldsFor($perPerson, $currency, $displayCurrency, $operatorCompanyId);
 
         return [
             'items' => $items,
@@ -268,6 +273,7 @@ class PackageService
             'display_per_person' => $perPersonFields['display_price'],
             'display_currency' => $totalFields['display_currency'],
             'fx_rate' => $totalFields['fx_rate'],
+            'fx_basis' => $totalFields['fx_basis'],
         ];
     }
 

@@ -112,6 +112,7 @@ class PublicPageController extends Controller
             ->orderBy('packages.id', 'asc')
             ->select([
                 'packages.id',
+                'packages.company_id',
                 'packages.package_title',
                 'packages.package_subtitle',
                 'packages.short_description',
@@ -140,7 +141,7 @@ class PublicPageController extends Controller
                 'currency' => $pkg->currency,
                 'main_image' => $pkg->main_image,
                 'link' => '/packages/'.$pkg->id,
-            ], $pkg->base_price, $pkg->currency, $displayCurrency);
+            ], $pkg->base_price, $pkg->currency, $displayCurrency, $pkg->company_id !== null ? (int) $pkg->company_id : null);
         })->values()->all();
     }
 

@@ -86,6 +86,9 @@ class PackageSearchService
         $displayService = app(DisplayCurrencyService::class);
         $displayCurrency = $displayService->sanitize($filters['display_currency'] ?? null);
 
+        // B4 — thread each row's operator company id so an AMD display equals
+        // the future seller-rate charge when a setting exists (agent null on
+        // public reads → operator/platform precedence).
         return [
             'data' => collect($paginator->items())
                 ->map(fn (Package $package): array => $displayService->attach(
@@ -93,6 +96,7 @@ class PackageSearchService
                     $package->base_price,
                     $package->currency,
                     $displayCurrency,
+                    $package->company_id !== null ? (int) $package->company_id : null,
                 ))
                 ->values()
                 ->all(),
