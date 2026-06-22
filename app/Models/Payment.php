@@ -21,6 +21,7 @@ class Payment extends Model
     protected $fillable = [
         'invoice_id',
         'amount',
+        'refunded_amount',
         'currency',
         'status',
         'payment_method',
@@ -33,6 +34,7 @@ class Payment extends Model
     {
         return [
             'paid_at' => 'datetime',
+            'refunded_amount' => 'decimal:2',
         ];
     }
 

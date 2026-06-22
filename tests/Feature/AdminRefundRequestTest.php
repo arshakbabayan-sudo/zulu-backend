@@ -119,6 +119,98 @@ class AdminRefundRequestTest extends TestCase
     }
 
     /**
+     * Audit C4 (§5) — claim-before-money-out ordering: the request must already
+     * be flipped to APPROVED at the moment the gateway is hit, so a concurrent
+     * transaction reading the row would see non-pending and bail. We assert the
+     * status inside the gateway-refund callback.
+     */
+    public function test_request_is_claimed_inside_lock_before_gateway_call(): void
+    {
+        [$rr, $payment] = $this->makeRefundRequest();
+
+        $this->mock(PaymentGatewayService::class, function (MockInterface $mock) use ($rr): void {
+            $mock->shouldReceive('refundPaymentIntent')
+                ->once()
+                ->andReturnUsing(function () use ($rr): array {
+                    // The claim must already be committed-in-transaction before
+                    // the money leaves: the row is APPROVED, not PENDING.
+                    $this->assertSame(
+                        RefundRequest::STATUS_APPROVED,
+                        RefundRequest::query()->whereKey($rr->id)->value('status'),
+                    );
+
+                    return ['success' => true];
+                });
+        });
+
+        Sanctum::actingAs($this->platformAdmin());
+        $this->postJson("/api/platform-admin/refund-requests/{$rr->id}/approve")->assertOk();
+
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => Payment::STATUS_REFUNDED]);
+    }
+
+    /**
+     * Audit C4 (§5) — two approvals of the SAME request issue EXACTLY ONE
+     * gateway refund (one money-out). The second is rejected with no gateway
+     * call. On SQLite lockForUpdate is a no-op, so this exercises the
+     * in-transaction status re-check that is the real cross-engine guard.
+     */
+    public function test_double_approval_triggers_only_one_gateway_refund(): void
+    {
+        [$rr, $payment] = $this->makeRefundRequest();
+
+        // The gateway may be called at most once across BOTH approval attempts.
+        $this->mock(PaymentGatewayService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('refundPaymentIntent')
+                ->once()
+                ->andReturn(['success' => true]);
+        });
+
+        Sanctum::actingAs($this->platformAdmin());
+
+        $first = $this->postJson("/api/platform-admin/refund-requests/{$rr->id}/approve");
+        $first->assertOk()->assertJsonPath('data.status', RefundRequest::STATUS_APPROVED);
+
+        // Second attempt on the now-approved request: no second money-out.
+        $second = $this->postJson("/api/platform-admin/refund-requests/{$rr->id}/approve");
+        $this->assertContains($second->status(), [409, 422]);
+        $second->assertJsonPath('success', false);
+
+        // Exactly one refund booked: cumulative = full amount, paid once.
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'status' => Payment::STATUS_REFUNDED,
+        ]);
+        $this->assertSame('100.00', (string) $payment->fresh()->refunded_amount);
+    }
+
+    /**
+     * Audit C4 (§5) — a request already claimed by a concurrent writer (status
+     * no longer pending) is rejected by the controller's authoritative re-check
+     * with NO gateway money-out. This is the cross-engine guard that protects PG
+     * and SQLite alike (lockForUpdate is a no-op on SQLite).
+     */
+    public function test_already_claimed_request_is_rejected_without_money_out(): void
+    {
+        [$rr] = $this->makeRefundRequest();
+
+        // No gateway call is allowed: an already-claimed request must bail
+        // before any money-out.
+        $this->mock(PaymentGatewayService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('refundPaymentIntent');
+        });
+
+        // Simulate the race winner having already committed its claim.
+        RefundRequest::query()->whereKey($rr->id)->update(['status' => RefundRequest::STATUS_APPROVED]);
+
+        Sanctum::actingAs($this->platformAdmin());
+        $resp = $this->postJson("/api/platform-admin/refund-requests/{$rr->id}/approve");
+
+        $this->assertContains($resp->status(), [409, 422]);
+        $resp->assertJsonPath('success', false);
+    }
+
+    /**
      * @return array{0: RefundRequest, 1: Payment, 2: Order, 3: User}
      */
     private function makeRefundRequest(

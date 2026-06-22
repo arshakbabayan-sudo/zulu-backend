@@ -62,6 +62,10 @@ class AdminRefundRequestController extends Controller
     /** POST /platform-admin/refund-requests/{refundRequest}/approve */
     public function approve(Request $request, RefundRequest $refundRequest): JsonResponse
     {
+        // Cheap pre-lock check for the common "already reviewed" case — avoids
+        // opening a transaction for a request that is obviously not pending. The
+        // authoritative re-check happens INSIDE the lock below; this is only a
+        // fast path, never the concurrency guard.
         if ($refundRequest->status !== RefundRequest::STATUS_PENDING) {
             return response()->json([
                 'success' => false,
@@ -73,30 +77,70 @@ class AdminRefundRequestController extends Controller
             'admin_notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $payment = $refundRequest->refundablePayment();
-        if ($payment === null) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No paid payment found for this order to refund.',
-            ], 422);
-        }
-
-        // Partial when the customer asked for less than the payment total;
-        // null = full refund.
-        $amountCents = null;
-        $requested = $refundRequest->amount_requested !== null ? (float) $refundRequest->amount_requested : null;
-        $paymentAmount = (float) $payment->amount;
-        $isFull = $requested === null || $requested >= $paymentAmount;
-        if (! $isFull && $requested > 0) {
-            $amountCents = (int) round($requested * 100);
-        }
-
+        // Audit C4 (§5) — make the whole approval idempotent and
+        // concurrency-safe. We lock the RefundRequest row, RE-CHECK status ===
+        // pending inside the lock (the cross-engine guard — lockForUpdate is a
+        // no-op on SQLite but the in-txn re-read still serialises against any
+        // other committed claim), CLAIM it by flipping to APPROVED, and only
+        // THEN issue the gateway money-out. Two admins (or a double-click) both
+        // entering here serialise on the row lock: exactly one sees pending and
+        // proceeds; the loser sees non-pending and bails with NO gateway call.
+        // If the gateway fails the whole transaction rolls back, so the claim is
+        // released and the request is left pending for a retry.
         try {
-            $this->paymentService->refund($payment, $amountCents);
+            $result = DB::transaction(function () use ($refundRequest, $request, $validated): array {
+                /** @var RefundRequest|null $locked */
+                $locked = RefundRequest::query()
+                    ->whereKey($refundRequest->getKey())
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($locked === null || $locked->status !== RefundRequest::STATUS_PENDING) {
+                    // The loser of the race (or an already-reviewed request).
+                    return ['outcome' => 'already_processed'];
+                }
+
+                $payment = $locked->refundablePayment();
+                if ($payment === null) {
+                    return ['outcome' => 'no_payment'];
+                }
+
+                // Partial when the customer asked for less than the payment total;
+                // null = full refund.
+                $amountCents = null;
+                $requested = $locked->amount_requested !== null ? (float) $locked->amount_requested : null;
+                $paymentAmount = (float) $payment->amount;
+                $isFull = $requested === null || $requested >= $paymentAmount;
+                if (! $isFull && $requested > 0) {
+                    $amountCents = (int) round($requested * 100);
+                }
+
+                // CLAIM the request inside the lock BEFORE the money-out: a
+                // concurrent transaction that somehow reaches the row will now
+                // read APPROVED and bail. If the gateway throws below, this whole
+                // transaction rolls back and the claim disappears.
+                $locked->update([
+                    'status' => RefundRequest::STATUS_APPROVED,
+                    'admin_notes' => $validated['admin_notes'] ?? null,
+                    'reviewed_by' => $request->user()->id,
+                    'reviewed_at' => now(),
+                ]);
+
+                // Gateway money-out — only ever reached by the claim winner.
+                // Throws PaymentRefundFailedException on failure / over-cap,
+                // which rolls back the claim above.
+                $this->paymentService->refund($payment, $amountCents);
+
+                // Full refund moves the order to the terminal 'refunded' status.
+                if ($isFull) {
+                    Order::query()->where('id', $locked->order_id)->update(['status' => 'refunded']);
+                }
+
+                return ['outcome' => 'approved'];
+            });
         } catch (\Throwable $e) {
             Log::error('Refund-request approval: gateway refund failed', [
                 'refund_request_id' => $refundRequest->id,
-                'payment_id' => $payment->id,
                 'error' => $e->getMessage(),
             ]);
 
@@ -106,19 +150,25 @@ class AdminRefundRequestController extends Controller
             ], 502);
         }
 
-        DB::transaction(function () use ($refundRequest, $request, $validated, $isFull): void {
-            $refundRequest->update([
-                'status' => RefundRequest::STATUS_APPROVED,
-                'admin_notes' => $validated['admin_notes'] ?? null,
-                'reviewed_by' => $request->user()->id,
-                'reviewed_at' => now(),
-            ]);
+        if ($result['outcome'] === 'already_processed') {
+            // 409 Conflict — the request was already claimed/reviewed by a
+            // concurrent approval; no gateway call was made on this path.
+            return response()->json([
+                'success' => false,
+                'message' => 'This refund request has already been processed.',
+            ], 409);
+        }
 
-            // Full refund moves the order to the terminal 'refunded' status.
-            if ($isFull) {
-                Order::query()->where('id', $refundRequest->order_id)->update(['status' => 'refunded']);
-            }
-        });
+        if ($result['outcome'] === 'no_payment') {
+            return response()->json([
+                'success' => false,
+                'message' => 'No paid payment found for this order to refund.',
+            ], 422);
+        }
+
+        // Re-read so the notification sees the freshly-saved admin_notes (the
+        // claim was made on a locked instance inside the transaction above).
+        $refundRequest = $refundRequest->fresh() ?? $refundRequest;
 
         $this->notifyCustomer($refundRequest, 'refund.approved', 'Your refund was approved',
             'Your refund request has been approved and the money is being returned to your original payment method.');

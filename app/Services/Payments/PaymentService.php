@@ -224,10 +224,19 @@ class PaymentService
      * Refund a paid payment, fully (default) or partially.
      *
      * §8 — a nullable $amountCents enables partial refunds from the admin
-     * refund-request queue. A full refund (null, or an amount >= the payment
-     * total) flips the payment to REFUNDED; a strictly partial refund leaves it
-     * PAID (there is no partially_refunded state) — the partial amount is tracked
-     * on the RefundRequest instead.
+     * refund-request queue. A full refund (null, or an amount that brings the
+     * cumulative refunded total up to the payment amount) flips the payment to
+     * REFUNDED; a strictly partial refund leaves it PAID.
+     *
+     * Audit C4 (§5) — over-refund guard. A cumulative `refunded_amount` is kept
+     * on the payment so repeated partial refunds can never exceed the paid
+     * amount. The remaining-cap is computed and the over-cap case is rejected
+     * BEFORE any gateway money-out, so a rejected refund never touches the
+     * gateway. On success the cumulative total is incremented atomically (an
+     * UPDATE ... SET refunded_amount = refunded_amount + ? guarded by an
+     * amount-cap WHERE), and the payment is only flipped to REFUNDED once it is
+     * fully refunded. A single legitimate full refund behaves exactly as before
+     * (cumulative goes 0 → amount, status → REFUNDED).
      *
      * @throws PaymentRefundFailedException
      */
@@ -245,20 +254,99 @@ class PaymentService
         }
 
         $paymentCents = (int) round(((float) $payment->amount) * 100);
-        $isFull = $amountCents === null || $amountCents >= $paymentCents;
+        $alreadyRefundedCents = (int) round(((float) ($payment->refunded_amount ?? 0)) * 100);
+        $remainingCents = $paymentCents - $alreadyRefundedCents;
 
-        $result = $this->paymentGatewayService->refundPaymentIntent($payment, $isFull ? null : $amountCents);
+        // Nothing left to give back — treat an exhausted payment as already
+        // refunded rather than calling the gateway again.
+        if ($remainingCents <= 0) {
+            throw new PaymentRefundFailedException(
+                'Payment is already fully refunded; nothing left to refund.',
+                $payment->id
+            );
+        }
+
+        // Over-refund cap — an EXPLICIT amount that exceeds the remaining
+        // refundable balance is REJECTED (BEFORE any money-out), never silently
+        // clamped, so callers can't accidentally over-refund. A null amount is
+        // the documented "full refund" request and always means "refund exactly
+        // whatever is left" (so a legit single full refund is unchanged, and a
+        // re-issued full refund on a partially-refunded payment tops it up).
+        if ($amountCents === null) {
+            $thisRefundCents = $remainingCents;
+        } else {
+            if ($amountCents <= 0) {
+                throw new PaymentRefundFailedException(
+                    'Refund amount must be greater than zero.',
+                    $payment->id
+                );
+            }
+
+            if ($amountCents > $remainingCents) {
+                throw new PaymentRefundFailedException(
+                    'Refund amount exceeds the remaining refundable balance for this payment.',
+                    $payment->id
+                );
+            }
+
+            $thisRefundCents = $amountCents;
+        }
+
+        // Will this refund settle the full payment?
+        $fullyRefundsNow = ($alreadyRefundedCents + $thisRefundCents) >= $paymentCents;
+
+        // Issue the gateway money-out. A full settlement passes null (mirrors the
+        // original full-refund call shape) so existing gateway behaviour and the
+        // single-refund happy path are unchanged.
+        $result = $this->paymentGatewayService->refundPaymentIntent(
+            $payment,
+            $fullyRefundsNow && $amountCents === null ? null : $thisRefundCents
+        );
         if (($result['success'] ?? false) !== true) {
             throw new PaymentRefundFailedException($result['error'] ?? 'Gateway refund failed', $payment->id);
         }
 
-        if ($isFull) {
-            DB::transaction(function () use ($payment): void {
-                $payment->status = Payment::STATUS_REFUNDED;
-                $payment->save();
-            });
-        }
+        // Atomically book the refund. The WHERE re-asserts the cap at the row
+        // level so two refunds racing past the in-memory check still cannot
+        // over-refund on the real DB: the second UPDATE matches 0 rows. Money
+        // literals are derived from validated integer cents (no user input) and
+        // formatted to 2dp so the cap compares like-for-like with no float drift.
+        $thisRefundLiteral = $this->sqlMoney($thisRefundCents);
+        $paidLiteral = $this->sqlMoney($paymentCents);
+        $newStatus = $fullyRefundsNow ? Payment::STATUS_REFUNDED : Payment::STATUS_PAID;
+
+        DB::transaction(function () use ($payment, $thisRefundLiteral, $paidLiteral, $newStatus): void {
+            $affected = Payment::query()
+                ->whereKey($payment->getKey())
+                ->whereRaw('(COALESCE(refunded_amount, 0) + '.$thisRefundLiteral.') <= '.$paidLiteral)
+                ->update([
+                    'refunded_amount' => DB::raw('COALESCE(refunded_amount, 0) + '.$thisRefundLiteral),
+                    'status' => $newStatus,
+                    'updated_at' => now(),
+                ]);
+
+            if ($affected === 0) {
+                // The row-level cap rejected the increment (a concurrent refund
+                // already consumed the remaining balance). Money-out already
+                // happened above only if the gateway accepted it, so surface a
+                // failure rather than silently swallowing — but in practice the
+                // controller's lock prevents two gateway calls from this path.
+                throw new PaymentRefundFailedException(
+                    'Refund amount exceeds the remaining refundable balance for this payment.',
+                    $payment->id
+                );
+            }
+        });
 
         return $payment->fresh();
+    }
+
+    /**
+     * Render a cents value as a safe decimal literal for use inside a raw
+     * SQL increment expression (no user input — derived from validated cents).
+     */
+    private function sqlMoney(int $cents): string
+    {
+        return number_format($cents / 100, 2, '.', '');
     }
 }
