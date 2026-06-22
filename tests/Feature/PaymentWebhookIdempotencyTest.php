@@ -328,7 +328,7 @@ class PaymentWebhookIdempotencyTest extends TestCase
         return [$payment, $order, $customer, $sellerCompany];
     }
 
-    private function orderEarnCount(int $accountId, int $orderId): int
+    private function orderEarnCount(int $accountId, string $orderId): int
     {
         return LoyaltyTransaction::query()
             ->where('account_id', $accountId)
