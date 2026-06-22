@@ -21,17 +21,30 @@ class MarketplaceService
         private PaymentService $paymentService,
     ) {}
 
-    public function createBooking(User $user, Offer $offer): Order
+    /**
+     * Create a single-offer booking.
+     *
+     * C4 — `$quantity` is the on-screen multiplier the booking page applied
+     * to the displayed unit price (pax for flights, nights/units for hotels,
+     * participants for excursions, …). It is threaded into the order item so
+     * the existing pricing pipeline charges unit_price × quantity, making the
+     * server total match the screen total. `$meta` is the free-form booking
+     * selection (pax/dates/contact/cabin/notes) recorded on the order.
+     * Defaults keep the legacy 2-arg call ({ offer_id }-only) byte-identical.
+     */
+    public function createBooking(User $user, Offer $offer, int $quantity = 1, ?array $meta = null): Order
     {
         return $this->bookingService->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $offer->company_id,
+                'meta' => $meta,
             ],
             [
                 [
                     'offer_id' => $offer->id,
                     'price' => (float) $offer->price,
+                    'quantity' => $quantity,
                 ],
             ],
         );

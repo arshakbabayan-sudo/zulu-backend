@@ -20,8 +20,25 @@ class MarketplaceController extends Controller
 {
     public function store(Request $request, MarketplaceService $marketplaceService): JsonResponse
     {
+        // C4 — accept the on-screen multiplier (`quantity`) and the booking
+        // selection (`meta`) so the server reproduces the displayed total
+        // (unit_price × quantity) via the existing pricing pipeline instead of
+        // charging the bare offer price. SAFE-BY-DEFAULT: both are optional —
+        // an { offer_id }-only request behaves EXACTLY as before (quantity 1,
+        // no meta). `meta` is validated loosely (a bounded free-form object)
+        // and read via $request->input() so untyped sub-keys survive.
         $validated = $request->validate([
             'offer_id' => ['required', 'integer', 'exists:offers,id'],
+            'quantity' => ['sometimes', 'integer', 'min:1', 'max:99'],
+            'meta' => ['sometimes', 'nullable', 'array'],
+            'meta.pax.adults' => ['sometimes', 'integer', 'min:0', 'max:99'],
+            'meta.pax.children' => ['sometimes', 'integer', 'min:0', 'max:99'],
+            'meta.pax.infants' => ['sometimes', 'integer', 'min:0', 'max:99'],
+            'meta.contact.name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'meta.contact.email' => ['sometimes', 'nullable', 'email', 'max:255'],
+            'meta.contact.phone' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'meta.cabin' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'meta.notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ]);
 
         $offer = Offer::query()->findOrFail((int) $validated['offer_id']);
@@ -32,7 +49,26 @@ class MarketplaceController extends Controller
             ], 422);
         }
 
-        $order = $marketplaceService->createBooking($request->user(), $offer);
+        $quantity = (int) ($validated['quantity'] ?? 1);
+        // Read the raw object (not the validated subset) so deep, untyped
+        // selection keys are preserved on the record.
+        $meta = $request->input('meta');
+        if (! is_array($meta)) {
+            $meta = null;
+        }
+
+        // Bound the free-form meta so an authenticated client can't write an
+        // unbounded blob into orders.metadata. The known sub-keys are already
+        // length-limited above; this caps unknown keys too (8KB is far above
+        // any legitimate pax/dates/contact/notes selection).
+        if ($meta !== null && strlen((string) json_encode($meta)) > 8192) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Booking selection (meta) is too large.',
+            ], 422);
+        }
+
+        $order = $marketplaceService->createBooking($request->user(), $offer, $quantity, $meta);
 
         return response()->json([
             'success' => true,

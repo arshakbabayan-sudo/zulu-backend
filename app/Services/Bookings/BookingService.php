@@ -102,8 +102,8 @@ class BookingService
     }
 
     /**
-     * @param  array{user_id:int,company_id:int,status?:string,currency?:string}  $bookingData
-     * @param  array<int,array{offer_id:int,price:numeric}>  $itemsData
+     * @param  array{user_id:int,company_id:int,status?:string,currency?:string,meta?:array<string,mixed>|null}  $bookingData
+     * @param  array<int,array{offer_id:int,price?:numeric,quantity?:int}>  $itemsData
      * @param  array<int, array<string, mixed>>  $passengersData
      */
     public function create(array $bookingData, array $itemsData, array $passengersData = []): Order
@@ -133,6 +133,15 @@ class BookingService
             ? $actingUser->id
             : null;
 
+        // C4 — record the booking selection (pax/dates/contact/notes) under
+        // metadata.meta WITHOUT clobbering legacy_origin (queried by
+        // listForCompanies/paginateForCompanies). Absent meta => metadata is
+        // exactly ['legacy_origin' => 'booking'], i.e. zero behaviour change.
+        $metadata = ['legacy_origin' => 'booking'];
+        if (! empty($bookingData['meta'])) {
+            $metadata['meta'] = $bookingData['meta'];
+        }
+
         $order = $this->orderService->create(
             [
                 'user_id' => $bookingData['user_id'] ?? null,
@@ -142,9 +151,7 @@ class BookingService
                 'currency' => $currency,
                 'buyer_type' => 'client',
                 'status' => 'pending_payment',
-                'metadata' => [
-                    'legacy_origin' => 'booking',
-                ],
+                'metadata' => $metadata,
             ],
             $itemsPayload
         );
@@ -304,7 +311,7 @@ class BookingService
     }
 
     /**
-     * @param  array<int, array{offer_id:int,price:numeric}>  $itemsData
+     * @param  array<int, array{offer_id:int,price?:numeric,quantity?:int}>  $itemsData
      * @param  array<int, Offer>  $offersById
      * @param  array<int, array<string, mixed>>  $passengers
      * @return array<int, array<string, mixed>>
@@ -355,7 +362,10 @@ class BookingService
                 'item_id' => $flightId,
                 'currency' => $currency,
                 'offer_id' => (int) ($itemData['offer_id'] ?? 0),
-                'quantity' => 1,
+                // C4 — thread the on-screen multiplier through to OrderService,
+                // which resolves price × quantity via PricingResolver. Floored
+                // at >=1 (PricingResolver throws on quantity<=0); absent => 1.
+                'quantity' => max(1, (int) ($itemData['quantity'] ?? 1)),
                 'service_snapshot' => [
                     'legacy_offer_id' => (int) ($itemData['offer_id'] ?? 0),
                 ],
