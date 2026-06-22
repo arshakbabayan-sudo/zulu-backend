@@ -366,6 +366,12 @@ class BookingService
                 // which resolves price × quantity via PricingResolver. Floored
                 // at >=1 (PricingResolver throws on quantity<=0); absent => 1.
                 'quantity' => max(1, (int) ($itemData['quantity'] ?? 1)),
+                // Flight cabin pricing — forward the optional supplier_net
+                // override (the selected cabin's RAW adult_price) so OrderService
+                // feeds it into PricingResolver's buyerContext['price_override'].
+                // Null (default / non-flight) preserves the legacy offer.price
+                // resolution exactly.
+                'price_override' => $itemData['price_override'] ?? null,
                 'service_snapshot' => [
                     'legacy_offer_id' => (int) ($itemData['offer_id'] ?? 0),
                 ],

@@ -31,8 +31,14 @@ class MarketplaceService
      * server total match the screen total. `$meta` is the free-form booking
      * selection (pax/dates/contact/cabin/notes) recorded on the order.
      * Defaults keep the legacy 2-arg call ({ offer_id }-only) byte-identical.
+     *
+     * `$priceOverride` (flight cabin pricing) is the RAW selected-cabin
+     * adult_price. When set, it is threaded into the item as `price_override`
+     * so PricingResolver re-applies the same markup the customer saw on-screen
+     * (the cabin's b2c_adult_price) instead of charging offer.price → screen ==
+     * charge. Null (no cabin / non-flight) leaves the legacy path unchanged.
      */
-    public function createBooking(User $user, Offer $offer, int $quantity = 1, ?array $meta = null): Order
+    public function createBooking(User $user, Offer $offer, int $quantity = 1, ?array $meta = null, ?float $priceOverride = null): Order
     {
         return $this->bookingService->create(
             [
@@ -45,6 +51,7 @@ class MarketplaceService
                     'offer_id' => $offer->id,
                     'price' => (float) $offer->price,
                     'quantity' => $quantity,
+                    'price_override' => $priceOverride,
                 ],
             ],
         );

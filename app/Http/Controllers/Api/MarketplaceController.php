@@ -38,6 +38,10 @@ class MarketplaceController extends Controller
             'meta.contact.email' => ['sometimes', 'nullable', 'email', 'max:255'],
             'meta.contact.phone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'meta.cabin' => ['sometimes', 'nullable', 'string', 'max:64'],
+            // Flight booking — the chosen cabin (flight_cabins.id). When present
+            // on a flight offer, the charge is reproduced from THIS cabin's raw
+            // adult_price (re-marked-up by PricingResolver) so screen == charge.
+            'meta.cabin_id' => ['sometimes', 'nullable', 'integer'],
             'meta.notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ]);
 
@@ -68,7 +72,34 @@ class MarketplaceController extends Controller
             ], 422);
         }
 
-        $order = $marketplaceService->createBooking($request->user(), $offer, $quantity, $meta);
+        // Flight cabin pricing — if the booking selected a cabin AND the offer
+        // is a flight with a cabin set, charge the SELECTED cabin's price. The
+        // cabin's RAW adult_price is passed as the supplier_net override, so
+        // PricingResolver re-applies the same b2c markup the customer saw
+        // on-screen (cabin.b2c_adult_price) → screen == charge. The cabin MUST
+        // belong to this offer's flight, else a client could pass a cheaper
+        // foreign cabin id. SAFE-BY-DEFAULT: no cabin_id (or a non-flight offer)
+        // leaves $priceOverride null → the legacy offer.price path is unchanged.
+        $priceOverride = null;
+        $cabinId = $request->input('meta.cabin_id');
+        if ($cabinId !== null && $offer->type === 'flight') {
+            $offer->loadMissing('flight');
+            if ($offer->flight !== null) {
+                $cabin = \App\Models\FlightCabin::query()
+                    ->where('id', (int) $cabinId)
+                    ->where('flight_id', $offer->flight->id)
+                    ->first();
+                if ($cabin === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected cabin does not belong to this flight.',
+                    ], 422);
+                }
+                $priceOverride = (float) $cabin->adult_price;
+            }
+        }
+
+        $order = $marketplaceService->createBooking($request->user(), $offer, $quantity, $meta, $priceOverride);
 
         return response()->json([
             'success' => true,
