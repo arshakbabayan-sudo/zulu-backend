@@ -63,6 +63,11 @@ class PackageOrderService
         $agentCompanyId = isset($input['agent_company_id']) && $input['agent_company_id'] !== ''
             ? (int) $input['agent_company_id']
             : null;
+        // Step 8 — duplicate-order guard. Persisted on the order so a repeat
+        // (same user, same key) is deduped at the controller. Null = unchanged.
+        $idempotencyKey = isset($input['idempotency_key']) && $input['idempotency_key'] !== ''
+            ? (string) $input['idempotency_key']
+            : null;
 
         if (! in_array($bookingChannel, Order::BOOKING_CHANNELS, true)) {
             throw ValidationException::withMessages([
@@ -70,7 +75,7 @@ class PackageOrderService
             ]);
         }
 
-        $order = DB::transaction(function () use ($package, $user, $adultsCount, $childrenCount, $infantsCount, $bookingChannel, $notes, $agentCompanyId): Order {
+        $order = DB::transaction(function () use ($package, $user, $adultsCount, $childrenCount, $infantsCount, $bookingChannel, $notes, $agentCompanyId, $idempotencyKey): Order {
             $package->loadMissing(['components.offer', 'offer']);
 
             if ($package->status !== 'active' || ! $package->is_public) {
@@ -179,6 +184,7 @@ class PackageOrderService
                     'sold_by_user_id' => $soldByUserId,
                     'currency' => $currency,
                     'order_number' => $orderNumber,
+                    'idempotency_key' => $idempotencyKey,
                     'buyer_type' => 'client',
                     'status' => $orderStatus,
                     'notes' => $notes,

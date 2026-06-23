@@ -124,6 +124,11 @@ class OrderService
 
             $order = Order::query()->create([
                 'order_number' => $orderData['order_number'] ?? null,
+                // Step 8 — duplicate-order guard. When the trusted caller threads
+                // an idempotency key through, it is persisted on the order so a
+                // repeat (same user, same key) can be deduped at the controller.
+                // Absent / null leaves today's behaviour unchanged.
+                'idempotency_key' => $orderData['idempotency_key'] ?? null,
                 'user_id' => $orderData['user_id'] ?? null,
                 'company_id' => $orderData['company_id'] ?? null,
                 'agent_company_id' => $orderData['agent_company_id'] ?? null,

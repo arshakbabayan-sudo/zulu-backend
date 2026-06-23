@@ -51,6 +51,24 @@ class PackageOrderController extends Controller
             $package->company_id !== null ? (int) $package->company_id : null,
         );
 
+        // Step 8 — duplicate-order guard. A double-submit must not create two
+        // package orders + two charges. The client sends a stable per-attempt
+        // `Idempotency-Key` header; a repeat with the same (user, key) returns
+        // the existing order. No header => behaves exactly as before.
+        $idempotencyKey = $this->readIdempotencyKey($request);
+        if ($idempotencyKey !== null) {
+            $existing = Order::query()
+                ->where('user_id', $request->user()->id)
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+            if ($existing !== null) {
+                return response()->json([
+                    'success' => true,
+                    'data' => OrderResource::make($existing)->toArray($request),
+                ], 201);
+            }
+        }
+
         $input = [
             'adults_count' => $validated['adults_count'] ?? 1,
             'children_count' => $validated['children_count'] ?? 0,
@@ -58,14 +76,54 @@ class PackageOrderController extends Controller
             'booking_channel' => $validated['booking_channel'] ?? 'public_b2c',
             'notes' => $validated['notes'] ?? null,
             'agent_company_id' => $agentCompanyId,
+            'idempotency_key' => $idempotencyKey,
         ];
 
-        $order = $service->createOrder($package, $request->user(), $input);
+        try {
+            $order = $service->createOrder($package, $request->user(), $input);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Race: two simultaneous requests, same (user, key). The DB unique
+            // index let only one INSERT win — re-fetch and return the winner.
+            if ($idempotencyKey === null) {
+                throw $e;
+            }
+            $existing = Order::query()
+                ->where('user_id', $request->user()->id)
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+            if ($existing === null) {
+                throw $e;
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => OrderResource::make($existing)->toArray($request),
+            ], 201);
+        }
 
         return response()->json([
             'success' => true,
             'data' => OrderResource::make($order)->toArray($request),
         ], 201);
+    }
+
+    /**
+     * Read the optional `Idempotency-Key` request header. Validated as a string
+     * of at most 64 chars (matches the orders.idempotency_key column). A blank
+     * or over-long value is treated as absent so it can never break the create.
+     */
+    private function readIdempotencyKey(Request $request): ?string
+    {
+        $key = $request->header('Idempotency-Key');
+        if (! is_string($key)) {
+            return null;
+        }
+        $key = trim($key);
+        if ($key === '' || strlen($key) > 64) {
+            return null;
+        }
+
+        return $key;
     }
 
     public function index(Request $request, PackageOrderService $service): JsonResponse

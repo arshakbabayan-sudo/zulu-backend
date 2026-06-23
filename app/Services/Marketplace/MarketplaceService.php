@@ -38,13 +38,17 @@ class MarketplaceService
      * (the cabin's b2c_adult_price) instead of charging offer.price → screen ==
      * charge. Null (no cabin / non-flight) leaves the legacy path unchanged.
      */
-    public function createBooking(User $user, Offer $offer, int $quantity = 1, ?array $meta = null, ?float $priceOverride = null): Order
+    public function createBooking(User $user, Offer $offer, int $quantity = 1, ?array $meta = null, ?float $priceOverride = null, ?string $idempotencyKey = null): Order
     {
         return $this->bookingService->create(
             [
                 'user_id' => $user->id,
                 'company_id' => $offer->company_id,
                 'meta' => $meta,
+                // Step 8 — duplicate-order guard. Threaded through to
+                // OrderService so it lands on orders.idempotency_key. Null
+                // (no header) leaves the legacy behaviour byte-identical.
+                'idempotency_key' => $idempotencyKey,
             ],
             [
                 [

@@ -152,6 +152,9 @@ class BookingService
                 'buyer_type' => 'client',
                 'status' => 'pending_payment',
                 'metadata' => $metadata,
+                // Step 8 — duplicate-order guard. Persisted on the order so a
+                // repeat (same user, same key) is deduped at the controller.
+                'idempotency_key' => $bookingData['idempotency_key'] ?? null,
             ],
             $itemsPayload
         );

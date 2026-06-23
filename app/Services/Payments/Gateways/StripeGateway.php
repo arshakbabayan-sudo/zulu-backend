@@ -86,7 +86,16 @@ class StripeGateway implements PaymentGatewayInterface
         }
 
         try {
-            $intent = $this->stripe->paymentIntents->create($params);
+            // Step 8 — Stripe-level idempotency. Even though the controllers
+            // already reuse the latest pending Payment per order (so a retry
+            // reads the same Payment row), pass Stripe a STABLE idempotency key
+            // derived from the payment id so two near-simultaneous create-intent
+            // calls on a fresh Payment can't make two PaymentIntents. Stripe
+            // returns the SAME intent for a repeated key within its 24h window.
+            $intent = $this->stripe->paymentIntents->create(
+                $params,
+                ['idempotency_key' => 'pi-create-'.$payment->id]
+            );
 
             PaymentLog::query()->create([
                 'payment_id' => $payment->id,

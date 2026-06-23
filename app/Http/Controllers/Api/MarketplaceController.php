@@ -99,8 +99,67 @@ class MarketplaceController extends Controller
             }
         }
 
-        $order = $marketplaceService->createBooking($request->user(), $offer, $quantity, $meta, $priceOverride);
+        // Step 8 — duplicate-order guard. A double-submit (double-click, retry
+        // after a lost response, network re-send) must not create two orders +
+        // two charges. The client sends a stable per-attempt `Idempotency-Key`
+        // header; a repeat with the same (user, key) returns the existing order
+        // instead of creating a duplicate. No header => behaves exactly as
+        // before (a brand-new order every call).
+        $idempotencyKey = $this->readIdempotencyKey($request);
+        if ($idempotencyKey !== null) {
+            $existing = Order::query()
+                ->where('user_id', $request->user()->id)
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+            if ($existing !== null) {
+                return $this->marketplaceOrderResponse($existing);
+            }
+        }
 
+        try {
+            $order = $marketplaceService->createBooking($request->user(), $offer, $quantity, $meta, $priceOverride, $idempotencyKey);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Race: two simultaneous requests carried the same (user, key); the
+            // DB unique index let only one INSERT win. Re-fetch the winner's
+            // order and return it instead of surfacing a 500.
+            if ($idempotencyKey === null) {
+                throw $e;
+            }
+            $existing = Order::query()
+                ->where('user_id', $request->user()->id)
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+            if ($existing === null) {
+                throw $e;
+            }
+
+            return $this->marketplaceOrderResponse($existing);
+        }
+
+        return $this->marketplaceOrderResponse($order);
+    }
+
+    /**
+     * Read the optional `Idempotency-Key` request header. Validated as a string
+     * of at most 64 chars (matches the orders.idempotency_key column). A blank
+     * or over-long value is treated as absent so it can never break the create.
+     */
+    private function readIdempotencyKey(Request $request): ?string
+    {
+        $key = $request->header('Idempotency-Key');
+        if (! is_string($key)) {
+            return null;
+        }
+        $key = trim($key);
+        if ($key === '' || strlen($key) > 64) {
+            return null;
+        }
+
+        return $key;
+    }
+
+    private function marketplaceOrderResponse(Order $order): JsonResponse
+    {
         return response()->json([
             'success' => true,
             'data' => [
