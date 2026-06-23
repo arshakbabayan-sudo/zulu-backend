@@ -153,7 +153,7 @@ class PricingResolverTest extends TestCase
         $result = $this->resolver()->resolve($this->offerId, 1);
 
         // No matching rule → fallback to legacy 15% via PriceCalculatorService.
-        $this->assertSame('phase_1_fallback_legacy_b2c_markup', $result->snapshotPayload['engine']);
+        $this->assertSame('operator_markup_percent', $result->snapshotPayload['engine']);
         $this->assertSame(115.0, $result->customerPrice);
     }
 
@@ -178,7 +178,7 @@ class PricingResolverTest extends TestCase
 
         $result = $this->resolver()->resolve($this->offerId, 1); // EUR offer
 
-        $this->assertSame('phase_1_fallback_legacy_b2c_markup', $result->snapshotPayload['engine']);
+        $this->assertSame('operator_markup_percent', $result->snapshotPayload['engine']);
     }
 
     public function test_min_sell_amount_floor(): void
@@ -234,7 +234,7 @@ class PricingResolverTest extends TestCase
         $result = $this->resolver()->resolve($this->offerId, 1);
 
         $this->assertNull($result->ruleIdApplied);
-        $this->assertSame('phase_1_fallback_legacy_b2c_markup', $result->snapshotPayload['engine']);
+        $this->assertSame('operator_markup_percent', $result->snapshotPayload['engine']);
         $this->assertSame(115.0, $result->customerPrice);
     }
 

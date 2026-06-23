@@ -142,8 +142,10 @@ class OperatorMarkupPercentTest extends TestCase
             'customer_markup_percent' => 22,
         ])->assertOk();
 
-        $resp->assertJsonPath('data.agent_markup_percent', 12.5);
-        $resp->assertJsonPath('data.customer_markup_percent', 22.0);
+        // Compare via float cast — JSON serializes a whole-number decimal as
+        // an int (22), which trips assertJsonPath's strict int/float check.
+        $this->assertSame(12.5, (float) $resp->json('data.agent_markup_percent'));
+        $this->assertSame(22.0, (float) $resp->json('data.customer_markup_percent'));
 
         $company->refresh();
         $this->assertSame('12.50', (string) $company->agent_markup_percent);
