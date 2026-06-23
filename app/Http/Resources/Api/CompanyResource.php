@@ -55,6 +55,15 @@ class CompanyResource extends JsonResource
             'stripe_charges_enabled' => (bool) $this->stripe_charges_enabled,
             'stripe_payouts_enabled' => (bool) $this->stripe_payouts_enabled,
             'stripe_details_submitted' => (bool) $this->stripe_details_submitted,
+            // Per-operator price markup tiers (super-admin set). NULL → operator
+            // uses the global default markup. Feeds the company-detail
+            // "Price markup" section in zulu-admin-next.
+            'agent_markup_percent' => $this->agent_markup_percent !== null
+                ? (float) $this->agent_markup_percent
+                : null,
+            'customer_markup_percent' => $this->customer_markup_percent !== null
+                ? (float) $this->customer_markup_percent
+                : null,
         ];
     }
 }

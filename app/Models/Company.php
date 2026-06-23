@@ -69,6 +69,9 @@ class Company extends Model
         // §10 — set on the company's FIRST ZULU-approved package; thereafter
         // the company may self-publish packages directly.
         'packages_trusted_at',
+        // Per-operator price markup (super-admin set). NULL → global default.
+        'agent_markup_percent',
+        'customer_markup_percent',
     ];
 
     /**
@@ -102,6 +105,11 @@ class Company extends Model
             'stripe_charges_enabled' => 'boolean',
             'stripe_payouts_enabled' => 'boolean',
             'stripe_details_submitted' => 'boolean',
+            // Per-operator markup tiers — kept as 2-decimal strings so a
+            // NULL stays NULL (no per-operator value) and a set value rounds
+            // to the AMD-consistent 2dp the markup math expects.
+            'agent_markup_percent' => 'decimal:2',
+            'customer_markup_percent' => 'decimal:2',
         ];
     }
 

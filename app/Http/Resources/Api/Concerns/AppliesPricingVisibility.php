@@ -85,7 +85,12 @@ trait AppliesPricingVisibility
         ?int $ownerCompanyId
     ): array {
         $calculator = app(PriceCalculatorService::class);
-        $sellPrice = $calculator->b2cPrice($basePrice ?? 0);
+        // Per-operator markup so the DISPLAYED sell price matches what the
+        // booking CHARGE computes for the SAME operator (PricingResolver's
+        // no-rule fallback calls the same b2cPriceForOperator). Public reads
+        // are B2C ('client'); an operator with no markup column set falls back
+        // to the global default (today's 15%), so this is backward-compatible.
+        $sellPrice = $calculator->b2cPriceForOperator($basePrice ?? 0, $ownerCompanyId, 'client');
         $currencyUpper = $currency !== null ? strtoupper($currency) : null;
 
         // Part A — additive DISPLAY-currency conversion of the B2C sell price

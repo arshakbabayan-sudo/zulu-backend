@@ -87,22 +87,33 @@ class PricingResolver
         );
 
         if ($rule === null) {
-            // No rule matched at any level — fall back to legacy 15%
-            // behaviour so production keeps charging customers. C.5
-            // ships a global seed row that ensures this branch is
-            // reached only in test/sandbox environments thereafter.
-            $legacyCustomer = (string) $this->calculator->b2cPrice((float) $supplierNet);
+            // No rule matched at any level — fall back to the per-operator
+            // markup percent (the operator's customer/agent tier, chosen by
+            // buyer_type). When the operator has NO per-operator value the
+            // method itself falls back to the global default (today's 15%),
+            // so this stays backwards-compatible. This is the SAME method the
+            // public catalog display calls → for a rule-less operator,
+            // display(customer%) == client charge(customer%).
+            $buyerType = isset($buyerContext['buyer_type']) && is_string($buyerContext['buyer_type'])
+                ? $buyerContext['buyer_type']
+                : 'client';
+
+            $operatorCustomer = (string) $this->calculator->b2cPriceForOperator(
+                (float) $supplierNet,
+                $operatorId > 0 ? $operatorId : null,
+                $buyerType,
+            );
 
             return $this->buildResult(
                 offerId: $offerId,
                 quantity: $quantity,
                 supplierNet: $supplierNet,
-                customerPrice: $legacyCustomer,
+                customerPrice: $operatorCustomer,
                 currency: $currency,
                 rule: null,
                 offer: $offer,
                 buyerContext: $buyerContext,
-                engine: 'phase_1_fallback_legacy_b2c_markup',
+                engine: 'operator_markup_percent',
             );
         }
 

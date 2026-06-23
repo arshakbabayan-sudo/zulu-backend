@@ -30,7 +30,14 @@ class CatalogOfferDetailResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $b2cPrice = app(PriceCalculatorService::class)->b2cPrice($this->price ?? 0);
+        // Public listing display uses the operator's CUSTOMER (brutto) markup
+        // so the shown price equals the no-rule client charge (PricingResolver
+        // fallback). Operator with NULL column → global default (today's 15%).
+        $b2cPrice = app(PriceCalculatorService::class)->b2cPriceForOperator(
+            $this->price ?? 0,
+            $this->resource->company_id ?? null,
+            'client'
+        );
         // Phase 1 / B.3 — base_price visibility gated by trait. The
         // offer's owning operator id is `company_id` on Offer.
         $pricing = $this->safePricing(

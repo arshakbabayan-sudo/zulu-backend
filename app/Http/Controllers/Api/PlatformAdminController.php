@@ -275,6 +275,10 @@ class PlatformAdminController extends Controller
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
             'website' => ['sometimes', 'nullable', 'string', 'max:512'],
             'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            // Per-operator price markup (super-admin set). NULL clears it →
+            // the operator falls back to the global default markup.
+            'agent_markup_percent' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
+            'customer_markup_percent' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
         foreach ($validated as $field => $value) {
