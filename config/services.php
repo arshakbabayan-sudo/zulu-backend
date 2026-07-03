@@ -62,6 +62,25 @@ return [
         'redirect' => env('FACEBOOK_REDIRECT_URI'),
     ],
 
+    // Meta Messenger / Instagram Direct — social inbox (2026-07-03).
+    // DELIBERATELY SEPARATE from the `facebook` Socialite block above (that is
+    // the social-LOGIN client). This block is the Messenger webhook + Send API:
+    //   - verify_token       : our own secret string; must match what we paste
+    //                          into the Meta app's webhook config (GET handshake)
+    //   - app_secret         : the Meta app secret; authenticates POST deliveries
+    //                          via X-Hub-Signature-256 (skipped until set)
+    //   - page_id            : the connected page (Anie Travel Armenia)
+    //   - page_access_token  : long-lived page token used to SEND replies
+    // All live in .env on the server (never committed); wired by deploy.yml.
+    'meta' => [
+        'app_id' => env('META_APP_ID'),
+        'app_secret' => env('META_APP_SECRET'),
+        'verify_token' => env('META_VERIFY_TOKEN'),
+        'page_id' => env('META_PAGE_ID'),
+        'page_access_token' => env('META_PAGE_ACCESS_TOKEN'),
+        'graph_version' => env('META_GRAPH_VERSION', 'v21.0'),
+    ],
+
     // Twilio — SMS gateway. Empty by default; presence of `sid` flips
     // SmsProvider binding from NoopSmsProvider to TwilioSmsProvider.
     'twilio' => [

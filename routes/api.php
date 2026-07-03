@@ -103,6 +103,7 @@ use App\Http\Controllers\Api\OfferController;
 use App\Http\Controllers\Api\OperatorCommissionController;
 use App\Http\Controllers\Api\OperatorStatisticsController;
 use App\Http\Controllers\Api\PackageController;
+use App\Http\Controllers\Api\MetaWebhookController;
 use App\Http\Controllers\Api\PackageOrderController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
@@ -324,6 +325,14 @@ Route::post('payments/webhook', [PaymentWebhookController::class, 'handle'])
 // their callbacks at /payments/webhook/arca and /payments/webhook/idram.
 Route::post('payments/webhook/{driver}', [PaymentWebhookController::class, 'handleForDriver'])
     ->where('driver', 'stripe|arca|idram')
+    ->withoutMiddleware([VerifyCsrfToken::class]);
+
+// Meta (Facebook Messenger / Instagram Direct) webhook — social inbox.
+// GET = Meta's subscription handshake; POST = signed message deliveries.
+// Public + unauthenticated: Meta calls with no ZULU session (the
+// X-Hub-Signature-256 signature authenticates POSTs once the secret is set).
+Route::get('webhooks/meta', [MetaWebhookController::class, 'verify']);
+Route::post('webhooks/meta', [MetaWebhookController::class, 'handle'])
     ->withoutMiddleware([VerifyCsrfToken::class]);
 
 // Bucket D Phase D.1 — invitation flow (public, rate-limited).
