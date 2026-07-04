@@ -64,7 +64,7 @@ class SocialInboxReadTest extends TestCase
         $this->seedConversation('ազատ սենյակ ունե՞ք');
         Sanctum::actingAs($this->superAdmin());
 
-        $this->getJson('/api/crm/social/conversations')
+        $this->getJson('/api/platform-admin/crm/social/conversations')
             ->assertOk()
             ->assertJsonPath('data.0.channel', 'facebook')
             ->assertJsonPath('data.0.unread_count', 2)
@@ -76,7 +76,7 @@ class SocialInboxReadTest extends TestCase
         $conv = $this->seedConversation('hello');
         Sanctum::actingAs($this->superAdmin());
 
-        $this->getJson("/api/crm/social/conversations/{$conv->id}/messages")
+        $this->getJson("/api/platform-admin/crm/social/conversations/{$conv->id}/messages")
             ->assertOk()
             ->assertJsonPath('data.messages.0.text', 'hello')
             ->assertJsonPath('data.messages.0.direction', 'in');
@@ -89,12 +89,14 @@ class SocialInboxReadTest extends TestCase
         $this->seedConversation(); // null company_id
         $company = Company::query()->create(['name' => 'Other Co', 'type' => 'operator']);
         $user = User::factory()->create();
+        // company_admin (not super) — passes the platform-admin gate but is
+        // scoped to its own company, so the null-company conversation is hidden.
         $user->companies()->attach($company->id, [
-            'role_id' => (int) Role::query()->where('name', 'company_viewer')->value('id'),
+            'role_id' => (int) Role::query()->where('name', 'company_admin')->value('id'),
         ]);
         Sanctum::actingAs($user->fresh());
 
-        $this->getJson('/api/crm/social/conversations')
+        $this->getJson('/api/platform-admin/crm/social/conversations')
             ->assertOk()
             ->assertJsonCount(0, 'data');
     }
