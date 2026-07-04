@@ -84,20 +84,21 @@ class SocialInboxReadTest extends TestCase
         $this->assertSame(0, $conv->fresh()->unread_count);
     }
 
-    public function test_company_user_without_page_sees_nothing(): void
+    public function test_non_super_operator_is_forbidden(): void
     {
-        $this->seedConversation(); // null company_id
+        // The social inbox lives under the platform-admin gate and is NOT on the
+        // operator read-allowlist, so a plain operator/agent is 403 (super-only
+        // for now; per-operator access can be added to EnsurePlatformAdmin later
+        // once page→company mapping is in place).
+        $this->seedConversation();
         $company = Company::query()->create(['name' => 'Other Co', 'type' => 'operator']);
         $user = User::factory()->create();
-        // company_admin (not super) — passes the platform-admin gate but is
-        // scoped to its own company, so the null-company conversation is hidden.
         $user->companies()->attach($company->id, [
             'role_id' => (int) Role::query()->where('name', 'company_admin')->value('id'),
         ]);
         Sanctum::actingAs($user->fresh());
 
         $this->getJson('/api/platform-admin/crm/social/conversations')
-            ->assertOk()
-            ->assertJsonCount(0, 'data');
+            ->assertForbidden();
     }
 }
