@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SocialConversation;
+use App\Models\User;
+use App\Services\Admin\AdminAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,6 +22,10 @@ use Illuminate\Http\Request;
  */
 class SocialInboxController extends Controller
 {
+    public function __construct(private readonly AdminAccessService $access)
+    {
+    }
+
     /** GET crm/social/conversations — inbox list, newest activity first. */
     public function index(Request $request): JsonResponse
     {
@@ -126,11 +132,15 @@ class SocialInboxController extends Controller
     private function scopeCompanyIds(Request $request): ?array
     {
         $user = $request->user();
-        if ($user === null) {
+        if (! $user instanceof User) {
             return [0];
         }
-        if ((bool) $user->is_super_admin === true) {
-            return null;
+        try {
+            if ($this->access->isSuperAdmin($user)) {
+                return null;
+            }
+        } catch (\Throwable $e) {
+            // fall through to company scoping
         }
         try {
             $ids = $user->companies()->pluck('companies.id')->all();
