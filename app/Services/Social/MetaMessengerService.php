@@ -116,21 +116,31 @@ class MetaMessengerService
 
         $out = ['callback_url' => $callback];
 
+        // Subscribe BOTH objects at the app level: 'page' = Messenger,
+        // 'instagram' = Instagram Direct. Both deliver to the same webhook; the
+        // controller routes by payload.object → channel. The instagram sub may
+        // fail until the IG permissions are granted — logged, never fatal.
+        $objectFields = [
+            'page' => $fields,
+            'instagram' => 'messages,messaging_postbacks,messaging_seen',
+        ];
         if ($appId === '' || $appSecret === '' || $verifyToken === '') {
             $out['app_subscription'] = 'skipped — app_id/app_secret/verify_token missing';
         } else {
-            try {
-                $res = Http::asForm()->timeout(15)->post($this->base()."/{$appId}/subscriptions", [
-                    'object' => 'page',
-                    'callback_url' => $callback,
-                    'verify_token' => $verifyToken,
-                    'fields' => $fields,
-                    'include_values' => 'true',
-                    'access_token' => $appId.'|'.$appSecret,
-                ]);
-                $out['app_subscription'] = $res->successful() ? 'ok' : 'FAILED: '.$res->body();
-            } catch (\Throwable $e) {
-                $out['app_subscription'] = 'ERROR: '.$e->getMessage();
+            foreach ($objectFields as $object => $objFields) {
+                try {
+                    $res = Http::asForm()->timeout(15)->post($this->base()."/{$appId}/subscriptions", [
+                        'object' => $object,
+                        'callback_url' => $callback,
+                        'verify_token' => $verifyToken,
+                        'fields' => $objFields,
+                        'include_values' => 'true',
+                        'access_token' => $appId.'|'.$appSecret,
+                    ]);
+                    $out["app_subscription_{$object}"] = $res->successful() ? 'ok' : 'FAILED: '.$res->body();
+                } catch (\Throwable $e) {
+                    $out["app_subscription_{$object}"] = 'ERROR: '.$e->getMessage();
+                }
             }
         }
 
