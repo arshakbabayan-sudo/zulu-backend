@@ -130,6 +130,12 @@ jobs:
             php artisan route:cache
             php artisan view:cache
 
+            echo "=== Wire Meta webhook (social inbox, idempotent) ==="
+            # Points the Meta app webhook at /api/webhooks/meta + subscribes the
+            # page, using META_* in .env. Always exits 0 so a Graph API hiccup
+            # never fails the deploy; check output for the per-step result.
+            php artisan meta:wire-webhook || true
+
             echo "=== Public storage symlink ==="
             # public/storage → storage/app/public so files saved by
             # MediaUploadController (operator logos, hotel/package main images,

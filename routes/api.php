@@ -1019,6 +1019,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('crm/social/conversations', [SocialInboxController::class, 'index']);
         Route::get('crm/social/conversations/{conversation}/messages', [SocialInboxController::class, 'messages'])->whereNumber('conversation');
         Route::post('crm/social/conversations/{conversation}/read', [SocialInboxController::class, 'markRead'])->whereNumber('conversation');
+        Route::post('crm/social/conversations/{conversation}/reply', [SocialInboxController::class, 'reply'])->whereNumber('conversation');
         Route::get('crm/segments', [CrmController::class, 'listSegments']);
         Route::post('crm/segments', [CrmController::class, 'storeSegment']);
         Route::patch('crm/segments/{segment}', [CrmController::class, 'updateSegment'])->whereNumber('segment');

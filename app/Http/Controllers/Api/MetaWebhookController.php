@@ -27,8 +27,10 @@ use Illuminate\Support\Facades\Log;
  */
 class MetaWebhookController extends Controller
 {
-    public function __construct(private readonly SocialInboxService $inbox)
-    {
+    public function __construct(
+        private readonly SocialInboxService $inbox,
+        private readonly \App\Services\Social\MetaMessengerService $messenger,
+    ) {
     }
 
     /** GET /webhooks/meta — subscription handshake. */
@@ -140,7 +142,7 @@ class MetaWebhookController extends Controller
                     }, $message['attachments']);
                 }
 
-                $this->inbox->recordInbound(
+                $stored = $this->inbox->recordInbound(
                     channel: $channel,
                     pageId: $pageId,
                     psid: $psid,
@@ -150,6 +152,18 @@ class MetaWebhookController extends Controller
                     raw: $event,
                     timestampMs: isset($event['timestamp']) ? (int) $event['timestamp'] : null,
                 );
+
+                // First message from a new person → resolve their display name
+                // from the Graph API (best-effort; skipped if no page token).
+                $conversation = $stored?->conversation;
+                if ($conversation !== null
+                    && ($conversation->customer_name === null || $conversation->customer_name === '')
+                    && $this->messenger->hasPageToken()) {
+                    $name = $this->messenger->fetchProfileName($psid);
+                    if ($name !== null) {
+                        $conversation->forceFill(['customer_name' => $name])->save();
+                    }
+                }
             }
         }
     }

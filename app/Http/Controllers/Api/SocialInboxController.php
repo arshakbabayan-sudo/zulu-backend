@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SocialConversation;
+use App\Models\SocialMessage;
 use App\Models\User;
 use App\Services\Admin\AdminAccessService;
+use App\Services\Social\MetaMessengerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 /**
  * Read side of the social inbox (Facebook Messenger / Instagram Direct):
@@ -22,8 +25,10 @@ use Illuminate\Http\Request;
  */
 class SocialInboxController extends Controller
 {
-    public function __construct(private readonly AdminAccessService $access)
-    {
+    public function __construct(
+        private readonly AdminAccessService $access,
+        private readonly MetaMessengerService $messenger,
+    ) {
     }
 
     /** GET crm/social/conversations — inbox list, newest activity first. */
@@ -104,6 +109,53 @@ class SocialInboxController extends Controller
         $conversation->forceFill(['unread_count' => 0])->save();
 
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * POST crm/social/conversations/{conversation}/reply — send a staff reply
+     * out to the customer's Messenger and record it as an outbound message.
+     */
+    public function reply(Request $request, SocialConversation $conversation): JsonResponse
+    {
+        if (! $this->canSee($request, $conversation)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $data = $request->validate([
+            'text' => ['required', 'string', 'min:1', 'max:2000'],
+        ]);
+        $text = trim($data['text']);
+        if ($text === '') {
+            return response()->json(['message' => 'Empty reply'], 422);
+        }
+
+        $sent = $this->messenger->sendText($conversation->psid, $text);
+        if (! ($sent['success'] ?? false)) {
+            return response()->json([
+                'message' => $sent['error'] ?? 'Failed to send',
+            ], 422);
+        }
+
+        $now = Carbon::now();
+        $message = SocialMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'direction' => SocialMessage::DIRECTION_OUT,
+            'external_message_id' => ($sent['message_id'] ?? '') ?: null,
+            'sender_psid' => null,
+            'text' => $text,
+            'sent_by_user_id' => optional($request->user())->id,
+        ]);
+        $conversation->forceFill(['last_message_at' => $now])->save();
+
+        return response()->json([
+            'data' => [
+                'id' => $message->id,
+                'direction' => $message->direction,
+                'text' => $message->text,
+                'attachments' => null,
+                'created_at' => optional($message->created_at)->toIso8601String(),
+            ],
+        ], 201);
     }
 
     /**

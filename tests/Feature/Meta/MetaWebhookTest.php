@@ -5,6 +5,7 @@ namespace Tests\Feature\Meta;
 use App\Models\SocialConversation;
 use App\Models\SocialMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
@@ -123,6 +124,30 @@ class MetaWebhookTest extends TestCase
 
         $this->assertSame(0, SocialMessage::query()->count());
         $this->assertSame(0, SocialConversation::query()->count());
+    }
+
+    public function test_inbound_resolves_customer_name_when_page_token_set(): void
+    {
+        config(['services.meta.app_secret' => '', 'services.meta.page_access_token' => 'PAGETOKEN']);
+        Http::fake(['*graph.facebook.com*' => Http::response(['name' => 'Արամ Պետրոսյան', 'id' => 'PSID_N'], 200)]);
+
+        $this->postRaw($this->messagePayload('PSID_N', 'mid_name_1', 'բարև'))->assertOk();
+
+        $this->assertSame(
+            'Արամ Պետրոսյան',
+            SocialConversation::query()->where('psid', 'PSID_N')->value('customer_name')
+        );
+    }
+
+    public function test_inbound_name_not_fetched_without_page_token(): void
+    {
+        config(['services.meta.app_secret' => '', 'services.meta.page_access_token' => '']);
+        Http::fake(); // any outbound call would be recorded
+
+        $this->postRaw($this->messagePayload('PSID_NT', 'mid_name_2', 'բարև'))->assertOk();
+
+        $this->assertNull(SocialConversation::query()->where('psid', 'PSID_NT')->value('customer_name'));
+        Http::assertNothingSent();
     }
 
     public function test_signature_enforced_when_secret_present(): void

@@ -8,6 +8,7 @@ use App\Models\SocialConversation;
 use App\Models\SocialMessage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -82,6 +83,44 @@ class SocialInboxReadTest extends TestCase
             ->assertJsonPath('data.messages.0.direction', 'in');
 
         $this->assertSame(0, $conv->fresh()->unread_count);
+    }
+
+    public function test_super_admin_reply_sends_and_records_outbound(): void
+    {
+        config(['services.meta.page_access_token' => 'PAGETOKEN']);
+        Http::fake(['*/me/messages' => Http::response(['message_id' => 'mid_out_1'], 200)]);
+
+        $conv = $this->seedConversation();
+        Sanctum::actingAs($this->superAdmin());
+
+        $this->postJson("/api/platform-admin/crm/social/conversations/{$conv->id}/reply", [
+            'text' => 'Բարև, ազատ ենք',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.direction', 'out')
+            ->assertJsonPath('data.text', 'Բարև, ազատ ենք');
+
+        $this->assertDatabaseHas('social_messages', [
+            'conversation_id' => $conv->id,
+            'direction' => 'out',
+            'external_message_id' => 'mid_out_1',
+        ]);
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/me/messages'));
+    }
+
+    public function test_reply_returns_422_when_send_fails(): void
+    {
+        config(['services.meta.page_access_token' => 'PAGETOKEN']);
+        Http::fake(['*/me/messages' => Http::response(['error' => ['message' => 'nope']], 400)]);
+
+        $conv = $this->seedConversation();
+        Sanctum::actingAs($this->superAdmin());
+
+        $this->postJson("/api/platform-admin/crm/social/conversations/{$conv->id}/reply", [
+            'text' => 'hi',
+        ])->assertStatus(422);
+
+        $this->assertSame(0, SocialMessage::query()->where('direction', 'out')->count());
     }
 
     public function test_non_super_operator_is_forbidden(): void
