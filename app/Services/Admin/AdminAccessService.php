@@ -19,6 +19,14 @@ class AdminAccessService
 
     public const ROLE_OPERATOR_ADMIN = 'operator_admin';
 
+    /**
+     * Display label for users with NO role-bound membership (plain B2C
+     * customers / unverified signups). Label-only — no middleware, policy or
+     * scope resolver branches on this value (consumers: UserResource
+     * canonical_role / context.world + rollout telemetry logging).
+     */
+    public const ROLE_CUSTOMER = 'customer';
+
     /** @var array<string, list<string>> */
     private const ROLE_ALIASES = [
         self::ROLE_SUPER_ADMIN => ['zulu_super_admin'],
@@ -116,13 +124,22 @@ class AdminAccessService
             return self::ROLE_PLATFORM_ADMIN;
         }
 
-        // Pure agent (no operator-tier role) — display as agent so the UI
-        // doesn't mislabel them as operator_admin.
         $roleNames = $user->memberships
             ->map(fn ($m) => $m->role?->name)
             ->filter()
             ->all();
-        if ($roleNames !== [] && ! array_intersect($roleNames, [self::ROLE_OPERATOR_ADMIN, 'company_admin', 'company_operator'])) {
+
+        // No role-bound membership at all (zero user_company rows, or only
+        // rows with a NULL role_id) — a plain B2C customer / unverified
+        // signup. Label them as such instead of falling through to
+        // operator_admin, which mislabeled customers in the admin header.
+        if ($roleNames === []) {
+            return self::ROLE_CUSTOMER;
+        }
+
+        // Pure agent (no operator-tier role) — display as agent so the UI
+        // doesn't mislabel them as operator_admin.
+        if (! array_intersect($roleNames, [self::ROLE_OPERATOR_ADMIN, 'company_admin', 'company_operator'])) {
             if (in_array('agent', $roleNames, true)) {
                 return 'agent';
             }

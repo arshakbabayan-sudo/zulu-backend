@@ -283,12 +283,13 @@ class AccountDeletionService
             'support_tickets' => ['contact_email', 'contact_phone'],
 
             // Phase 3.6 additions — PII on retained financial/regulatory rows.
-            'passengers' => [
-                'first_name', 'last_name',
-                'passport_number', 'passport_expiry', 'nationality',
-                'date_of_birth', 'gender',
-                'email', 'phone',
-            ],
+            // NOTE (2026-07-06): 'passengers' is deliberately NOT in this map.
+            // The passengers table has NO user_id column (it links to users via
+            // booking_passengers.passenger_id → bookings.user_id), so keeping it
+            // here made this loop run `UPDATE passengers ... WHERE user_id = ?`
+            // → Postgres 42703 → 500 on EVERY admin anonymize/hard-delete/purge.
+            // Passengers are handled by anonymisePassengerRows() below through
+            // the real relation chain.
             'visa_applications' => [
                 'passport_number', 'admin_notes',
             ],
@@ -307,6 +308,18 @@ class AccountDeletionService
             if (! DB::getSchemaBuilder()->hasTable($table)) {
                 continue;
             }
+            // Defensive guard (2026-07-06): this generic loop is keyed on a
+            // user_id column. A table without one must be skipped, never
+            // updated — otherwise the UPDATE throws (Postgres 42703) and the
+            // surrounding transaction rolls back the whole deletion.
+            if (! DB::getSchemaBuilder()->hasColumn($table, 'user_id')) {
+                Log::warning('anonymiseRetainedRows: table has no user_id column, skipped', [
+                    'table' => $table,
+                    'user_id' => $user->id,
+                ]);
+
+                continue;
+            }
             $updates = [];
             foreach ($columns as $col) {
                 if (DB::getSchemaBuilder()->hasColumn($table, $col)) {
@@ -318,10 +331,70 @@ class AccountDeletionService
             }
         }
 
+        // Passengers link to the user indirectly (no user_id column) — handled
+        // through the booking relation chain.
+        $this->anonymisePassengerRows($user);
+
         // Phase 3.7 — passport scan / visa documentation files physically removed
         // from disk. These live in storage/app/private/visa-applications/... and
         // are referenced from visa_applications.files (JSON array of paths).
         $this->purgeUserUploadedFiles($user);
+    }
+
+    /**
+     * Passengers carry heavy PII but have NO user_id column — they attach to a
+     * user through booking_passengers.passenger_id → booking_passengers.booking_id
+     * → bookings.user_id (migrations 2026_03_25_000004 / _000005). Anonymise
+     * every passenger that appears on one of the user's bookings.
+     *
+     * Column handling mirrors the schema's nullability:
+     *  - first_name / last_name are NOT NULL → placeholder 'Anonymized'
+     *  - all other PII columns are nullable → NULL
+     *  - passenger_type (adult/child/infant) is kept — non-identifying, and
+     *    pricing/reporting history depends on it.
+     *
+     * Pure query-builder (whereIn + join subquery) so it runs identically on
+     * Postgres (prod) and SQLite (CI tests).
+     */
+    private function anonymisePassengerRows(User $user): void
+    {
+        $schema = DB::getSchemaBuilder();
+
+        if ($schema->hasTable('passengers')
+            && $schema->hasTable('booking_passengers')
+            && $schema->hasTable('bookings')) {
+            DB::table('passengers')
+                ->whereIn('id', function ($query) use ($user): void {
+                    $query->select('booking_passengers.passenger_id')
+                        ->from('booking_passengers')
+                        ->join('bookings', 'bookings.id', '=', 'booking_passengers.booking_id')
+                        ->where('bookings.user_id', $user->id);
+                })
+                ->update([
+                    'first_name' => 'Anonymized',
+                    'last_name' => 'Anonymized',
+                    'passport_number' => null,
+                    'passport_expiry' => null,
+                    'nationality' => null,
+                    'date_of_birth' => null,
+                    'gender' => null,
+                    'email' => null,
+                    'phone' => null,
+                ]);
+        }
+
+        // order_items.passenger_data (migration 2026_04_26_000300) holds a JSON
+        // copy of the passenger manifest for the user's orders — blank it too so
+        // no PII survives in the snapshot column.
+        if ($schema->hasTable('order_items')
+            && $schema->hasTable('orders')
+            && $schema->hasColumn('order_items', 'passenger_data')) {
+            DB::table('order_items')
+                ->whereIn('order_id', function ($query) use ($user): void {
+                    $query->select('id')->from('orders')->where('user_id', $user->id);
+                })
+                ->update(['passenger_data' => null]);
+        }
     }
 
     /**

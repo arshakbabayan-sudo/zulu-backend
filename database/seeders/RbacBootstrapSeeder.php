@@ -121,6 +121,11 @@ class RbacBootstrapSeeder extends Seeder
         'chat.view',
         'finance.view',
         'my_company.view',
+        // `hr.view` is DEAD (HR section folded into CRM 2026-06-06; nothing
+        // checks it at runtime — see 2026_07_06_000300_detach_dead_hr_view_grants).
+        // The row is still seeded (kept for audit/idempotency) but it is granted
+        // to NO role: excluded from SECTION_VIEW/SECTION_DEFAULTS and from the
+        // generic company/agent grant filters below.
         'hr.view',
         'management.view',
         'files.view',
@@ -138,7 +143,6 @@ class RbacBootstrapSeeder extends Seeder
         'chat' => 'chat.view',
         'finance' => 'finance.view',
         'my_company' => 'my_company.view',
-        'hr' => 'hr.view',
         'management' => 'management.view',
         'files' => 'files.view',
         'inbox' => 'inbox.view',
@@ -149,8 +153,8 @@ class RbacBootstrapSeeder extends Seeder
     /** Default section gates per role — mirrors the section-view migration + today's menu. */
     private const SECTION_DEFAULTS = [
         'platform_admin' => 'ALL',
-        'company_admin'  => ['dashboard', 'inventory', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'hr', 'files', 'inbox', 'settings', 'profile'],
-        'agent'          => ['dashboard', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'hr', 'files', 'inbox', 'settings', 'profile'],
+        'company_admin'  => ['dashboard', 'inventory', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'files', 'inbox', 'settings', 'profile'],
+        'agent'          => ['dashboard', 'bookings', 'crm', 'chat', 'finance', 'my_company', 'files', 'inbox', 'settings', 'profile'],
     ];
 
     public function run(): void
@@ -180,7 +184,7 @@ class RbacBootstrapSeeder extends Seeder
             array_keys($permissionModels),
             fn (string $n) => ! str_starts_with($n, 'platform.')
                 && ! in_array($n, array_values(self::SECTION_VIEW), true) // section gates granted explicitly per role below
-                && ! in_array($n, ['super_admin', 'localization.manage'], true)
+                && ! in_array($n, ['super_admin', 'localization.manage', 'hr.view'], true) // hr.view = dead, granted to no role
         );
         $companyScopedIds = array_map(
             fn (string $n) => $permissionModels[$n]->id,
@@ -207,6 +211,7 @@ class RbacBootstrapSeeder extends Seeder
             fn (string $n) => str_ends_with($n, '.view')
                 && ! str_starts_with($n, 'platform.')
                 && ! in_array($n, array_values(self::SECTION_VIEW), true) // section gates granted explicitly below
+                && $n !== 'hr.view' // dead — granted to no role (see PERMISSION_NAMES note)
         );
         $roles['agent']->permissions()->sync(
             array_map(fn (string $n) => $permissionModels[$n]->id, $agentView)

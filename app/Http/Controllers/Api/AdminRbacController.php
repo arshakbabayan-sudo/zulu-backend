@@ -68,7 +68,13 @@ class AdminRbacController extends Controller
             'items' => [
                 'access' => ['label' => 'Show & view', 'permissions' => ['bookings.view']],
                 'manage' => ['label' => 'Manage bookings', 'permissions' => ['bookings.create', 'bookings.confirm', 'bookings.cancel']],
-                'package_orders' => ['label' => 'Package orders', 'permissions' => ['package_orders.view', 'package_orders.manage']],
+                // RBAC numbers unification (2026-07-06) — Layer-B row-scope
+                // promotions surfaced in the tree. `<module>.view_all` = "see the
+                // WHOLE company's rows for this module" (consumed by
+                // AdminAccessService::employeeRowScopeUserId); without a tree
+                // entry these grants were invisible and unmanageable here.
+                'view_all' => ['label' => 'View all (whole company)', 'permissions' => ['bookings.view_all']],
+                'package_orders' => ['label' => 'Package orders', 'permissions' => ['package_orders.view', 'package_orders.manage', 'package_orders.view_all']],
             ],
         ],
         'crm' => [
@@ -81,6 +87,13 @@ class AdminRbacController extends Controller
                 // crm.view (no separate contract permission).
                 'team' => ['label' => 'Team & employees', 'permissions' => ['company.users.manage']],
                 'files' => ['label' => 'Files', 'permissions' => ['files.view']],
+                // RBAC numbers unification (2026-07-06) — Layer-B row-scope
+                // promotions (see the bookings section note). `crm.view_all` =
+                // whole-company leads (CrmController); `contracts.view_all` =
+                // whole-company contract instances (AdminContractController) —
+                // contracts already live under CRM (see the note above).
+                'view_all' => ['label' => 'View all (whole company)', 'permissions' => ['crm.view_all']],
+                'contracts' => ['label' => 'Contracts', 'permissions' => ['contracts.view_all']],
             ],
         ],
         'chat' => [
@@ -167,23 +180,48 @@ class AdminRbacController extends Controller
             return $deny;
         }
 
+        // RBAC numbers unification (2026-07-06) — the role table used to show
+        // `permissions.length / <ALL permissions in the DB>` while the drawer
+        // below counted only TREE permissions (minus platform-only ones for
+        // company-scoped roles). Compute the drawer's numbers server-side so
+        // both surfaces tell one story. Additive — existing fields untouched.
+        $treePerms = Permission::query()
+            ->whereIn('name', $this->treePermissionNames())
+            ->get(['id', 'name']);
+        $treeIds = $treePerms->pluck('id')->all();
+        // Mirrors RbacMenuTree.tsx isPlatformOnlyPerm(): hidden from (and never
+        // countable for) company-scoped roles.
+        $platformOnlyTreeIds = $treePerms
+            ->filter(fn (Permission $p) => str_starts_with($p->name, 'platform.') || $p->name === 'super_admin')
+            ->pluck('id')
+            ->all();
+        $companyTreeIds = array_values(array_diff($treeIds, $platformOnlyTreeIds));
+
         $roles = Role::query()
             ->with('permissions:id,name')
             ->withCount('memberships')
             ->orderBy('name')
             ->get()
-            ->map(fn (Role $r) => [
-                'id' => $r->id,
-                'name' => $r->name,
-                'display_name' => $r->display_name,
-                'description' => $r->description,
-                'scope' => $r->scope,
-                'memberships_count' => $r->memberships_count ?? 0,
-                'permissions' => $r->permissions->map(fn (Permission $p) => [
-                    'id' => $p->id,
-                    'name' => $p->name,
-                ])->values(),
-            ]);
+            ->map(function (Role $r) use ($treeIds, $companyTreeIds) {
+                $eligibleIds = $r->scope === Role::SCOPE_COMPANY ? $companyTreeIds : $treeIds;
+                $grantedIds = $r->permissions->pluck('id')->all();
+
+                return [
+                    'id' => $r->id,
+                    'name' => $r->name,
+                    'display_name' => $r->display_name,
+                    'description' => $r->description,
+                    'scope' => $r->scope,
+                    'memberships_count' => $r->memberships_count ?? 0,
+                    'permissions' => $r->permissions->map(fn (Permission $p) => [
+                        'id' => $p->id,
+                        'name' => $p->name,
+                    ])->values(),
+                    // Drawer-semantics counts (see note above).
+                    'tree_granted_count' => count(array_intersect($grantedIds, $eligibleIds)),
+                    'tree_total_count' => count($eligibleIds),
+                ];
+            });
 
         return response()->json(['success' => true, 'data' => $roles]);
     }
@@ -337,8 +375,12 @@ class AdminRbacController extends Controller
             ->all();
     }
 
-    /** Permission ids for every permission named anywhere in PERMISSION_TREE. */
-    private function treePermissionIds(): array
+    /**
+     * Every permission name referenced anywhere in PERMISSION_TREE.
+     *
+     * @return list<string>
+     */
+    private function treePermissionNames(): array
     {
         $names = [];
         foreach (self::PERMISSION_TREE as $section) {
@@ -349,7 +391,13 @@ class AdminRbacController extends Controller
             }
         }
 
-        return Permission::query()->whereIn('name', array_values(array_unique($names)))->pluck('id')->all();
+        return array_values(array_unique($names));
+    }
+
+    /** Permission ids for every permission named anywhere in PERMISSION_TREE. */
+    private function treePermissionIds(): array
+    {
+        return Permission::query()->whereIn('name', $this->treePermissionNames())->pluck('id')->all();
     }
 
     private function serializeRole(Role $role): array
@@ -529,6 +577,15 @@ class AdminRbacController extends Controller
 
                     return $rows->count();
                 }),
+                // RBAC numbers unification (2026-07-06) — additive fields so the
+                // stat cards can tell the same story the drawer/table do:
+                //  - members_distinct: PEOPLE (a user with 2 memberships is one
+                //    member, not two — total_memberships keeps the pivot count).
+                //  - tree_permissions_total: seeded permissions the tree actually
+                //    manages (total_permissions keeps the raw table count, which
+                //    includes hidden escalators + orphans).
+                'members_distinct' => $safeCount(fn () => \DB::table('user_company')->distinct()->count('user_id')),
+                'tree_permissions_total' => $safeCount(fn () => count($this->treePermissionIds())),
             ],
         ]);
     }

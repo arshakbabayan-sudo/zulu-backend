@@ -994,6 +994,13 @@ class PlatformAdminController extends Controller
         $perPage = $this->commerceListPerPage($request);
         $query = User::query()
             ->with('companies')
+            // 2026-07-06 deletion-pipeline fix: users with a role-bound company
+            // membership are LIVE operator/staff logins, not junk signups —
+            // they must never surface in the deletable "unverified" queue
+            // (a live operator was nearly bulk-deleted from this pane).
+            ->whereDoesntHave('memberships', function ($q): void {
+                $q->whereNotNull('role_id');
+            })
             ->where(function ($q) {
                 $q->where('status', 'pending')
                     ->orWhereNull('email_verified_at');
@@ -1023,9 +1030,15 @@ class PlatformAdminController extends Controller
         // page. "intended_staff" = rows whose intended_role is set (the visitor
         // came in via a partner-register flow → operator/agent, i.e. staff).
         $statsBase = static function () use ($request) {
-            $q = User::query()->where(function ($q): void {
-                $q->where('status', 'pending')->orWhereNull('email_verified_at');
-            });
+            $q = User::query()
+                // Same staff exclusion as the list query above — the KPI cards
+                // must count the exact same set the table shows.
+                ->whereDoesntHave('memberships', function ($w): void {
+                    $w->whereNotNull('role_id');
+                })
+                ->where(function ($q): void {
+                    $q->where('status', 'pending')->orWhereNull('email_verified_at');
+                });
             if ($request->filled('search')) {
                 $search = (string) $request->query('search');
                 $q->where(function ($w) use ($search): void {
@@ -1481,10 +1494,31 @@ class PlatformAdminController extends Controller
 
         $users = User::query()->whereIn('id', $validated['ids'])->get();
         $processed = 0;
-        $skipped = 0;
+        $skippedUsers = [];
+        $skip = static function (User $user, string $reason) use (&$skippedUsers): void {
+            $skippedUsers[] = [
+                'id' => (int) $user->id,
+                'email' => (string) $user->email,
+                'reason' => $reason,
+            ];
+        };
         foreach ($users as $user) {
             if ((int) $actor->id === (int) $user->id) {
-                $skipped++;
+                $skip($user, 'self');
+
+                continue;
+            }
+            // 2026-07-06 deletion-pipeline fix: bulk cleanup must NEVER touch a
+            // super-admin, and must never sweep up a live staff login — any
+            // user with a role-bound company membership (user_company row with
+            // non-null role_id) is skipped and reported back instead.
+            if ($this->adminAccessService->isSuperAdmin($user)) {
+                $skip($user, 'super_admin');
+
+                continue;
+            }
+            if ($user->memberships()->whereNotNull('role_id')->exists()) {
+                $skip($user, 'has_company_membership');
 
                 continue;
             }
@@ -1496,10 +1530,20 @@ class PlatformAdminController extends Controller
             $processed++;
         }
 
+        $skippedCount = count($skippedUsers);
+
         return response()->json([
             'success' => true,
-            'message' => "Anonymized {$processed} user(s); skipped {$skipped}.",
-            'data' => ['processed' => $processed, 'skipped' => $skipped],
+            'message' => "Anonymized {$processed} user(s); skipped {$skippedCount}.",
+            'data' => [
+                // Legacy key, kept for existing consumers.
+                'processed' => $processed,
+                // Additive keys (2026-07-06): machine-readable outcome so the
+                // admin UI can show WHO was skipped and WHY.
+                'deleted_count' => $processed,
+                'skipped_count' => $skippedCount,
+                'skipped' => $skippedUsers,
+            ],
         ]);
     }
 
