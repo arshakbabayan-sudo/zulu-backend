@@ -33,6 +33,7 @@ use App\Services\Companies\SellerApplicationService;
 use App\Services\Infrastructure\PlatformSettingsService;
 use App\Services\Reviews\ReviewService;
 use App\Services\UserAccount\AccountDeletionService;
+use App\Services\UserAccount\UserRoleChangeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -1250,6 +1251,95 @@ class PlatformAdminController extends Controller
         return response()->json([
             'success' => true,
             'data' => $this->platformAdminUserDetail($user->fresh(['companies'])),
+        ]);
+    }
+
+    /**
+     * PATCH platform-admin/users/{id}/role — SUPER-ADMIN ONLY.
+     *
+     * Change a user's platform role from the People panel: attach a role to a
+     * membership-less B2C user (needs company_id), re-point an existing
+     * membership's role, or detach (role_name=null → back to plain customer).
+     * Optionally set/clear the users.intended_role marker (Unverified pane
+     * badge). Guards, in order: super-admin only (403) → target 404 → no
+     * self-change (422) → last-super-admin protection (422). The heavy lifting
+     * (attach/update/detach + platform-company lookup) lives in
+     * UserRoleChangeService.
+     */
+    public function changeUserRole(Request $request, int $id, UserRoleChangeService $service): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $actor = $request->user();
+        if (! $this->adminAccessService->isSuperAdmin($actor)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Super-admin permission required to change a user\'s role.',
+            ], 403);
+        }
+
+        $user = User::query()->findOrFail($id);
+
+        if ((int) $actor->id === (int) $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot change your own role.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'role_name' => ['present', 'nullable', 'string', 'max:64'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'intended_role' => ['nullable', Rule::in(['operator', 'agent'])],
+        ]);
+
+        $roleName = $validated['role_name'] ?? null;
+
+        // Last-super-admin protection: block a change that would remove the only
+        // remaining super_admin (demote to another role OR detach). Uses the
+        // User::superAdmins() query scope (role name super_admin + platform
+        // scope).
+        if ($this->adminAccessService->isSuperAdmin($user)) {
+            $wouldStaySuper = $roleName !== null
+                && $this->adminAccessService->canonicalizeRoleName($roleName) === AdminAccessService::ROLE_SUPER_ADMIN;
+
+            if (! $wouldStaySuper) {
+                $superAdminCount = User::query()->superAdmins()->count();
+                if ($superAdminCount <= 1) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot remove the last super-admin.',
+                    ], 422);
+                }
+            }
+        }
+
+        try {
+            $data = $service->changeRole(
+                $user,
+                $roleName,
+                isset($validated['company_id']) ? (int) $validated['company_id'] : null,
+                $validated['intended_role'] ?? null,
+                $actor,
+                array_key_exists('intended_role', $validated),
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Surface the first specific field message (e.g. "company_id is
+            // required…") rather than the generic "given data was invalid".
+            $first = collect($e->errors())->flatten()->first();
+
+            return response()->json([
+                'success' => false,
+                'message' => is_string($first) ? $first : $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Role updated.',
+            'data' => $data,
         ]);
     }
 

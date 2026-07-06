@@ -1031,6 +1031,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('unverified-accounts', [PlatformAdminController::class, 'listUnverifiedAccounts']);
         Route::get('users/{id}', [PlatformAdminController::class, 'showUser'])->whereNumber('id');
         Route::patch('users/{id}', [PlatformAdminController::class, 'updateUser'])->whereNumber('id');
+        // Super-admin only — change a user's platform role (attach/re-point/detach).
+        Route::patch('users/{id}/role', [PlatformAdminController::class, 'changeUserRole'])->whereNumber('id');
         Route::patch('users/{id}/deactivate', [PlatformAdminController::class, 'deactivateUser'])->whereNumber('id');
         // Admin notes on a user — 2026-06-04 admin v3 (Management → B2C
         // customers detail Notes sub-tab + Add note hero action).
