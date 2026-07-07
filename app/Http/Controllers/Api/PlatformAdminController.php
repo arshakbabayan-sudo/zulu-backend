@@ -1343,6 +1343,69 @@ class PlatformAdminController extends Controller
         ]);
     }
 
+    /**
+     * Super-admin only — force-reset a user's password.
+     *
+     * POST /api/platform-admin/users/{id}/reset-password
+     * REQUEST { new_password?: string|null }
+     *   - non-empty string  → used as the new password (min 8 chars, else 422)
+     *   - omitted / null    → a strong random password (16 chars) is generated
+     *
+     * SUCCESS 200 { success, message, data: { user_id, new_password } }
+     *   `new_password` is the freshly-SET plaintext, returned ONCE so the admin
+     *   can relay it to the user. It is NOT a decrypted stored secret — it is the
+     *   exact value we just wrote (then bcrypt-hashed at rest by the User model's
+     *   'password' => 'hashed' cast). It is never persisted in plaintext.
+     *
+     * Side effect: the target's Sanctum tokens are revoked so any old session
+     * dies immediately after the reset.
+     */
+    public function resetUserPassword(Request $request, int $id): JsonResponse
+    {
+        if ($deny = $this->denyUnlessPlatformAdmin($request)) {
+            return $deny;
+        }
+
+        $actor = $request->user();
+        if (! $this->adminAccessService->isSuperAdmin($actor)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Super-admin permission required to reset a user\'s password.',
+            ], 403);
+        }
+
+        $user = User::query()->findOrFail($id);
+
+        $validated = $request->validate([
+            'new_password' => ['nullable', 'string', 'min:8'],
+        ]);
+
+        // Determine the plaintext to set: the caller-supplied value if present
+        // and non-empty, otherwise a strong 16-char random password (>=12).
+        $newPassword = (isset($validated['new_password']) && $validated['new_password'] !== '')
+            ? $validated['new_password']
+            : \Illuminate\Support\Str::password(16);
+
+        // The 'password' => 'hashed' cast on the User model bcrypt-hashes this on
+        // save; the plaintext below is what we just SET (returned once), not a
+        // decrypted secret.
+        $user->password = $newPassword;
+        $user->save();
+
+        // Revoke every Sanctum personal-access token so existing sessions die.
+        $user->tokens()->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password reset.',
+            'data' => [
+                'user_id' => (int) $user->id,
+                // Freshly-set plaintext, surfaced once so the admin can relay it.
+                'new_password' => $newPassword,
+            ],
+        ]);
+    }
+
     public function deactivateUser(Request $request, int $id): JsonResponse
     {
         if ($deny = $this->denyUnlessPlatformAdmin($request)) {
@@ -2070,6 +2133,9 @@ class PlatformAdminController extends Controller
             'intended_role' => $user->intended_role,
             'two_factor_method' => $user->two_factor_method,
             'two_factor_required' => (bool) $user->two_factor_required,
+            // Login method surfaced for the admin user detail: 'google' /
+            // 'facebook' when the account was created via OAuth, else 'password'.
+            'login_method' => $user->oauth_provider ?: 'password',
         ]);
     }
 

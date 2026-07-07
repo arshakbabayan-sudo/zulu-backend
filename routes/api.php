@@ -1033,6 +1033,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::patch('users/{id}', [PlatformAdminController::class, 'updateUser'])->whereNumber('id');
         // Super-admin only — change a user's platform role (attach/re-point/detach).
         Route::patch('users/{id}/role', [PlatformAdminController::class, 'changeUserRole'])->whereNumber('id');
+        // Super-admin only — force-reset a user's password (revokes their tokens).
+        Route::post('users/{id}/reset-password', [PlatformAdminController::class, 'resetUserPassword'])->whereNumber('id');
         Route::patch('users/{id}/deactivate', [PlatformAdminController::class, 'deactivateUser'])->whereNumber('id');
         // Admin notes on a user — 2026-06-04 admin v3 (Management → B2C
         // customers detail Notes sub-tab + Add note hero action).
